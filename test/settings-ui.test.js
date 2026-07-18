@@ -14,6 +14,8 @@ const bubbleCss = source("src/bubble.css");
 const bubbleJs = source("src/bubble.js");
 const mainJs = source("src/main.js");
 const rendererJs = source("src/renderer.js");
+const petHtml = source("src/index.html");
+const petCss = source("src/styles.css");
 
 test("클릭 가능한 말풍선 hover는 사용자 지정 배경색을 덮어쓰지 않는다", () => {
   assert.match(bubbleCss, /\.bubble\s*\{[^}]*background:\s*var\(--bubble-bg\)/s);
@@ -62,6 +64,20 @@ test("마우스 따라가기와 수동 일시정지는 설정 파일에 저장�
   assert.match(mainJs, /restoreMovementPreferences\(\)/);
   assert.match(mainJs, /writeSettings\(movementPreferencesPatch\(runtime\)\)/);
   assert.match(mainJs, /persistMovementPreferences\(\)/);
+});
+
+test("펫 크기 조절은 화면 끝에서도 쓸 수 있는 좌상단 핸들과 절대 화면 좌표를 사용한다", () => {
+  const resizeHandleRule = petCss.match(/\.resize-handle\s*\{[^}]*\}/)?.[0] || "";
+  assert.match(petHtml, /data-resize-corner="top-left"/);
+  assert.match(petHtml, /data-resize-corner="bottom-right"/);
+  assert.match(resizeHandleRule, /width:\s*36px/);
+  assert.match(resizeHandleRule, /height:\s*36px/);
+  assert.match(petCss, /\.resize-handle\[data-resize-corner="top-left"\]/);
+  assert.match(petCss, /body\.is-resizing \.resize-handle/);
+  assert.match(rendererJs, /event\.screenX/);
+  assert.match(rendererJs, /event\.preventDefault\(\)/);
+  assert.match(rendererJs, /document\.body\.classList\.add\("is-resizing"\)/);
+  assert.match(rendererJs, /window\.addEventListener\("pointermove", handleResizePointerMove\)/);
 });
 
 test("클릭·작업 상태·정지 랜덤·마우스 둘러보기·2차원 배회를 동작 규칙대로 연결한다", () => {
@@ -115,6 +131,14 @@ test("사용량 카드는 한도만 렌더링하고 계정 action을 넣지 않�
   assert.doesNotMatch(usageRenderer, /runAccountAction\(/);
 });
 
+test("사용량 화면은 provider별 모든 계정을 개별 카드로 표시한다", () => {
+  assert.match(mainJs, /loadAccountUsageCards/);
+  assert.match(mainJs, /usage:\s*\[\.\.\.codexUsage, \.\.\.agy\.usage, \.\.\.claude\.usage\]/);
+  assert.match(settingsJs, /item\.accountLabel/);
+  assert.match(settingsJs, /item\.active/);
+  assert.match(settingsHtml, />계정별 한도</);
+});
+
 test("설정 renderer는 안전한 DOM API를 쓰고 성공 카드를 남기지 않는다", () => {
   assert.doesNotMatch(settingsJs, /\.innerHTML\s*=/);
   assert.match(settingsJs, /textContent/);
@@ -152,4 +176,26 @@ test("macOS 개발 실행은 자동 실행을 비활성화하고 잘못 등록�
   assert.match(mainJs, /enabled:\s*isAutoLaunchSupported\(\)/);
   assert.match(settingsJs, /autostart\.disabled = state\.autoStartSupported === false/);
   assert.match(settingsHtml, /id="autostart-note"/);
+});
+
+test("펫 우클릭과 트레이 메뉴는 하나의 공통 템플릿을 사용한다", () => {
+  const sharedMenu = mainJs.slice(
+    mainJs.indexOf("function buildAppMenuTemplate"),
+    mainJs.indexOf("function buildTrayMenu")
+  );
+  const trayMenu = mainJs.slice(
+    mainJs.indexOf("function buildTrayMenu"),
+    mainJs.indexOf("function refreshTrayMenu")
+  );
+  const contextMenu = mainJs.slice(
+    mainJs.indexOf("function showContextMenu"),
+    mainJs.indexOf("function handleDragStart")
+  );
+
+  assert.match(sharedMenu, /label:\s*"모션 실행"/);
+  assert.match(sharedMenu, /label:\s*"로그인 시 자동 실행"/);
+  assert.match(sharedMenu, /label:\s*"완전 종료"/);
+  assert.match(trayMenu, /Menu\.buildFromTemplate\(buildAppMenuTemplate\(\)\)/);
+  assert.match(contextMenu, /Menu\.buildFromTemplate\(buildAppMenuTemplate\(\)\)/);
+  assert.equal((mainJs.match(/function buildAppMenuTemplate/g) || []).length, 1);
 });

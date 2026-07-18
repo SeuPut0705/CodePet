@@ -10,6 +10,7 @@ const { ClaudeWatcher } = require("./claude-watcher");
 const { ClaudeAccountSwitcher } = require("./claude-account-switcher");
 const { normalizeClaudeAccountMetadata } = require("./claude-account-metadata");
 const { AntigravityAccountSwitcher } = require("./antigravity-account-switcher");
+const { loadAccountUsageCards } = require("./account-usage");
 const {
   clearUsageCache,
   fetchAntigravityIdentity,
@@ -28,6 +29,7 @@ const { ActivityBubbleState, applyActivityPrivacy } = require("./activity-bubble
 const {
   createStableWindowBounds,
   normalizeWindowSize,
+  resizeWindowGeometry,
   restoreWindowGeometry,
 } = require("./window-geometry");
 const { normalizeFontFamily } = require("./appearance-settings");
@@ -1188,6 +1190,7 @@ function toggleAutoLaunch() {
     openAtLogin: !isAutoLaunchEnabled(),
     ...getLoginItemOptions(),
   });
+  refreshTrayMenu();
   return true;
 }
 
@@ -1882,34 +1885,15 @@ function buildCodexAccountSubmenu() {
   });
 }
 
-// 시스템 트레이 메뉴는 창이 투명해져서 펫 우클릭 메뉴를 못 여는 상황에서도 접근할 수 있는 안전장치입니다.
-function buildTrayMenu() {
+// 펫 우클릭과 트레이가 공유하는 단일 메뉴 정의입니다.
+// 두 표시 adapter는 이 템플릿을 Electron Menu로 바꾸는 역할만 가집니다.
+function buildAppMenuTemplate() {
   const isPetVisible = Boolean(petWindow && !petWindow.isDestroyed() && petWindow.isVisible());
 
-  return Menu.buildFromTemplate([
-    {
-      label: "설정…",
-      click: openSettingsWindow,
-    },
-    { type: "separator" },
-    {
-      label: "CodePet 보이기",
-      enabled: !isPetVisible,
-      click: showPetWindowFromTray,
-    },
-    {
-      label: "CodePet 숨기기",
-      enabled: isPetVisible,
-      click: hidePetWindowToTray,
-    },
+  return [
+    { label: "설정…", click: openSettingsWindow },
     { type: "separator" },
     { label: "계정", submenu: buildProviderAccountSubmenu() },
-    {
-      label: "Codex 재시작 없는 전환 (프록시)",
-      type: "checkbox",
-      checked: isCodexProxyModeEnabled(),
-      click: () => setCodexProxyMode(!isCodexProxyModeEnabled()),
-    },
     {
       label: "펫 바꾸기",
       submenu: buildPetSelectionSubmenu(),
@@ -1925,12 +1909,36 @@ function buildTrayMenu() {
       checked: runtime.followMouse,
       click: toggleFollowMouse,
     },
+    {
+      label: "모션 실행",
+      submenu: buildManualMotionSubmenu(),
+    },
     { type: "separator" },
     {
-      label: "완전 종료",
-      click: quitApp,
+      label: "Codex 재시작 없는 전환 (프록시)",
+      type: "checkbox",
+      checked: isCodexProxyModeEnabled(),
+      click: () => setCodexProxyMode(!isCodexProxyModeEnabled()),
     },
-  ]);
+    {
+      label: "로그인 시 자동 실행",
+      type: "checkbox",
+      checked: isAutoLaunchEnabled(),
+      enabled: isAutoLaunchSupported(),
+      click: toggleAutoLaunch,
+    },
+    { type: "separator" },
+    {
+      label: isPetVisible ? "숨기기" : "보이기",
+      click: isPetVisible ? hidePetWindowToTray : showPetWindowFromTray,
+    },
+    { label: "완전 종료", click: quitApp },
+  ];
+}
+
+// 시스템 트레이 메뉴는 창이 투명해져서 펫 우클릭 메뉴를 못 여는 상황에서도 접근할 수 있는 안전장치입니다.
+function buildTrayMenu() {
+  return Menu.buildFromTemplate(buildAppMenuTemplate());
 }
 
 // 트레이 메뉴는 현재 표시 상태, 일시정지 상태, 펫 선택 상태를 반영해야 하므로 상태가 바뀔 때마다 다시 만듭니다.
@@ -2042,54 +2050,7 @@ function buildManualMotionSubmenu() {
 // renderer가 우클릭을 감지하면 main process에서 네이티브 메뉴를 띄웁니다.
 function showContextMenu() {
   if (!petWindow || petWindow.isDestroyed()) return;
-
-  const template = [
-    { label: "설정…", click: openSettingsWindow },
-    { type: "separator" },
-    { label: "계정", submenu: buildProviderAccountSubmenu() },
-    {
-      label: "펫 바꾸기",
-      submenu: buildPetSelectionSubmenu(),
-    },
-    { type: "separator" },
-    {
-      label: runtime.manualPaused ? "다시 시작" : "일시 정지",
-      click: toggleManualPause,
-    },
-    { type: "separator" },
-    {
-      label: "마우스 따라가기",
-      type: "checkbox",
-      checked: runtime.followMouse,
-      click: toggleFollowMouse,
-    },
-    { type: "separator" },
-    {
-      label: "모션 실행",
-      submenu: buildManualMotionSubmenu(),
-    },
-    { type: "separator" },
-    {
-      label: "Codex 재시작 없는 전환 (프록시)",
-      type: "checkbox",
-      checked: isCodexProxyModeEnabled(),
-      click: () => setCodexProxyMode(!isCodexProxyModeEnabled()),
-    },
-    {
-      label: "로그인 시 자동 실행",
-      type: "checkbox",
-      checked: isAutoLaunchEnabled(),
-      enabled: isAutoLaunchSupported(),
-      click: toggleAutoLaunch,
-    },
-    { type: "separator" },
-    {
-      label: "숨기기",
-      click: hidePetWindowToTray,
-    },
-  ];
-
-  Menu.buildFromTemplate(template).popup({ window: petWindow });
+  Menu.buildFromTemplate(buildAppMenuTemplate()).popup({ window: petWindow });
 }
 
 // 드래그 시작 시 자동 이동을 멈추고 기준 좌표를 저장합니다.
@@ -3162,19 +3123,24 @@ function registerIpcHandlers() {
     handleDragMove(screenPoint);
   });
   ipcMain.on(IPC_CHANNELS.DRAG_END, handleDragEnd);
-  ipcMain.on(IPC_CHANNELS.RESIZE_WINDOW, (_event, w, h) => {
+  ipcMain.on(IPC_CHANNELS.RESIZE_WINDOW, (_event, w, _h, anchor) => {
     if (!petWindow || petWindow.isDestroyed()) return;
 
-    const nextSize = normalizeWindowSize(Number(w), RESIZE_CONFIG);
-    if (!nextSize) {
-      console.warn("[desktop-pet] Invalid resize request ignored.", w, h);
+    const nextGeometry = resizeWindowGeometry(
+      { x: runtime.x, y: runtime.y, width: runtime.width, height: runtime.height },
+      Number(w),
+      anchor === "top-left" ? "top-left" : "bottom-right",
+      RESIZE_CONFIG
+    );
+    if (!nextGeometry) {
+      console.warn("[desktop-pet] Invalid resize request ignored.", w, _h, anchor);
       return;
     }
 
-    runtime.width = nextSize.width;
-    runtime.height = nextSize.height;
+    runtime.width = nextGeometry.width;
+    runtime.height = nextGeometry.height;
     petWindow.setContentSize(runtime.width, runtime.height, false);
-    moveWindowTo(runtime.x, runtime.y);
+    moveWindowTo(nextGeometry.x, nextGeometry.y);
   });
   ipcMain.on(IPC_CHANNELS.RESIZE_END, () => {
     if (!petWindow || petWindow.isDestroyed()) return;
@@ -3439,53 +3405,62 @@ function codexAccountRows() {
 }
 
 async function loadCodexUsage() {
-  try {
-    const data = buildUsageBubbleData(await codexAccountSwitcher.fetchCurrentUsage());
-    return { id: "codex", label: "Codex", gauges: data.gauges };
-  } catch {
-    return { id: "codex", label: "Codex", error: "조회 불가", gauges: [] };
-  }
+  const profiles = codexAccountSwitcher.listProfiles();
+  return loadAccountUsageCards({
+    providerId: "codex",
+    providerLabel: "Codex",
+    profiles,
+    loadUsage: async (profile) => {
+      const usage = profile.active
+        ? await codexAccountSwitcher.fetchCurrentUsage()
+        : await codexAccountSwitcher.fetchProfileUsage(profile.key);
+      return buildUsageBubbleData(usage);
+    },
+  });
 }
 
 async function loadAntigravityProvider(forceUsage) {
-  let credential;
-  try {
-    credential = await antigravityAccountSwitcher.read();
-  } catch {
-    return {
-      accounts: antigravityAccountSwitcher.listProfiles(),
-      usage: { id: "agy", label: "AGY", error: "로그인 필요", gauges: [] },
-    };
-  }
-
+  let credential = null;
   let identity = {};
   try {
+    credential = await antigravityAccountSwitcher.read();
     identity = await fetchAntigravityIdentity({ credential, force: forceUsage });
   } catch {
-    // 계정 조회가 막혀도 저장된 힌트와 한도 조회는 각각 계속 시도합니다.
+    // live 로그인이 없거나 계정 조회가 막혀도 저장된 프로필은 각각 조회합니다.
   }
-  try {
-    await antigravityAccountSwitcher.snapshotCurrent({ email: identity.email });
-  } catch {
-    // 로그인 정보 자체가 없으면 아래 한도 조회에서 로그인 오류로 처리합니다.
+  if (credential) {
+    try {
+      await antigravityAccountSwitcher.snapshotCurrent({ email: identity.email });
+    } catch {
+      // 저장할 수 없는 live 자격 증명은 저장 프로필 조회를 막지 않습니다.
+    }
   }
 
-  let usage;
-  try {
-    const data = await fetchAntigravityUsage({ credential, force: forceUsage });
-    await antigravityAccountSwitcher.snapshotCurrent({
-      email: data.email || identity.email,
-      plan: data.plan,
-    });
-    usage = { id: "agy", label: "AGY", gauges: data.gauges };
-  } catch {
-    try {
-      await antigravityAccountSwitcher.snapshotCurrent();
-    } catch {
-      // 로그인 정보 자체가 없으면 저장할 프로필도 없습니다.
-    }
-    usage = { id: "agy", label: "AGY", error: "조회 불가", gauges: [] };
-  }
+  const profiles = antigravityAccountSwitcher.listProfiles();
+  const usage = await loadAccountUsageCards({
+    providerId: "agy",
+    providerLabel: "AGY",
+    profiles,
+    loadUsage: async (profile) => {
+      const credentialStore = profile.active && credential
+        ? {
+            read: () => credential,
+            write: (next) => antigravityAccountSwitcher.write(next),
+          }
+        : antigravityAccountSwitcher.createProfileCredentialStore(profile.key);
+      const data = await fetchAntigravityUsage({
+        credentialStore,
+        force: forceUsage,
+      });
+      if (profile.active && credential) {
+        await antigravityAccountSwitcher.snapshotCurrent({
+          email: data.email || identity.email,
+          plan: data.plan,
+        });
+      }
+      return data;
+    },
+  });
   return { accounts: antigravityAccountSwitcher.listProfiles(), usage };
 }
 
@@ -3502,24 +3477,29 @@ async function loadClaudeProvider(forceUsage) {
       plan: status.subscriptionType,
     });
   } catch {
-    return {
-      accounts: claudeAccountSwitcher.listProfiles(),
-      usage: { id: "claude", label: "Claude", error: "로그인 필요", gauges: [] },
-    };
+    // live 로그인이 없어도 저장된 프로필은 각각 조회합니다.
   }
 
-  let usage;
-  try {
-    const data = await fetchClaudeUsage({ force: forceUsage, credentialStore: claudeLiveStore });
-    // 토큰 갱신으로 live 파일이 바뀌었을 수 있으므로 최신 값을 다시 저장합니다.
-    claudeAccountSwitcher.snapshotCurrent({
-      email: status.email,
-      plan: status.subscriptionType,
-    });
-    usage = { id: "claude", label: "Claude", gauges: data.gauges };
-  } catch {
-    usage = { id: "claude", label: "Claude", error: "조회 불가", gauges: [] };
-  }
+  const profiles = claudeAccountSwitcher.listProfiles();
+  const usage = await loadAccountUsageCards({
+    providerId: "claude",
+    providerLabel: "Claude",
+    profiles,
+    loadUsage: async (profile) => {
+      const credentialStore = profile.active
+        ? claudeLiveStore
+        : claudeAccountSwitcher.createProfileCredentialStore(profile.key);
+      const data = await fetchClaudeUsage({ force: forceUsage, credentialStore });
+      if (profile.active) {
+        // live 토큰이 갱신됐을 수 있으므로 저장 프로필도 최신 상태로 맞춥니다.
+        claudeAccountSwitcher.snapshotCurrent({
+          email: status.email,
+          plan: status.subscriptionType,
+        });
+      }
+      return data;
+    },
+  });
   return { accounts: claudeAccountSwitcher.listProfiles(), usage };
 }
 
@@ -3550,7 +3530,7 @@ async function getSettingsData({ forceUsage = false } = {}) {
       { id: "agy", label: "AGY", accounts: agy.accounts },
       { id: "claude", label: "Claude", accounts: claude.accounts },
     ],
-    usage: [codexUsage, agy.usage, claude.usage],
+    usage: [...codexUsage, ...agy.usage, ...claude.usage],
   };
 }
 
