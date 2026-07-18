@@ -236,11 +236,20 @@ test("다중 활동 헤더 오른쪽에 유효한 5h·7d 배지만 고정 렌더
   const group = childWithClass(header, "activity-usage-badges");
 
   assert.ok(group);
+  assert.deepEqual(
+    group.children.map((badge) => badge.className),
+    ["activity-usage-badge", "activity-usage-badge"]
+  );
   assert.deepEqual(group.children.map((badge) => badge.textContent), ["5h 42%", "7d 68%"]);
   assert.deepEqual(group.children.map((badge) => badge.attributes["aria-label"]), [
     "5시간 42% 남음",
     "7일 68% 남음",
   ]);
+  for (const section of multiBubble.children.slice(1)) {
+    const sectionLabel = section.children[0].children[0];
+    assert.equal(childWithClass(sectionLabel, "activity-usage-badges"), null);
+    assert.equal(childWithClass(sectionLabel, "activity-usage-badge"), null);
+  }
 
   const singleBubble = renderBubble({
     kind: "activity",
@@ -263,6 +272,7 @@ test("사용량 배지는 좁은 헤더에서도 줄바꿈과 숫자 흔들림�
   const groupRule = bubbleCss.match(/\.activity-usage-badges\s*\{[^}]*}/s)?.[0] || "";
   assert.match(groupRule, /display:\s*inline-flex/);
   assert.match(groupRule, /flex:\s*none/);
+  assert.match(groupRule, /margin-left:\s*auto/);
   assert.match(groupRule, /white-space:\s*nowrap/);
   assert.match(groupRule, /font-variant-numeric:\s*tabular-nums/);
   assert.match(groupRule, /color:\s*color-mix/);
