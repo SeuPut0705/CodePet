@@ -169,6 +169,16 @@ test("child-count가 parent-working보다 먼저 오면 첫 section에 서브에
   assert.equal(state.toBubbleData().subagentCount, 3);
 });
 
+test("잘못된 작업 ID에는 선행 서브에이전트 수를 보류하지 않는다", () => {
+  const state = new ActivityBubbleState();
+
+  for (const threadId of [undefined, null, "", false, 0, 42, {}, []]) {
+    assert.equal(state.refresh(threadId, { subagentCount: 3 }), false);
+  }
+
+  assert.equal(state.pendingSubagentCounts.size, 0);
+});
+
 test("section 전의 0개 서브에이전트 수는 보류한 양의 수를 지운다", () => {
   const state = new ActivityBubbleState();
 

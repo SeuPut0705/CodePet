@@ -65,6 +65,8 @@ class ActivityBubbleState {
 
   // turn_context처럼 상세 활동이 없는 이벤트는 기존 내용을 보존합니다. 시작 순서는 절대 바꾸지 않습니다.
   refresh(threadId, context = {}) {
+    if (typeof threadId !== "string" || !threadId) return false;
+
     const existing = this.activities.get(threadId);
     if (!existing) {
       if (Object.hasOwn(context, "subagentCount")) {
