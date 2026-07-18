@@ -316,7 +316,7 @@ test("Codex watcher만 작업별 서브에이전트 수 변경을 활성 section
   assert.doesNotMatch(externalRegistration, /subagent-count-changed/);
 });
 
-test("Codex 세션별 raw 사용량을 활성 집계 헤더와 reset timer에 연결한다", () => {
+test("Codex 세션별 usage controller를 watcher와 활성 집계 헤더 수명주기에 연결한다", () => {
   const buildActiveBubble = mainJs.match(
     /function buildActiveActivityBubble\(\)[\s\S]*?\n}/
   )?.[0] || "";
@@ -326,30 +326,32 @@ test("Codex 세션별 raw 사용량을 활성 집계 헤더와 reset timer에 �
   const codexRegistration = mainJs.match(
     /function registerCodexWatcher\(\)[\s\S]*?\n}\n\n\/\/ 한도 사용률/
   )?.[0] || "";
+  const controllerSetup = mainJs.match(
+    /const activityUsageController = new ActivityUsageController\([\s\S]*?\n}\);/
+  )?.[0] || "";
 
   assert.match(mainJs, /require\("\.\/activity-usage"\)/);
-  assert.match(mainJs, /const activityUsageState = new ActivityUsageState\(\)/);
-  assert.doesNotMatch(mainJs, /latestActivityUsageBadges/);
+  assert.match(controllerSetup, /onBadgesChanged/);
+  assert.match(
+    controllerSetup,
+    /codexWatcher\.working && activeActivityBubbles\.size > 1[\s\S]*?showActiveActivityBubble\(\)/
+  );
+  assert.doesNotMatch(mainJs, /activityUsageResetTimer|scheduleActivityUsageReset/);
   assert.match(buildActiveBubble, /decorateActivityBubbleWithUsage/);
-  assert.match(buildActiveBubble, /activityUsageState\.buildBadges\(\)/);
+  assert.match(buildActiveBubble, /activityUsageController\.buildBadges\(\)/);
   assert.match(buildActiveBubble, /codexWorking: codexWatcher\.working/);
-  assert.match(removeActiveBubble, /activityUsageState\.remove\(threadId\)/);
-  assert.match(removeActiveBubble, /if \(!codexWatcher\.working\) activityUsageState\.clear\(\)/);
-  assert.match(removeActiveBubble, /scheduleActivityUsageReset\(\)/);
+  assert.match(removeActiveBubble, /activityUsageController\.remove\(threadId\)/);
+  assert.match(
+    removeActiveBubble,
+    /if \(!codexWatcher\.working\) activityUsageController\.clear\(\)/
+  );
   assert.match(codexRegistration, /codexWatcher\.on\("usage-updated", \(usage, context\)/);
   assert.match(codexRegistration, /if \(!context\?\.threadId\) return/);
   assert.match(
     codexRegistration,
-    /const badgesChanged = activityUsageState\.update\(context\.threadId, usage\)/
+    /activityUsageController\.update\(context\.threadId, usage\)/
   );
-  assert.match(
-    codexRegistration,
-    /if \(badgesChanged && codexWatcher\.working && activeActivityBubbles\.size > 1\)/
-  );
-  assert.match(mainJs, /activityUsageState\.nextResetAt\(nowMs\)/);
-  assert.match(mainJs, /activityUsageResetTimer = setTimeout/);
-  assert.match(mainJs, /activityUsageState\.refresh\(\)/);
-  assert.match(mainJs, /clearTimeout\(activityUsageResetTimer\)/);
+  assert.match(mainJs, /activityUsageController\.dispose\(\)/);
 });
 const rendererJs = source("src/renderer.js");
 const petHtml = source("src/index.html");

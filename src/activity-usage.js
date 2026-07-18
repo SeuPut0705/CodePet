@@ -2,6 +2,7 @@ const TARGET_WINDOWS = Object.freeze([
   { minutes: 300, key: "5h", accessibleName: "5시간" },
   { minutes: 10080, key: "7d", accessibleName: "7일" },
 ]);
+const MAX_TIMER_DELAY_MS = 2_147_483_647;
 
 function clampPercent(value) {
   return Math.min(100, Math.max(0, value));
@@ -131,6 +132,79 @@ class ActivityUsageState {
   }
 }
 
+class ActivityUsageController {
+  constructor({
+    now = Date.now,
+    setTimer = setTimeout,
+    clearTimer = clearTimeout,
+    onBadgesChanged = () => {},
+  } = {}) {
+    this.now = now;
+    this.setTimer = setTimer;
+    this.clearTimer = clearTimer;
+    this.onBadgesChanged = onBadgesChanged;
+    this.state = new ActivityUsageState();
+    this.timerId = null;
+    this.disposed = false;
+  }
+
+  cancelTimer() {
+    if (this.timerId === null) return;
+    this.clearTimer(this.timerId);
+    this.timerId = null;
+  }
+
+  scheduleReset() {
+    this.cancelTimer();
+    if (this.disposed) return;
+    const nowMs = this.now();
+    const resetAtMs = this.state.nextResetAt(nowMs);
+    if (!Number.isFinite(resetAtMs)) return;
+    this.timerId = this.setTimer(() => {
+      this.timerId = null;
+      if (this.disposed) return;
+      const changed = this.state.refresh(this.now());
+      this.scheduleReset();
+      if (changed) this.onBadgesChanged(this.buildBadges());
+    }, Math.min(MAX_TIMER_DELAY_MS, Math.max(0, resetAtMs - nowMs)));
+  }
+
+  update(threadId, usage) {
+    if (this.disposed) return false;
+    const changed = this.state.update(threadId, usage, this.now());
+    this.scheduleReset();
+    if (changed) this.onBadgesChanged(this.buildBadges());
+    return changed;
+  }
+
+  remove(threadId) {
+    if (this.disposed) return false;
+    const changed = this.state.remove(threadId, this.now());
+    this.scheduleReset();
+    if (changed) this.onBadgesChanged(this.buildBadges());
+    return changed;
+  }
+
+  clear() {
+    if (this.disposed) return false;
+    const changed = this.state.clear(this.now());
+    this.scheduleReset();
+    if (changed) this.onBadgesChanged(this.buildBadges());
+    return changed;
+  }
+
+  buildBadges() {
+    return this.state.buildBadges(this.now());
+  }
+
+  dispose() {
+    if (this.disposed) return;
+    this.disposed = true;
+    this.cancelTimer();
+    this.state.clear(this.now());
+  }
+}
+
 function decorateActivityBubbleWithUsage(
   data,
   usageBadges,
@@ -151,6 +225,8 @@ function decorateActivityBubbleWithUsage(
 
 module.exports = {
   ActivityUsageState,
+  ActivityUsageController,
+  MAX_TIMER_DELAY_MS,
   buildActivityUsageBadges,
   decorateActivityBubbleWithUsage,
 };

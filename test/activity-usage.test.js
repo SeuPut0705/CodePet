@@ -1,10 +1,45 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const {
+  ActivityUsageController,
   ActivityUsageState,
   buildActivityUsageBadges,
   decorateActivityBubbleWithUsage,
 } = require("../src/activity-usage");
+
+function createFakeTimerClock(startMs) {
+  let nowMs = startMs;
+  let nextId = 1;
+  const timers = new Map();
+  const clearedIds = [];
+  const scheduledDelays = [];
+
+  return {
+    now: () => nowMs,
+    timers,
+    clearedIds,
+    scheduledDelays,
+    setTimer(callback, delayMs) {
+      const id = nextId++;
+      scheduledDelays.push(delayMs);
+      timers.set(id, { callback, delayMs });
+      return id;
+    },
+    clearTimer(id) {
+      clearedIds.push(id);
+      timers.delete(id);
+    },
+    runNext() {
+      const [id, timer] = [...timers.entries()]
+        .sort((left, right) => left[1].delayMs - right[1].delayMs)[0] || [];
+      if (!timer) return false;
+      timers.delete(id);
+      nowMs += timer.delayMs;
+      timer.callback();
+      return true;
+    },
+  };
+}
 
 test("rate limit 순서와 무관하게 5h·7d 남은 퍼센트를 만든다", () => {
   const usage = {
@@ -213,4 +248,161 @@ test("가장 가까운 target reset을 선택하고 reset 시점에 표시 변�
     state.buildBadges(2_000).map((badge) => badge.remainingPercent),
     [100, 80]
   );
+});
+
+test("usage update는 기존 reset timer를 교체하고 하나만 유지한다", () => {
+  const clock = createFakeTimerClock(1_000);
+  const controller = new ActivityUsageController({
+    now: clock.now,
+    setTimer: clock.setTimer,
+    clearTimer: clock.clearTimer,
+  });
+  const usage = (resetsAt) => ({
+    rateLimits: {
+      windows: [{ window_minutes: 300, used_percent: 60, resets_at: resetsAt }],
+    },
+  });
+
+  controller.update("thread-a", usage(10));
+  const firstTimerId = [...clock.timers.keys()][0];
+  assert.equal(clock.timers.size, 1);
+  assert.equal(clock.timers.get(firstTimerId).delayMs, 9_000);
+
+  controller.update("thread-a", usage(20));
+  assert.equal(clock.timers.size, 1);
+  assert.equal(clock.timers.has(firstTimerId), false);
+  assert.deepEqual(clock.clearedIds, [firstTimerId]);
+  assert.equal([...clock.timers.values()][0].delayMs, 19_000);
+});
+
+test("마지막 session remove와 clear는 예약된 reset timer를 해제한다", () => {
+  const clock = createFakeTimerClock(1_000);
+  const controller = new ActivityUsageController({
+    now: clock.now,
+    setTimer: clock.setTimer,
+    clearTimer: clock.clearTimer,
+  });
+  const usage = {
+    rateLimits: {
+      windows: [{ window_minutes: 300, used_percent: 60, resets_at: 10 }],
+    },
+  };
+
+  controller.update("thread-a", usage);
+  controller.remove("thread-a");
+  assert.equal(clock.timers.size, 0);
+
+  controller.update("thread-a", usage);
+  controller.update("thread-b", usage);
+  controller.clear();
+  assert.equal(clock.timers.size, 0);
+});
+
+test("reset timer callback은 배지를 100%로 다시 계산하고 변경 callback을 한 번 호출한다", () => {
+  const clock = createFakeTimerClock(1_000);
+  const changedBadges = [];
+  const controller = new ActivityUsageController({
+    now: clock.now,
+    setTimer: clock.setTimer,
+    clearTimer: clock.clearTimer,
+    onBadgesChanged: (badges) => changedBadges.push(badges),
+  });
+
+  controller.update("thread-a", {
+    rateLimits: {
+      windows: [{ window_minutes: 300, used_percent: 60, resets_at: 2 }],
+    },
+  });
+  assert.equal(changedBadges.length, 1);
+  changedBadges.length = 0;
+  assert.equal(clock.runNext(), true);
+
+  assert.equal(changedBadges.length, 1);
+  assert.equal(changedBadges[0][0].remainingPercent, 100);
+  assert.equal(controller.buildBadges()[0].remainingPercent, 100);
+  assert.equal(clock.timers.size, 0);
+});
+
+test("동일 badge update는 callback 없이 최신 source reset을 보존하고 제거 시 이전 source를 복원한다", () => {
+  const clock = createFakeTimerClock(1_000);
+  const changedBadges = [];
+  const controller = new ActivityUsageController({
+    now: clock.now,
+    setTimer: clock.setTimer,
+    clearTimer: clock.clearTimer,
+    onBadgesChanged: (badges) => changedBadges.push(badges),
+  });
+  const usage = (resetsAt) => ({
+    rateLimits: {
+      windows: [{ window_minutes: 300, used_percent: 60, resets_at: resetsAt }],
+    },
+  });
+
+  controller.update("thread-a", usage(10));
+  assert.equal(changedBadges.length, 1);
+
+  controller.update("thread-b", usage(20));
+  assert.equal(changedBadges.length, 1);
+  assert.equal([...clock.timers.values()][0].delayMs, 19_000);
+
+  controller.remove("thread-b");
+  assert.equal(changedBadges.length, 1);
+  assert.equal([...clock.timers.values()][0].delayMs, 9_000);
+  assert.equal(controller.buildBadges()[0].remainingPercent, 40);
+});
+
+test("dispose는 reset timer와 session 상태를 해제하고 이후 update를 막는다", () => {
+  const clock = createFakeTimerClock(1_000);
+  const controller = new ActivityUsageController({
+    now: clock.now,
+    setTimer: clock.setTimer,
+    clearTimer: clock.clearTimer,
+  });
+  const usage = {
+    rateLimits: {
+      windows: [{ window_minutes: 300, used_percent: 60, resets_at: 10 }],
+    },
+  };
+
+  controller.update("thread-a", usage);
+  assert.equal(clock.timers.size, 1);
+
+  controller.dispose();
+  assert.equal(clock.timers.size, 0);
+  assert.deepEqual(controller.buildBadges(), []);
+  assert.equal(controller.update("thread-b", usage), false);
+  assert.equal(clock.timers.size, 0);
+});
+
+test("far-future reset은 안전한 최대 delay로 나누고 chunk callback마다 한 번만 재예약한다", () => {
+  const maxTimerDelayMs = 2_147_483_647;
+  const clock = createFakeTimerClock(1_000);
+  const changedBadges = [];
+  const controller = new ActivityUsageController({
+    now: clock.now,
+    setTimer: clock.setTimer,
+    clearTimer: clock.clearTimer,
+    onBadgesChanged: (badges) => changedBadges.push(badges),
+  });
+  const farFutureResetAtMs = clock.now() + maxTimerDelayMs * 2 + 5_000;
+
+  controller.update("thread-a", {
+    rateLimits: {
+      windows: [{
+        window_minutes: 300,
+        used_percent: 60,
+        resets_at: farFutureResetAtMs / 1000,
+      }],
+    },
+  });
+
+  assert.equal(clock.timers.size, 1);
+  assert.ok(clock.scheduledDelays[0] <= maxTimerDelayMs);
+  changedBadges.length = 0;
+
+  assert.equal(clock.runNext(), true);
+  assert.equal(clock.timers.size, 1);
+  assert.equal(clock.scheduledDelays.length, 2);
+  assert.ok(clock.scheduledDelays[1] <= maxTimerDelayMs);
+  assert.equal(changedBadges.length, 0);
 });
