@@ -39,6 +39,17 @@ test("Codex 활동은 사이드바 작업 제목을 비동기로 보강한다", 
   assert.doesNotMatch(resolverSetup, /resolveCommand\(/);
   assert.doesNotMatch(hydrateTitle, /if \(!sectionLabel\) return/);
 });
+
+test("Codex watcher만 작업별 서브에이전트 수 변경을 활성 section에 전달한다", () => {
+  const codexRegistration = mainJs.match(/function registerCodexWatcher\(\)[\s\S]*?\n}\n\nfunction registerExternalWatcher/)?.[0] || "";
+  const externalRegistration = mainJs.match(/function registerExternalWatcher[\s\S]*?\n}\n\nfunction registerIpcHandlers/)?.[0] || "";
+
+  assert.match(
+    codexRegistration,
+    /codexWatcher\.on\("subagent-count-changed", \(\{ threadId, subagentCount }\) => \{[\s\S]*?activeActivityBubbles\.refresh\(threadId, \{ subagentCount }\)[\s\S]*?showActiveActivityBubble\(\)/
+  );
+  assert.doesNotMatch(externalRegistration, /subagent-count-changed/);
+});
 const rendererJs = source("src/renderer.js");
 const petHtml = source("src/index.html");
 const petCss = source("src/styles.css");

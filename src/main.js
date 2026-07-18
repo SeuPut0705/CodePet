@@ -2557,6 +2557,12 @@ function didTaskFail(result) {
 }
 
 function registerCodexWatcher() {
+  codexWatcher.on("subagent-count-changed", ({ threadId, subagentCount }) => {
+    if (activeActivityBubbles.refresh(threadId, { subagentCount })) {
+      showActiveActivityBubble();
+    }
+  });
+
   codexWatcher.on("working-changed", (isWorking, result, context) => {
     if (isWorking) {
       // 요청을 처음 받으면 검토 모션으로 시작하고, 뒤의 세부 이벤트에서 읽기/쓰기를 구분합니다.

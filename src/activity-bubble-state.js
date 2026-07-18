@@ -6,6 +6,16 @@ function updatedLabel(context, key, normalize, previous = null) {
   return normalize(context[key]);
 }
 
+function safeSubagentCount(value) {
+  const count = Number(value);
+  return Number.isSafeInteger(count) && count > 0 ? count : 0;
+}
+
+function updatedSubagentCount(context, previous = 0) {
+  if (!Object.hasOwn(context, "subagentCount")) return previous;
+  return safeSubagentCount(context.subagentCount);
+}
+
 // Watcher 활동을 rollout thread 단위로 보관합니다. 화면은 이 상태의 스냅샷만 렌더링하므로
 // 한 세션의 새 이벤트가 다른 세션의 내용을 덮어쓰지 않습니다.
 class ActivityBubbleState {
@@ -36,6 +46,7 @@ class ActivityBubbleState {
         safeReasoningLabel,
         existing?.reasoningLabel
       ),
+      subagentCount: updatedSubagentCount(context, existing?.subagentCount ?? 0),
       startedAt,
       firstSeen,
     });
@@ -69,6 +80,7 @@ class ActivityBubbleState {
       safeReasoningLabel,
       existing.reasoningLabel
     );
+    existing.subagentCount = updatedSubagentCount(context, existing.subagentCount);
     existing.startedAt ??= normalizeStartedAt(context.taskStartedAt);
     return true;
   }
@@ -109,10 +121,16 @@ class ActivityBubbleState {
         workerLabel: entry.workerLabel,
         reasoningLabel: entry.reasoningLabel,
       };
+      const heading = createActivityHeading(entry.data.title, titleContext);
       return {
         ...entry.data,
-        ...createActivityHeading(entry.data.title, titleContext),
+        ...heading,
         threadId: entry.threadId,
+        subagentCount: entry.subagentCount,
+        titleLabel:
+          entry.subagentCount > 0
+            ? `${heading.titleLabel} · 활성 서브에이전트 ${entry.subagentCount}개`
+            : heading.titleLabel,
       };
     });
 

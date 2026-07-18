@@ -122,6 +122,44 @@ test("비동기로 확인한 사이드바 작업 제목을 활성 section에 갱
   assert.equal(state.toBubbleData().titleLabel, "응답 작성 중 · CodePet · Sol · Medium");
 });
 
+test("서브에이전트 수를 작업별 section에만 저장하고 접근성 이름에만 더한다", () => {
+  const state = new ActivityBubbleState();
+  state.upsert(THREADS[0], activity("응답 작성 중", "a", "status"), {
+    sectionLabel: "CodePet",
+    workerLabel: "Sol",
+    reasoningLabel: "Medium",
+  });
+  state.upsert(THREADS[1], activity("테스트 중", "b", "status"), {
+    sectionLabel: "ShortPut",
+  });
+
+  state.refresh(THREADS[0], { subagentCount: 3 });
+  let sections = state.toBubbleData().sections;
+  assert.deepEqual(sections.map((section) => section.subagentCount), [3, 0]);
+  assert.deepEqual(sections.map((section) => section.title), [
+    "CodePet · Sol · Medium",
+    "ShortPut",
+  ]);
+  assert.match(sections[0].titleLabel, /활성 서브에이전트 3개/);
+  assert.doesNotMatch(sections[1].titleLabel, /활성 서브에이전트/);
+
+  state.refresh(THREADS[0], { subagentCount: 0 });
+  sections = state.toBubbleData().sections;
+  assert.deepEqual(sections.map((section) => section.subagentCount), [0, 0]);
+  assert.doesNotMatch(sections[0].titleLabel, /활성 서브에이전트/);
+});
+
+test("서브에이전트 수는 upsert에서 안전한 양의 정수만 보존한다", () => {
+  const state = new ActivityBubbleState();
+  state.upsert(THREADS[0], activity("응답 작성 중", "a", "status"), { subagentCount: "2" });
+  assert.equal(state.toBubbleData().subagentCount, 2);
+
+  for (const subagentCount of [0, -1, 1.5, Number.MAX_SAFE_INTEGER + 1, "not-a-number"]) {
+    state.refresh(THREADS[0], { subagentCount });
+    assert.equal(state.toBubbleData().subagentCount, 0);
+  }
+});
+
 test("사이드바 작업 제목 재조회가 실패하면 기존 상태 제목으로 돌아간다", () => {
   const state = new ActivityBubbleState();
   state.upsert(THREADS[0], activity("응답 작성 중", "detail", "status"), {
