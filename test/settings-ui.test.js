@@ -33,7 +33,6 @@ test("설정 창은 테마 선택 없이 색상, 설치 글꼴, 세 provider, �
   assert.match(settingsJs, /function resolveInstalledFontFamily/);
   assert.match(settingsHtml, /id="provider-groups"/);
   assert.match(settingsHtml, /id="usage-cards"/);
-  assert.match(settingsHtml, /VERSION 0\.3\.2/);
   assert.match(settingsCss, /--font-body:\s*"Segoe UI Variable"/);
   assert.doesNotMatch(settingsHtml, /<link[^>]+href=["']https?:/);
   assert.doesNotMatch(settingsHtml, /\.\.\/assets\//);
@@ -43,6 +42,15 @@ test("설정 창은 테마 선택 없이 색상, 설치 글꼴, 세 provider, �
     true
   );
   assert.match(mainJs, /path\.join\(__dirname, "default-pet", "spritesheet\.webp"\)/);
+});
+
+test("설정 대시보드는 중복 페이지 헤더와 장식용 문구 없이 핵심 섹션부터 보여준다", () => {
+  assert.doesNotMatch(settingsHtml, /class="workspace-bar"/);
+  assert.doesNotMatch(settingsHtml, /class="panel-heading"/);
+  assert.doesNotMatch(settingsHtml, /class="nav-index"/);
+  assert.doesNotMatch(settingsHtml, /WORKSPACE COMPANION|VERSION 0\.3\.2/);
+  assert.match(settingsHtml, /id="provider-list-title">연결된 계정/);
+  assert.match(settingsHtml, /id="usage-list-title">계정별 한도/);
 });
 
 test("설정 Footer는 짧은 창에서도 본문을 덮지 않고 글꼴 목록은 각 글꼴로 표시된다", () => {

@@ -27,12 +27,9 @@
     </div>
     <div class="app-shell">
       <aside class="sidebar">
-        <div class="brand-lockup" aria-label="CodePet 0.3">
+        <div class="brand-lockup" aria-label="CodePet">
           <span class="brand-mark" aria-hidden="true"><i></i><i></i></span>
-          <span>
-            <strong>CodePet</strong>
-            <small>WORKSPACE COMPANION</small>
-          </span>
+          <strong>CodePet</strong>
         </div>
 
         <nav class="settings-nav" aria-label="설정 섹션" role="tablist">
@@ -44,9 +41,7 @@
             aria-selected="true"
             aria-controls="general"
             data-section="general"
-            data-label="일반 및 모양"
           >
-            <span class="nav-index">01</span>
             <span>일반 및 모양</span>
           </button>
           <button
@@ -57,10 +52,8 @@
             aria-selected="false"
             aria-controls="accounts"
             data-section="accounts"
-            data-label="계정"
             tabindex="-1"
           >
-            <span class="nav-index">02</span>
             <span>계정</span>
           </button>
           <button
@@ -71,25 +64,14 @@
             aria-selected="false"
             aria-controls="usage"
             data-section="usage"
-            data-label="사용량"
             tabindex="-1"
           >
-            <span class="nav-index">03</span>
             <span>사용량</span>
           </button>
         </nav>
-
-        <div class="sidebar-foot">
-          <span class="version">VERSION 0.3.2</span>
-        </div>
       </aside>
 
       <main class="workspace">
-        <header class="workspace-bar">
-          <p>SETTINGS <span>/</span> <strong id="section-label">일반 및 모양</strong></p>
-          <span class="local-badge"><i></i> 이 PC에 저장</span>
-        </header>
-
         <div class="toast" id="toast" role="alert" aria-live="assertive" hidden></div>
 
         <section
@@ -99,11 +81,6 @@
           aria-labelledby="nav-general"
           tabindex="0"
         >
-          <header class="panel-heading">
-            <p class="eyebrow">APPEARANCE &amp; BEHAVIOR</p>
-            <h1>내 화면, 내 방식대로</h1>
-          </header>
-
           <fieldset class="setting-section color-section">
             <legend>말풍선 색상</legend>
             <p class="section-help">말풍선의 배경 색상과 글자 색상을 직접 지정합니다.</p>
@@ -208,11 +185,6 @@
           tabindex="0"
           hidden
         >
-          <header class="panel-heading">
-            <p class="eyebrow">PROVIDERS</p>
-            <h1>계정</h1>
-          </header>
-
           <section class="setting-section" aria-labelledby="provider-list-title">
             <div class="section-title-row">
               <h2 id="provider-list-title">연결된 계정</h2>
@@ -230,11 +202,6 @@
           tabindex="0"
           hidden
         >
-          <header class="panel-heading">
-            <p class="eyebrow">LIMITS</p>
-            <h1>사용량</h1>
-          </header>
-
           <section class="setting-section" aria-labelledby="usage-list-title">
             <div class="section-title-row">
               <h2 id="usage-list-title">계정별 한도</h2>

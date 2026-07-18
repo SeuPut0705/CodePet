@@ -380,7 +380,6 @@ function activateSection(button, { focus = false } = {}) {
     panel.classList.toggle("is-active", active);
     panel.hidden = !active;
   }
-  $("#section-label").textContent = button.dataset.label;
   if (focus) button.focus();
   $(".workspace").scrollTo({ top: 0, behavior: "smooth" });
 }
