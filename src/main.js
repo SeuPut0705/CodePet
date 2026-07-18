@@ -24,7 +24,7 @@ const {
   disableProxyInConfig,
   enableProxyInConfig,
 } = require("./codex-proxy");
-const { formatActivityTitle } = require("./activity-title");
+const { createActivityHeading: activityHeading } = require("./activity-title");
 const { formatActivityMessage } = require("./activity-message");
 const {
   ActivityBubbleState,
@@ -2570,9 +2570,10 @@ function registerCodexWatcher() {
         }
       : null;
 
+    const completionTitle = failed ? "작업 실패" : "작업 완료";
     const completionVisible = showWatcherActivityBubble({
       kind: "activity",
-      title: formatActivityTitle(failed ? "작업 실패" : "작업 완료", result),
+      ...activityHeading(completionTitle, result),
       busy: false,
       text: failed
         ? "작업 중 문제가 발생했어요."
@@ -2878,9 +2879,10 @@ function registerExternalWatcher(watcher, providerLabel) {
     activeActivityBubbles.remove(result.threadId);
     const failed = didTaskFail(result);
     playReaction(failed ? "failed" : "jumping");
+    const completionTitle = `${providerLabel} ${failed ? "작업 실패" : "작업 완료"}`;
     const visible = showWatcherActivityBubble({
       kind: "activity",
-      title: `${providerLabel} ${failed ? "작업 실패" : "작업 완료"}`,
+      ...activityHeading(completionTitle),
       busy: false,
       text: truncateForBubble(result.message) || (failed
         ? `${providerLabel} 작업 중 문제가 발생했어요.`

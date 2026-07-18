@@ -89,6 +89,16 @@ body {
   animation: pulse 1.2s ease-in-out infinite;
 }
 
+.status-icon {
+  flex: none;
+  font-family: "Apple Symbols", "Segoe UI Symbol", "Noto Sans Symbols 2", sans-serif;
+  font-variant-emoji: text;
+  font-size: 1.08em;
+  font-style: normal;
+  font-weight: 700;
+  line-height: 1;
+}
+
 @keyframes pulse {
   0%, 100% {
     opacity: 0.5;

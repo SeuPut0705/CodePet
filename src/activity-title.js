@@ -1,11 +1,51 @@
 "use strict";
 
-// 표시용 정보만 조합합니다. rollout의 원본 모델 식별자는 이 경로로 전달되지 않습니다.
-function formatActivityTitle(title, context = {}) {
+const STATUS_ICON_RULES = [
+  [/실패$/, "!"],
+  [/완료$/, "✓"],
+  [/(?:승인|입력) 대기$/, "…"],
+  [/응답 작성 중$/, "✦"],
+  [/파일 수정 중$/, "✎"],
+  [/(?:자료|파일) 확인 중$/, "⌕"],
+  [/요청 확인 중$/, "◎"],
+  [/이미지 생성 중$/, "◇"],
+  [/테스트 중$/, "⊙"],
+  [/빌드 중$/, "▣"],
+  [/명령 실행 중$/, "⌘"],
+  [/작업 중$/, "◌"],
+];
+
+function activityStatusIcon(title) {
+  const source = String(title || "");
+  return STATUS_ICON_RULES.find(([pattern]) => pattern.test(source))?.[1] || null;
+}
+
+function externalProviderLabel(title) {
+  const match = String(title || "").match(/^(AGY|Claude)\s/);
+  return match?.[1] || null;
+}
+
+function formatActivityTitleLabel(title, context = {}) {
   const parts = [title];
   if (context.workerLabel) parts.push(context.workerLabel);
   if (context.reasoningLabel) parts.push(context.reasoningLabel);
   return parts.join(" · ");
 }
 
-module.exports = { formatActivityTitle };
+// 아이콘은 renderer가 전용 글꼴로 그릴 수 있도록 제목 문자열과 분리합니다.
+// rollout의 원본 모델·추론 값은 이 경로로 전달되지 않습니다.
+function createActivityHeading(title, context = {}) {
+  const icon = activityStatusIcon(title);
+  const parts = icon ? [] : [title];
+  const providerLabel = icon ? externalProviderLabel(title) : null;
+  if (providerLabel) parts.push(providerLabel);
+  if (context.workerLabel) parts.push(context.workerLabel);
+  if (context.reasoningLabel) parts.push(context.reasoningLabel);
+  return {
+    statusIcon: icon,
+    title: parts.join(" · "),
+    titleLabel: formatActivityTitleLabel(title, context),
+  };
+}
+
+module.exports = { createActivityHeading, formatActivityTitleLabel };

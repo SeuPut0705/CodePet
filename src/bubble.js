@@ -34,14 +34,32 @@ window.bubbleApi.onAppearance((appearance) => {
   }
 });
 
-function createTitle(titleText, busy) {
+function appendStatusHeadingContent(element, titleText, statusIcon) {
+  if (statusIcon) {
+    const icon = document.createElement("span");
+    icon.className = "status-icon";
+    icon.setAttribute("aria-hidden", "true");
+    icon.textContent = `${statusIcon}\uFE0E`;
+    element.appendChild(icon);
+  }
+  if (titleText) {
+    element.appendChild(document.createTextNode(statusIcon ? ` · ${titleText}` : titleText));
+  }
+}
+
+function createTitle(titleText, busy, { titleLabel = null, statusIcon = null } = {}) {
   const title = document.createElement("div");
   title.className = "title";
+  title.setAttribute("role", "heading");
+  title.setAttribute("aria-level", "2");
+  if (titleLabel) title.setAttribute("aria-label", titleLabel);
 
-  const dot = document.createElement("span");
-  dot.className = busy ? "dot busy" : "dot";
-  title.appendChild(dot);
-  title.appendChild(document.createTextNode(titleText));
+  if (!statusIcon) {
+    const dot = document.createElement("span");
+    dot.className = busy ? "dot busy" : "dot";
+    title.appendChild(dot);
+  }
+  appendStatusHeadingContent(title, titleText, statusIcon);
 
   return title;
 }
@@ -124,7 +142,10 @@ function renderUsage(data) {
 }
 
 function appendActivityContent(container, data) {
-  container.appendChild(createTitle(data.title, Boolean(data.busy)));
+  container.appendChild(createTitle(data.title, Boolean(data.busy), {
+    titleLabel: data.titleLabel,
+    statusIcon: data.statusIcon,
+  }));
 
   const body = document.createElement("div");
   body.className = "body-text";
@@ -166,7 +187,10 @@ function renderActivity(data) {
     row.className = "activity-row";
     const label = document.createElement("div");
     label.className = "activity-row-label";
-    label.textContent = sectionData.title;
+    label.setAttribute("role", "heading");
+    label.setAttribute("aria-level", "3");
+    if (sectionData.titleLabel) label.setAttribute("aria-label", sectionData.titleLabel);
+    appendStatusHeadingContent(label, sectionData.title, sectionData.statusIcon);
     row.appendChild(label);
     const body = document.createElement("div");
     body.className = "body-text activity-section-body";

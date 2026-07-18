@@ -1,4 +1,4 @@
-const { formatActivityTitle } = require("./activity-title");
+const { createActivityHeading } = require("./activity-title");
 const { safeReasoningLabel, safeWorkerLabel } = require("./activity-labels");
 
 function updatedLabel(context, key, normalize, previous = null) {
@@ -91,14 +91,17 @@ class ActivityBubbleState {
 
     const activeTaskCount = entries.length;
     const visibleEntries = entries.slice(0, 5);
-    const sections = visibleEntries.map((entry) => ({
-      ...entry.data,
-      title: formatActivityTitle(entry.data.title, {
+    const sections = visibleEntries.map((entry) => {
+      const titleContext = {
         workerLabel: entry.workerLabel,
         reasoningLabel: entry.reasoningLabel,
-      }),
-      threadId: entry.threadId,
-    }));
+      };
+      return {
+        ...entry.data,
+        ...createActivityHeading(entry.data.title, titleContext),
+        threadId: entry.threadId,
+      };
+    });
 
     if (sections.length === 1) return sections[0];
     return {

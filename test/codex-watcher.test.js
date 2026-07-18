@@ -11,7 +11,7 @@ const {
   normalizeReasoningLabel,
   normalizeWorkerLabel,
 } = require("../src/codex-watcher");
-const { formatActivityTitle } = require("../src/activity-title");
+const { createActivityHeading, formatActivityTitleLabel } = require("../src/activity-title");
 
 const THREAD_ID = "019f4a30-b0a7-73f1-8080-2ba11b4e5d25";
 const ROLLOUT_PATH = path.join(
@@ -287,14 +287,54 @@ test("두 번째 작업 시작은 즉시 활성 수 변경 문맥을 발행한�
 });
 
 test("활동 제목은 상태를 먼저 쓰고 모델을 뒤에 표시한다", () => {
-  assert.equal(
-    formatActivityTitle("작업 중", { workerLabel: "Terra", reasoningLabel: "High" }),
-    "작업 중 · Terra · High"
+  assert.deepEqual(
+    createActivityHeading("작업 중", { workerLabel: "Terra", reasoningLabel: "High" }),
+    { statusIcon: "◌", title: "Terra · High", titleLabel: "작업 중 · Terra · High" }
   );
-  assert.equal(formatActivityTitle("작업 중", { activeTaskCount: 3 }), "작업 중");
-  assert.equal(formatActivityTitle("작업 중", { workerLabel: "Terra", activeTaskCount: 3 }), "작업 중 · Terra");
-  assert.equal(formatActivityTitle("작업 중", { workerLabel: "Terra", activeTaskCount: 0 }), "작업 중 · Terra");
-  assert.equal(formatActivityTitle("작업 중", { activeTaskCount: 1 }), "작업 중");
+  assert.deepEqual(createActivityHeading("작업 중"), {
+    statusIcon: "◌",
+    title: "",
+    titleLabel: "작업 중",
+  });
+});
+
+test("모든 활동 상태를 구분 가능한 단색 아이콘으로 표시한다", () => {
+  const cases = [
+    ["요청 확인 중", "◎"],
+    ["응답 작성 중", "✦"],
+    ["파일 수정 중", "✎"],
+    ["자료 확인 중", "⌕"],
+    ["파일 확인 중", "⌕"],
+    ["이미지 생성 중", "◇"],
+    ["테스트 중", "⊙"],
+    ["빌드 중", "▣"],
+    ["명령 실행 중", "⌘"],
+    ["승인 대기", "…"],
+    ["입력 대기", "…"],
+    ["작업 완료", "✓"],
+    ["작업 실패", "!"],
+  ];
+
+  for (const [title, icon] of cases) {
+    assert.deepEqual(createActivityHeading(title, { workerLabel: "Sol" }), {
+      statusIcon: icon,
+      title: "Sol",
+      titleLabel: `${title} · Sol`,
+    });
+  }
+  assert.deepEqual(createActivityHeading("Claude 응답 작성 중"), {
+    statusIcon: "✦",
+    title: "Claude",
+    titleLabel: "Claude 응답 작성 중",
+  });
+});
+
+test("아이콘 제목의 접근성 이름에는 기존 상태 문구를 보존한다", () => {
+  assert.equal(
+    formatActivityTitleLabel("응답 작성 중", { workerLabel: "Sol", reasoningLabel: "High" }),
+    "응답 작성 중 · Sol · High"
+  );
+  assert.equal(formatActivityTitleLabel("Claude 명령 실행 중"), "Claude 명령 실행 중");
 });
 
 test("runtime task_started의 구조화 timestamp를 작업 문맥에 전달한다", () => {
