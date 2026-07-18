@@ -29,6 +29,38 @@ test("활동 아이콘은 SVG 모듈과 접근성 제목으로 렌더링한다",
   assert.match(bubbleCss, /prefers-reduced-motion:\s*reduce/);
 });
 
+test("양의 안전한 정수인 서브에이전트 수만 제목 옆 DOM 배지로 렌더링한다", () => {
+  const badgeRenderer = bubbleJs.match(
+    /function appendSubagentBadge\(element, count\)[\s\S]*?\n}/
+  )?.[0] || "";
+
+  assert.match(badgeRenderer, /Number\.isSafeInteger\(count\)/);
+  assert.match(badgeRenderer, /count <= 0/);
+  assert.match(badgeRenderer, /document\.createElement\("span"\)/);
+  assert.match(badgeRenderer, /badge\.className = "subagent-badge"/);
+  assert.match(badgeRenderer, /createActivityIcon\(document, "agents"\)/);
+  assert.match(badgeRenderer, /value\.className = "subagent-count"/);
+  assert.match(badgeRenderer, /value\.textContent = `×\$\{count\}`/);
+  assert.doesNotMatch(bubbleJs, /\.innerHTML\s*=/);
+
+  assert.match(bubbleJs, /appendSubagentBadge\(title, subagentCount\)/);
+  assert.match(bubbleJs, /subagentCount:\s*data\.subagentCount/);
+  assert.match(bubbleJs, /appendSubagentBadge\(label, sectionData\.subagentCount\)/);
+});
+
+test("서브에이전트 배지는 좁은 말풍선용 고정 크기이며 애니메이션하지 않는다", () => {
+  const badgeRule = bubbleCss.match(/\.subagent-badge\s*\{[^}]*}/s)?.[0] || "";
+  const iconRule = bubbleCss.match(/\.subagent-badge \.status-icon\s*\{[^}]*}/s)?.[0] || "";
+
+  assert.match(badgeRule, /display:\s*inline-flex/);
+  assert.match(badgeRule, /flex:\s*none/);
+  assert.match(badgeRule, /font-size:\s*10px/);
+  assert.match(badgeRule, /font-variant-numeric:\s*tabular-nums/);
+  assert.match(iconRule, /width:\s*13px/);
+  assert.match(iconRule, /height:\s*13px/);
+  assert.match(iconRule, /animation:\s*none/);
+});
+
 test("Codex 활동은 사이드바 작업 제목을 비동기로 보강한다", () => {
   const resolverSetup = mainJs.match(/const codexThreadTitles = new CodexThreadTitleResolver\([\s\S]*?\n}\);/)?.[0] || "";
   const hydrateTitle = mainJs.match(/function hydrateCodexThreadTitle[\s\S]*?\n}/)?.[0] || "";

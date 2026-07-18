@@ -104,6 +104,24 @@ body {
   transform-origin: center;
 }
 
+.subagent-badge {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 2px;
+  margin-left: 2px;
+  color: color-mix(in srgb, var(--bubble-ink) 72%, transparent);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.subagent-badge .status-icon {
+  width: 13px;
+  height: 13px;
+  color: currentColor;
+  animation: none;
+}
+
 .status-icon[data-status="working"],
 .status-icon[data-status="writing"],
 .status-icon[data-status="edit"] {

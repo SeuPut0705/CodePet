@@ -65,6 +65,16 @@ test("모든 활동 상태를 16px용 SVG 아이콘으로 만든다", () => {
   }
 });
 
+test("서브에이전트 배지용 16px SVG를 만든다", () => {
+  const icon = createActivityIcon(fakeDocument, "agents");
+
+  assert.equal(icon.tagName, "svg");
+  assert.equal(icon.attributes["aria-hidden"], "true");
+  assert.equal(icon.attributes.focusable, "false");
+  assert.equal(icon.dataset.status, "agents");
+  assert.ok(icon.children.length >= 2);
+});
+
 test("허용되지 않은 상태는 SVG를 만들지 않는다", () => {
   assert.equal(createActivityIcon(fakeDocument, "<script>alert(1)</script>"), null);
   assert.equal(createActivityIcon(fakeDocument, "__proto__"), null);

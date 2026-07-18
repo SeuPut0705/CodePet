@@ -47,7 +47,26 @@ function appendStatusHeadingContent(element, titleText, statusIcon) {
   return Boolean(icon);
 }
 
-function createTitle(titleText, busy, { titleLabel = null, statusIcon = null } = {}) {
+function appendSubagentBadge(element, count) {
+  if (!Number.isSafeInteger(count) || count <= 0) return;
+
+  const badge = document.createElement("span");
+  badge.className = "subagent-badge";
+  const icon = window.activityIcons.createActivityIcon(document, "agents");
+  if (icon) badge.appendChild(icon);
+
+  const value = document.createElement("span");
+  value.className = "subagent-count";
+  value.textContent = `×${count}`;
+  badge.appendChild(value);
+  element.appendChild(badge);
+}
+
+function createTitle(
+  titleText,
+  busy,
+  { titleLabel = null, statusIcon = null, subagentCount = 0 } = {}
+) {
   const title = document.createElement("div");
   title.className = "title";
   title.setAttribute("role", "heading");
@@ -55,6 +74,7 @@ function createTitle(titleText, busy, { titleLabel = null, statusIcon = null } =
   if (titleLabel) title.setAttribute("aria-label", titleLabel);
 
   const hasStatusIcon = appendStatusHeadingContent(title, titleText, statusIcon);
+  appendSubagentBadge(title, subagentCount);
   if (!hasStatusIcon) {
     const dot = document.createElement("span");
     dot.className = busy ? "dot busy" : "dot";
@@ -145,6 +165,7 @@ function appendActivityContent(container, data) {
   container.appendChild(createTitle(data.title, Boolean(data.busy), {
     titleLabel: data.titleLabel,
     statusIcon: data.statusIcon,
+    subagentCount: data.subagentCount,
   }));
 
   const body = document.createElement("div");
@@ -191,6 +212,7 @@ function renderActivity(data) {
     label.setAttribute("aria-level", "3");
     if (sectionData.titleLabel) label.setAttribute("aria-label", sectionData.titleLabel);
     appendStatusHeadingContent(label, sectionData.title, sectionData.statusIcon);
+    appendSubagentBadge(label, sectionData.subagentCount);
     row.appendChild(label);
     const body = document.createElement("div");
     body.className = "body-text activity-section-body";
