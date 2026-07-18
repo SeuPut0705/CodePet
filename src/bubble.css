@@ -104,6 +104,14 @@ body {
   transform-origin: center;
 }
 
+.activity-title-text {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .subagent-badge {
   display: inline-flex;
   flex: none;

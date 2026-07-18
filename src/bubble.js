@@ -42,7 +42,10 @@ function appendStatusHeadingContent(element, titleText, statusIcon) {
     element.appendChild(icon);
   }
   if (titleText) {
-    element.appendChild(document.createTextNode(titleText));
+    const title = document.createElement("span");
+    title.className = "activity-title-text";
+    title.textContent = titleText;
+    element.appendChild(title);
   }
   return Boolean(icon);
 }

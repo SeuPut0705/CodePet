@@ -2,6 +2,9 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
+const vm = require("node:vm");
+
+const activityIcons = require("../src/activity-icons");
 
 function source(relativePath) {
   return fs.readFileSync(path.join(__dirname, "..", relativePath), "utf8");
@@ -14,6 +17,102 @@ const bubbleCss = source("src/bubble.css");
 const bubbleJs = source("src/bubble.js");
 const bubbleHtml = source("src/bubble.html");
 const mainJs = source("src/main.js");
+
+class FakeRendererElement {
+  constructor(tagName, namespace = null) {
+    this.tagName = tagName;
+    this.namespace = namespace;
+    this.attributes = {};
+    this.children = [];
+    this.className = "";
+    this.dataset = {};
+    this.style = {
+      setProperty() {},
+      removeProperty() {},
+    };
+    this.offsetHeight = 100;
+    this.classList = {
+      add: (...tokens) => this.updateClassList(tokens, true),
+      toggle: (token, force) => this.updateClassList([token], Boolean(force)),
+    };
+  }
+
+  updateClassList(tokens, enabled) {
+    const classes = new Set(this.className.split(/\s+/).filter(Boolean));
+    for (const token of tokens) {
+      if (enabled) classes.add(token);
+      else classes.delete(token);
+    }
+    this.className = [...classes].join(" ");
+  }
+
+  setAttribute(name, value) {
+    this.attributes[name] = String(value);
+    if (name === "class") this.className = String(value);
+  }
+
+  appendChild(child) {
+    this.children.push(child);
+    return child;
+  }
+
+  append(...children) {
+    this.children.push(...children);
+  }
+
+  prepend(child) {
+    this.children.unshift(child);
+  }
+
+  replaceChildren(...children) {
+    this.children = [...children];
+  }
+
+  addEventListener() {}
+}
+
+function renderBubble(data) {
+  const bubble = new FakeRendererElement("div");
+  const root = new FakeRendererElement("div");
+  const documentRef = {
+    documentElement: new FakeRendererElement("html"),
+    querySelector(selector) {
+      if (selector === "#bubble") return bubble;
+      if (selector === "#root") return root;
+      return null;
+    },
+    createElement(tagName) {
+      return new FakeRendererElement(tagName);
+    },
+    createElementNS(namespace, tagName) {
+      return new FakeRendererElement(tagName, namespace);
+    },
+    createTextNode(textContent) {
+      return { nodeType: 3, textContent };
+    },
+  };
+  let updateHandler = null;
+  const windowRef = {
+    activityIcons,
+    bubbleApi: {
+      onAppearance() {},
+      onUpdate(handler) {
+        updateHandler = handler;
+      },
+      reportHeight() {},
+      sendAction() {},
+      dismiss() {},
+    },
+  };
+
+  vm.runInNewContext(bubbleJs, { document: documentRef, window: windowRef });
+  updateHandler(data);
+  return bubble;
+}
+
+function childWithClass(element, className) {
+  return element.children.find((child) => child.className === className) || null;
+}
 
 test("외부 provider 완료 메시지도 공통 말풍선 정리와 길이 제한을 거친다", () => {
   assert.match(mainJs, /text: truncateForBubble\(result\.message\)/);
@@ -48,9 +147,66 @@ test("양의 안전한 정수인 서브에이전트 수만 제목 옆 DOM 배지
   assert.match(bubbleJs, /appendSubagentBadge\(label, sectionData\.subagentCount\)/);
 });
 
+test("단일·다중 활동 제목을 축소 가능한 span으로 감싸고 배지를 끝에 고정한다", () => {
+  const singleBubble = renderBubble({
+    kind: "activity",
+    title: "아주 긴 단일 작업 제목",
+    titleLabel: "접근성 단일 제목",
+    statusIcon: "working",
+    subagentCount: 2,
+    text: "",
+  });
+  const singleTitle = singleBubble.children[0];
+
+  assert.equal(singleTitle.attributes["aria-label"], "접근성 단일 제목");
+  assert.deepEqual(
+    singleTitle.children.map((child) => child.className),
+    ["status-icon", "activity-title-text", "subagent-badge"]
+  );
+  assert.equal(singleTitle.children[1].textContent, "아주 긴 단일 작업 제목");
+  assert.equal(childWithClass(singleTitle.children[2], "subagent-count").textContent, "×2");
+
+  const multiBubble = renderBubble({
+    kind: "activity",
+    title: "활동",
+    sections: [{
+      title: "아주 긴 다중 작업 제목",
+      titleLabel: "접근성 다중 제목",
+      statusIcon: "review",
+      subagentCount: 3,
+      text: "",
+    }],
+  });
+  const sectionLabel = multiBubble.children[1].children[0].children[0];
+
+  assert.equal(sectionLabel.attributes["aria-label"], "접근성 다중 제목");
+  assert.deepEqual(
+    sectionLabel.children.map((child) => child.className),
+    ["status-icon", "activity-title-text", "subagent-badge"]
+  );
+  assert.equal(sectionLabel.children[1].textContent, "아주 긴 다중 작업 제목");
+  assert.equal(childWithClass(sectionLabel.children[2], "subagent-count").textContent, "×3");
+});
+
+test("0 또는 잘못된 서브에이전트 수는 실제 제목 DOM에 배지를 만들지 않는다", () => {
+  for (const subagentCount of [0, -1, 1.5, Number.MAX_SAFE_INTEGER + 1, "2", null]) {
+    const bubble = renderBubble({
+      kind: "activity",
+      title: "작업 제목",
+      statusIcon: "working",
+      subagentCount,
+      text: "",
+    });
+    const title = bubble.children[0];
+
+    assert.equal(childWithClass(title, "subagent-badge"), null);
+  }
+});
+
 test("서브에이전트 배지는 좁은 말풍선용 고정 크기이며 애니메이션하지 않는다", () => {
   const badgeRule = bubbleCss.match(/\.subagent-badge\s*\{[^}]*}/s)?.[0] || "";
   const iconRule = bubbleCss.match(/\.subagent-badge \.status-icon\s*\{[^}]*}/s)?.[0] || "";
+  const titleTextRule = bubbleCss.match(/\.activity-title-text\s*\{[^}]*}/s)?.[0] || "";
 
   assert.match(badgeRule, /display:\s*inline-flex/);
   assert.match(badgeRule, /flex:\s*none/);
@@ -59,6 +215,11 @@ test("서브에이전트 배지는 좁은 말풍선용 고정 크기이며 애�
   assert.match(iconRule, /width:\s*13px/);
   assert.match(iconRule, /height:\s*13px/);
   assert.match(iconRule, /animation:\s*none/);
+  assert.match(titleTextRule, /flex:\s*1/);
+  assert.match(titleTextRule, /min-width:\s*0/);
+  assert.match(titleTextRule, /overflow:\s*hidden/);
+  assert.match(titleTextRule, /text-overflow:\s*ellipsis/);
+  assert.match(titleTextRule, /white-space:\s*nowrap/);
 });
 
 test("Codex 활동은 사이드바 작업 제목을 비동기로 보강한다", () => {
