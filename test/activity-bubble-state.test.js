@@ -176,7 +176,7 @@ test("잘못된 작업 ID에는 선행 서브에이전트 수를 보류하지 �
     assert.equal(state.refresh(threadId, { subagentCount: 3 }), false);
   }
 
-  assert.equal(state.pendingSubagentCounts.size, 0);
+  assert.equal(state.subagentCounts.size, 0);
 });
 
 test("section 전의 0개 서브에이전트 수는 보류한 양의 수를 지운다", () => {
@@ -189,13 +189,22 @@ test("section 전의 0개 서브에이전트 수는 보류한 양의 수를 지�
   assert.equal(state.toBubbleData().subagentCount, 0);
 });
 
-test("제거하거나 모두 비우면 보류한 서브에이전트 수를 다음 작업에 재사용하지 않는다", () => {
+test("활동을 제거 후 재생성해도 살아 있는 서브에이전트 수를 유지한다", () => {
   const state = new ActivityBubbleState();
 
-  state.refresh(THREADS[0], { subagentCount: 3 });
-  assert.equal(state.remove(THREADS[0]), false);
+  state.upsert(THREADS[0], activity("작업 중", "a", "status"), { subagentCount: 3 });
+  assert.equal(state.remove(THREADS[0]), true);
   state.upsert(THREADS[0], activity("새 작업", "a", "status"));
+  assert.equal(state.toBubbleData().subagentCount, 3);
+
+  state.remove(THREADS[0]);
+  state.refresh(THREADS[0], { subagentCount: 0 });
+  state.upsert(THREADS[0], activity("개수 종료 후 작업", "a", "status"));
   assert.equal(state.toBubbleData().subagentCount, 0);
+});
+
+test("모두 비우면 보류한 서브에이전트 수를 다음 작업에 재사용하지 않는다", () => {
+  const state = new ActivityBubbleState();
 
   state.refresh(THREADS[1], { subagentCount: 4 });
   state.clear();

@@ -32,6 +32,8 @@ const WATCHER_CONFIG = Object.freeze({
   // 서브에이전트가 많아도 사용자 rollout quota를 차지하지 않도록 별도로 제한합니다.
   subagentTailFiles: 40,
   rolloutMetadataLimit: 512,
+  // session_meta 분류는 작고 불변이므로 활성 그래프와 분리해 넉넉한 상한으로 재사용합니다.
+  rolloutClassificationLimit: 16_384,
   // 작업 중 표시가 이 시간 동안 아무 이벤트 없이 유지되면 Codex가 죽었다고 보고 해제합니다.
   // 정상 작업 중에는 token_count가 주기적으로 기록되므로 이 시간을 넘길 일이 없습니다.
   staleWorkingMs: 5 * 60 * 1000,
@@ -634,6 +636,8 @@ class CodexWatcher extends EventEmitter {
     this.taskStartedAtByFile = new Map();
     // session_meta의 thread 관계를 파일별로 캐시하고 활성 자손을 최상위 사용자 thread에 합산합니다.
     this.rolloutMetadata = new Map();
+    // tail/graph 대상에서 밀려난 파일도 매 poll마다 다시 열지 않도록 분류만 별도로 보존합니다.
+    this.rolloutClassifications = new Map();
     this.subagents = new SubagentActivityTracker({
       maxThreads: WATCHER_CONFIG.rolloutMetadataLimit,
     });
@@ -690,12 +694,19 @@ class CodexWatcher extends EventEmitter {
     }
 
     files.sort((a, b) => b.mtimeMs - a.mtimeMs);
+    const filesByThreadId = new Map();
+    const filesByPath = new Map();
+    for (const file of files) {
+      filesByPath.set(file.filePath, file);
+      const threadId = extractThreadIdFromRolloutPath(file.filePath);
+      if (threadId && !filesByThreadId.has(threadId)) filesByThreadId.set(threadId, file);
+    }
     const userFiles = [];
     const subagentFiles = [];
     for (const file of files) {
       // quota 분류 중에는 metadata를 cache/tracker에 등록하지 않습니다.
       // 선택되지 않을 오래된 rollout이 최신 선택 항목을 축출하면 subagent를 user로 오분류할 수 있습니다.
-      const metadata = this.rolloutMetadata.get(file.filePath) || readRolloutMetadata(file.filePath);
+      const metadata = this.classificationForRollout(file.filePath);
       if (!metadata) continue;
       if (metadata.threadSource === "user" && userFiles.length < limit) {
         userFiles.push({ file, metadata });
@@ -713,13 +724,98 @@ class CodexWatcher extends EventEmitter {
       }
     }
 
-    const selected = [...userFiles, ...subagentFiles].sort(
-      (a, b) => b.file.mtimeMs - a.file.mtimeMs
-    );
-    for (const { file, metadata } of selected) {
+    // 최근 discovery quota 밖으로 밀려도 이미 활성으로 확인한 파일은 완료/stale까지 계속 tail합니다.
+    // 첫 poll에서는 stale 시간 안의 추가 subagent만 역방향 검사해 동시 활성 수가 40을 넘어도 복원합니다.
+    const subagentCandidates = [];
+    const candidatePaths = new Set();
+    const addSubagentCandidate = (file, metadata) => {
+      if (
+        !file ||
+        metadata?.threadSource !== "subagent" ||
+        candidatePaths.has(file.filePath)
+      ) {
+        return;
+      }
+      subagentCandidates.push({ file, metadata });
+      candidatePaths.add(file.filePath);
+    };
+
+    // steady poll에서는 이미 활성인 작업이 최신 완료 로그에 밀려 사라지지 않게 먼저 자리 잡습니다.
+    if (!this.firstPoll) {
+      const activeFiles = [...this.activeSubagentFiles]
+        .map((filePath) => filesByPath.get(filePath))
+        .filter(Boolean)
+        .sort((a, b) => b.mtimeMs - a.mtimeMs);
+      for (const file of activeFiles) {
+        addSubagentCandidate(file, this.classificationForRollout(file.filePath));
+      }
+    }
+    for (const { file, metadata } of subagentFiles) {
+      addSubagentCandidate(file, metadata);
+    }
+    if (this.firstPoll) {
+      const now = Date.now();
+      for (const file of files) {
+        if (now - file.mtimeMs >= WATCHER_CONFIG.staleWorkingMs) break;
+        if (candidatePaths.has(file.filePath)) continue;
+        const metadata = this.classificationForRollout(file.filePath);
+        if (
+          metadata?.threadSource === "subagent" &&
+          detectSubagentWorkingFromFile(file.filePath)
+        ) {
+          addSubagentCandidate(file, metadata);
+        }
+      }
+    }
+
+    const selectedByPath = new Map();
+    const metadataToRegister = new Map();
+    const metadataChain = (file, metadata) => {
+      const chain = [];
+      const visited = new Set();
+      let currentFile = file;
+      let currentMetadata = metadata;
+      while (currentFile && currentMetadata?.threadId && !visited.has(currentMetadata.threadId)) {
+        visited.add(currentMetadata.threadId);
+        chain.push({ file: currentFile, metadata: currentMetadata });
+        if (currentMetadata.threadSource === "user" || !currentMetadata.parentThreadId) break;
+        currentFile = filesByThreadId.get(currentMetadata.parentThreadId) || null;
+        currentMetadata = currentFile
+          ? this.classificationForRollout(currentFile.filePath)
+          : null;
+      }
+      return chain.reverse();
+    };
+    const selectWithinMetadataCapacity = (file, metadata) => {
+      const chain = metadataChain(file, metadata);
+      const additionalEntries = chain.filter(
+        (entry) => !metadataToRegister.has(entry.file.filePath)
+      );
+      if (
+        metadataToRegister.size + additionalEntries.length >
+        WATCHER_CONFIG.rolloutMetadataLimit
+      ) {
+        return false;
+      }
+      for (const entry of chain) metadataToRegister.set(entry.file.filePath, entry);
+      selectedByPath.set(file.filePath, { file, metadata });
+      return true;
+    };
+
+    // 사용자 root와 각 subagent의 전체 조상 chain이 함께 들어갈 때만 tail 대상으로 승인합니다.
+    // 이 경계를 넘긴 내부 파일은 선택하지 않아 사용자 메시지로 잘못 노출될 가능성을 차단합니다.
+    for (const { file, metadata } of userFiles) {
+      selectWithinMetadataCapacity(file, metadata);
+    }
+    for (const { file, metadata } of subagentCandidates) {
+      selectWithinMetadataCapacity(file, metadata);
+    }
+    for (const { file, metadata } of metadataToRegister.values()) {
       this.registerRolloutMetadata(file.filePath, metadata);
     }
-    return selected.map(({ file }) => file);
+    return [...selectedByPath.values()]
+      .sort((a, b) => b.file.mtimeMs - a.file.mtimeMs)
+      .map(({ file }) => file);
   }
 
   isUserFacingRollout(filePath) {
@@ -728,8 +824,21 @@ class CodexWatcher extends EventEmitter {
 
   metadataForRollout(filePath) {
     if (this.rolloutMetadata.has(filePath)) return this.rolloutMetadata.get(filePath);
-    const metadata = readRolloutMetadata(filePath);
+    const metadata = this.classificationForRollout(filePath);
     return this.registerRolloutMetadata(filePath, metadata) ? metadata : null;
+  }
+
+  classificationForRollout(filePath) {
+    if (this.rolloutClassifications.has(filePath)) {
+      return this.rolloutClassifications.get(filePath);
+    }
+    const metadata = readRolloutMetadata(filePath);
+    if (!metadata?.threadId) return null;
+    this.rolloutClassifications.set(filePath, metadata);
+    while (this.rolloutClassifications.size > WATCHER_CONFIG.rolloutClassificationLimit) {
+      this.rolloutClassifications.delete(this.rolloutClassifications.keys().next().value);
+    }
+    return metadata;
   }
 
   registerRolloutMetadata(filePath, metadata) {
@@ -741,7 +850,20 @@ class CodexWatcher extends EventEmitter {
       return false;
     }
 
+    this.rolloutClassifications.set(filePath, metadata);
+
     const previous = this.rolloutMetadata.get(filePath);
+    const unchanged =
+      previous?.threadId === metadata.threadId &&
+      previous.threadSource === metadata.threadSource &&
+      (previous.parentThreadId || null) === (metadata.parentThreadId || null);
+    if (unchanged) {
+      // 관계가 같으면 tracker를 삭제·재등록하거나 전체 root count를 다시 계산할 필요가 없습니다.
+      // Map 순서만 갱신해 현재 tail 대상이 metadata LRU에서 밀리지 않게 합니다.
+      this.rolloutMetadata.delete(filePath);
+      this.rolloutMetadata.set(filePath, previous);
+      return true;
+    }
     const preserveActive =
       previous?.threadId === metadata.threadId &&
       metadata.threadSource === "subagent" &&

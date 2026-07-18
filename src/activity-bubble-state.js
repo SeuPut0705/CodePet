@@ -11,9 +11,12 @@ function safeSubagentCount(value) {
   return Number.isSafeInteger(count) && count > 0 ? count : 0;
 }
 
-function updatedSubagentCount(context, previous = 0) {
-  if (!Object.hasOwn(context, "subagentCount")) return previous;
-  return safeSubagentCount(context.subagentCount);
+function updateSubagentCountCache(cache, threadId, context) {
+  if (!Object.hasOwn(context, "subagentCount")) return cache.get(threadId);
+  const subagentCount = safeSubagentCount(context.subagentCount);
+  if (subagentCount > 0) cache.set(threadId, subagentCount);
+  else cache.delete(threadId);
+  return subagentCount;
 }
 
 // Watcher 활동을 rollout thread 단위로 보관합니다. 화면은 이 상태의 스냅샷만 렌더링하므로
@@ -21,7 +24,8 @@ function updatedSubagentCount(context, previous = 0) {
 class ActivityBubbleState {
   constructor() {
     this.activities = new Map();
-    this.pendingSubagentCounts = new Map();
+    // watcher는 개수가 실제로 바뀔 때만 이벤트를 보내므로 화면 section보다 오래 유지합니다.
+    this.subagentCounts = new Map();
     this.sequence = 0;
   }
 
@@ -29,8 +33,11 @@ class ActivityBubbleState {
     if (!threadId || !data) return false;
 
     const existing = this.activities.get(threadId);
-    const pendingSubagentCount = this.pendingSubagentCounts.get(threadId);
-    this.pendingSubagentCounts.delete(threadId);
+    const trackedSubagentCount = updateSubagentCountCache(
+      this.subagentCounts,
+      threadId,
+      context
+    );
     const firstSeen = existing?.firstSeen || ++this.sequence;
     const startedAt = existing?.startedAt ?? normalizeStartedAt(context.taskStartedAt);
     this.activities.set(threadId, {
@@ -49,9 +56,7 @@ class ActivityBubbleState {
         safeReasoningLabel,
         existing?.reasoningLabel
       ),
-      subagentCount: Object.hasOwn(context, "subagentCount")
-        ? safeSubagentCount(context.subagentCount)
-        : pendingSubagentCount ?? existing?.subagentCount ?? 0,
+      subagentCount: trackedSubagentCount ?? existing?.subagentCount ?? 0,
       startedAt,
       firstSeen,
     });
@@ -59,7 +64,6 @@ class ActivityBubbleState {
   }
 
   remove(threadId) {
-    this.pendingSubagentCounts.delete(threadId);
     return this.activities.delete(threadId);
   }
 
@@ -67,15 +71,13 @@ class ActivityBubbleState {
   refresh(threadId, context = {}) {
     if (typeof threadId !== "string" || !threadId) return false;
 
+    const trackedSubagentCount = updateSubagentCountCache(
+      this.subagentCounts,
+      threadId,
+      context
+    );
     const existing = this.activities.get(threadId);
-    if (!existing) {
-      if (Object.hasOwn(context, "subagentCount")) {
-        const subagentCount = safeSubagentCount(context.subagentCount);
-        if (subagentCount > 0) this.pendingSubagentCounts.set(threadId, subagentCount);
-        else this.pendingSubagentCounts.delete(threadId);
-      }
-      return false;
-    }
+    if (!existing) return false;
 
     existing.sectionLabel = updatedLabel(
       context,
@@ -95,14 +97,16 @@ class ActivityBubbleState {
       safeReasoningLabel,
       existing.reasoningLabel
     );
-    existing.subagentCount = updatedSubagentCount(context, existing.subagentCount);
+    if (Object.hasOwn(context, "subagentCount")) {
+      existing.subagentCount = trackedSubagentCount;
+    }
     existing.startedAt ??= normalizeStartedAt(context.taskStartedAt);
     return true;
   }
 
   clear() {
     this.activities.clear();
-    this.pendingSubagentCounts.clear();
+    this.subagentCounts.clear();
   }
 
   get size() {

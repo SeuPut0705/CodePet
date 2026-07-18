@@ -19,6 +19,26 @@ const ROLLOUT_PATH = path.join(
   `rollout-2026-07-10T13-02-17-${THREAD_ID}.jsonl`
 );
 
+function writeTestRollout(dayDir, { threadId, threadSource, parentThreadId = null, events = [], mtimeMs }) {
+  const filePath = path.join(dayDir, `rollout-test-${threadId}.jsonl`);
+  const entries = [
+    {
+      type: "session_meta",
+      payload: {
+        id: threadId,
+        thread_source: threadSource,
+        parent_thread_id: parentThreadId,
+      },
+    },
+    ...events.map((type) => ({ type: "event_msg", payload: { type } })),
+  ];
+  fs.writeFileSync(filePath, `${entries.map((entry) => JSON.stringify(entry)).join("\n")}\n`, "utf8");
+  if (mtimeMs !== undefined) {
+    fs.utimesSync(filePath, new Date(mtimeMs), new Date(mtimeMs));
+  }
+  return filePath;
+}
+
 test("rollout 파일명에서 Codex thread id를 추출한다", () => {
   assert.equal(extractThreadIdFromRolloutPath(ROLLOUT_PATH), THREAD_ID);
   assert.equal(extractThreadIdFromRolloutPath("rollout-without-thread.jsonl"), null);
@@ -68,7 +88,200 @@ test("사용자와 서브에이전트 rollout quota를 분리한다", (t) => {
   assert.equal(recentPaths.filter((filePath) => subagentPaths.includes(filePath)).length, 40);
 });
 
-test("metadata cache 한도를 넘는 서브에이전트도 최신 40개만 내부 작업으로 복원한다", (t) => {
+test("quota 밖 중간 부모 metadata를 따라 활성 손자를 최상위 작업에 복원한다", (t) => {
+  const codexHome = fs.mkdtempSync(path.join(os.tmpdir(), "codepet-subagent-ancestry-"));
+  t.after(() => fs.rmSync(codexHome, { recursive: true, force: true }));
+  const dayDir = path.join(codexHome, "sessions", "2026", "07", "18");
+  fs.mkdirSync(dayDir, { recursive: true });
+  const now = Date.now();
+  const rootId = "019f4a60-b0a7-73f1-8080-2ba11b4e5d25";
+  const parentId = "019f4a61-1111-7222-8333-444444444444";
+  const childId = "019f4a62-1111-7222-8333-444444444444";
+
+  writeTestRollout(dayDir, {
+    threadId: rootId,
+    threadSource: "user",
+    events: ["task_started"],
+    mtimeMs: now - 1_000,
+  });
+  writeTestRollout(dayDir, {
+    threadId: parentId,
+    threadSource: "subagent",
+    parentThreadId: rootId,
+    events: ["task_started", "task_complete"],
+    mtimeMs: now - 100_000,
+  });
+  for (let index = 0; index < 40; index += 1) {
+    writeTestRollout(dayDir, {
+      threadId: `019f4a63-1111-7222-8333-${String(index).padStart(12, "0")}`,
+      threadSource: "subagent",
+      parentThreadId: rootId,
+      events: ["task_started", "task_complete"],
+      mtimeMs: now - 50_000 + index,
+    });
+  }
+  writeTestRollout(dayDir, {
+    threadId: childId,
+    threadSource: "subagent",
+    parentThreadId: parentId,
+    events: ["task_started"],
+    mtimeMs: now,
+  });
+
+  const watcher = new CodexWatcher({ getCodexHomes: () => [codexHome] });
+  const counts = [];
+  watcher.on("subagent-count-changed", (value) => counts.push(value));
+  watcher.poll();
+
+  assert.equal(
+    [...watcher.rolloutMetadata.values()].some((metadata) => metadata.threadId === parentId),
+    true
+  );
+  assert.deepEqual(counts.at(-1), { threadId: rootId, subagentCount: 1 });
+});
+
+test("변하지 않은 rollout 분류 metadata는 다음 poll에서 다시 열지 않는다", (t) => {
+  const codexHome = fs.mkdtempSync(path.join(os.tmpdir(), "codepet-metadata-cache-"));
+  t.after(() => fs.rmSync(codexHome, { recursive: true, force: true }));
+  const dayDir = path.join(codexHome, "sessions", "2026", "07", "18");
+  fs.mkdirSync(dayDir, { recursive: true });
+
+  for (let index = 0; index < 80; index += 1) {
+    writeTestRollout(dayDir, {
+      threadId: `019f4a64-1111-7222-8333-${String(index).padStart(12, "0")}`,
+      threadSource: "user",
+      mtimeMs: 1_000 + index,
+    });
+  }
+
+  const watcher = new CodexWatcher({ getCodexHomes: () => [codexHome] });
+  const originalOpenSync = fs.openSync;
+  let metadataOpenCount = 0;
+  fs.openSync = (...args) => {
+    metadataOpenCount += 1;
+    return originalOpenSync(...args);
+  };
+  t.after(() => {
+    fs.openSync = originalOpenSync;
+  });
+
+  watcher.listRecentRolloutFiles(10);
+  metadataOpenCount = 0;
+  watcher.listRecentRolloutFiles(10);
+
+  assert.equal(metadataOpenCount, 0);
+});
+
+test("변하지 않은 rollout 관계는 다음 poll에서 다시 집계하지 않는다", (t) => {
+  const codexHome = fs.mkdtempSync(path.join(os.tmpdir(), "codepet-graph-cache-"));
+  t.after(() => fs.rmSync(codexHome, { recursive: true, force: true }));
+  const dayDir = path.join(codexHome, "sessions", "2026", "07", "18");
+  fs.mkdirSync(dayDir, { recursive: true });
+  const rootId = "019f4a6a-b0a7-73f1-8080-2ba11b4e5d25";
+  writeTestRollout(dayDir, {
+    threadId: rootId,
+    threadSource: "user",
+    mtimeMs: 1_000,
+  });
+  for (let index = 0; index < 40; index += 1) {
+    writeTestRollout(dayDir, {
+      threadId: `019f4a6b-1111-7222-8333-${String(index).padStart(12, "0")}`,
+      threadSource: "subagent",
+      parentThreadId: rootId,
+      events: ["task_started", "task_complete"],
+      mtimeMs: 2_000 + index,
+    });
+  }
+
+  const watcher = new CodexWatcher({ getCodexHomes: () => [codexHome] });
+  watcher.listRecentRolloutFiles(10);
+  const originalCountsByRoot = watcher.subagents.countsByRoot.bind(watcher.subagents);
+  let aggregationCount = 0;
+  watcher.subagents.countsByRoot = () => {
+    aggregationCount += 1;
+    return originalCountsByRoot();
+  };
+
+  watcher.listRecentRolloutFiles(10);
+
+  assert.equal(aggregationCount, 0);
+});
+
+test("첫 poll에서 최근 quota를 넘는 활성 서브에이전트도 모두 복원한다", (t) => {
+  const codexHome = fs.mkdtempSync(path.join(os.tmpdir(), "codepet-active-over-quota-"));
+  t.after(() => fs.rmSync(codexHome, { recursive: true, force: true }));
+  const dayDir = path.join(codexHome, "sessions", "2026", "07", "18");
+  fs.mkdirSync(dayDir, { recursive: true });
+  const now = Date.now();
+  const rootId = "019f4a65-b0a7-73f1-8080-2ba11b4e5d25";
+  writeTestRollout(dayDir, {
+    threadId: rootId,
+    threadSource: "user",
+    events: ["task_started"],
+    mtimeMs: now,
+  });
+  for (let index = 0; index < 41; index += 1) {
+    writeTestRollout(dayDir, {
+      threadId: `019f4a66-1111-7222-8333-${String(index).padStart(12, "0")}`,
+      threadSource: "subagent",
+      parentThreadId: rootId,
+      events: ["task_started"],
+      mtimeMs: now - 1_000 + index,
+    });
+  }
+
+  const watcher = new CodexWatcher({ getCodexHomes: () => [codexHome] });
+  const counts = [];
+  watcher.on("subagent-count-changed", (value) => counts.push(value));
+  watcher.poll();
+
+  assert.equal(watcher.activeSubagentFiles.size, 41);
+  assert.deepEqual(counts.at(-1), { threadId: rootId, subagentCount: 41 });
+});
+
+test("추적 중인 활성 서브에이전트는 최신 완료 rollout에 밀려도 stale 전까지 유지한다", (t) => {
+  const codexHome = fs.mkdtempSync(path.join(os.tmpdir(), "codepet-active-retained-"));
+  t.after(() => fs.rmSync(codexHome, { recursive: true, force: true }));
+  const dayDir = path.join(codexHome, "sessions", "2026", "07", "18");
+  fs.mkdirSync(dayDir, { recursive: true });
+  const now = Date.now();
+  const rootId = "019f4a67-b0a7-73f1-8080-2ba11b4e5d25";
+  const childId = "019f4a68-1111-7222-8333-444444444444";
+  const childPath = writeTestRollout(dayDir, {
+    threadId: childId,
+    threadSource: "subagent",
+    parentThreadId: rootId,
+    events: ["task_started"],
+    mtimeMs: now - 1_000,
+  });
+  writeTestRollout(dayDir, {
+    threadId: rootId,
+    threadSource: "user",
+    events: ["task_started"],
+    mtimeMs: now - 999,
+  });
+
+  const watcher = new CodexWatcher({ getCodexHomes: () => [codexHome] });
+  const counts = [];
+  watcher.on("subagent-count-changed", (value) => counts.push(value));
+  watcher.poll();
+  for (let index = 0; index < 40; index += 1) {
+    writeTestRollout(dayDir, {
+      threadId: `019f4a69-1111-7222-8333-${String(index).padStart(12, "0")}`,
+      threadSource: "subagent",
+      parentThreadId: rootId,
+      events: ["task_started", "task_complete"],
+      mtimeMs: now + index,
+    });
+  }
+  watcher.poll();
+
+  assert.equal(Date.now() - fs.statSync(childPath).mtimeMs < 5 * 60 * 1000, true);
+  assert.equal(watcher.activeSubagentFiles.has(childPath), true);
+  assert.deepEqual(counts.at(-1), { threadId: rootId, subagentCount: 1 });
+});
+
+test("metadata cache 한도를 넘어도 최신 활성 서브에이전트를 용량 안에서 안전하게 복원한다", (t) => {
   const codexHome = fs.mkdtempSync(path.join(os.tmpdir(), "codepet-subagent-cache-"));
   t.after(() => fs.rmSync(codexHome, { recursive: true, force: true }));
   const dayDir = path.join(codexHome, "sessions", "2026", "07", "18");
@@ -115,11 +328,13 @@ test("metadata cache 한도를 넘는 서브에이전트도 최신 40개만 내�
   watcher.on("working-changed", (_working, _result, context) => workingChanges.push(context));
   watcher.poll();
 
-  const newestSubagents = subagentPaths.slice(-40);
+  // 사용자 root metadata 한 자리를 보존하고, 나머지 511개만 안전하게 tail합니다.
+  const newestSubagents = subagentPaths.slice(-511);
   assert.deepEqual([...watcher.activeSubagentFiles].sort(), [...newestSubagents].sort());
+  assert.equal(watcher.rolloutMetadata.size, 512);
   assert.deepEqual([...watcher.workingFiles], [userPath]);
 
-  for (const filePath of newestSubagents) {
+  for (const filePath of newestSubagents.slice(-40)) {
     fs.appendFileSync(filePath, `${[
       {
         type: "event_msg",
