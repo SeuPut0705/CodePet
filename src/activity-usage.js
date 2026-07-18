@@ -7,9 +7,9 @@ function clampPercent(value) {
   return Math.min(100, Math.max(0, value));
 }
 
-function resetHasPassed(rateWindow, nowMs) {
+function resetAtMilliseconds(rateWindow) {
   const resetAt = Number(rateWindow?.resets_at ?? rateWindow?.reset_at);
-  return Number.isFinite(resetAt) && resetAt * 1000 <= nowMs;
+  return Number.isFinite(resetAt) ? resetAt * 1000 : null;
 }
 
 function badgeForWindow(rateWindow, target, nowMs) {
@@ -19,7 +19,10 @@ function badgeForWindow(rateWindow, target, nowMs) {
   const rawUsedPercent = Number(rateWindow.used_percent ?? rateWindow.usedPercent);
   if (!Number.isFinite(rawUsedPercent)) return null;
 
-  const usedPercent = resetHasPassed(rateWindow, nowMs)
+  const resetAtMs = resetAtMilliseconds(rateWindow);
+  if (resetAtMs === null) return null;
+
+  const usedPercent = resetAtMs <= nowMs
     ? 0
     : clampPercent(rawUsedPercent);
   const remainingPercent = Math.round(100 - usedPercent);

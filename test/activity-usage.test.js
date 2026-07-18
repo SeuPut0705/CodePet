@@ -42,6 +42,36 @@ test("초기화·범위 보정·잘못된 창을 안전하게 처리한다", () 
   assert.deepEqual(buildActivityUsageBadges(null, 2_000), []);
 });
 
+test("scope 없는 비숫자 사용률 대상 창은 숨긴다", () => {
+  const usage = {
+    rateLimits: {
+      windows: [{ window_minutes: 300, used_percent: "unknown", resets_at: 500 }],
+    },
+  };
+
+  assert.deepEqual(buildActivityUsageBadges(usage, 1_000), []);
+});
+
+test("초기화 시각이 없는 대상 창은 숨긴다", () => {
+  const usage = {
+    rateLimits: {
+      windows: [{ window_minutes: 300, used_percent: 40 }],
+    },
+  };
+
+  assert.deepEqual(buildActivityUsageBadges(usage, 1_000), []);
+});
+
+test("숫자가 아닌 초기화 시각의 대상 창은 숨긴다", () => {
+  const usage = {
+    rateLimits: {
+      windows: [{ window_minutes: 10080, used_percent: 40, resets_at: "not-a-timestamp" }],
+    },
+  };
+
+  assert.deepEqual(buildActivityUsageBadges(usage, 1_000), []);
+});
+
 test("Codex가 작업 중인 다중 활동에만 사용량 배지를 붙인다", () => {
   const badges = [
     { key: "5h", remainingPercent: 42, ariaLabel: "5시간 42% 남음" },
