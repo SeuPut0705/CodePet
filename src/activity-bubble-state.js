@@ -1,9 +1,9 @@
 const { formatActivityTitle } = require("./activity-title");
+const { safeReasoningLabel, safeWorkerLabel } = require("./activity-labels");
 
-const WORKER_LABELS = new Set(["Sol", "Terra", "Luna"]);
-
-function safeWorkerLabel(value) {
-  return WORKER_LABELS.has(value) ? value : null;
+function updatedLabel(context, key, normalize, previous = null) {
+  if (!Object.hasOwn(context, key)) return previous;
+  return normalize(context[key]);
 }
 
 // Watcher 활동을 rollout thread 단위로 보관합니다. 화면은 이 상태의 스냅샷만 렌더링하므로
@@ -23,7 +23,13 @@ class ActivityBubbleState {
     this.activities.set(threadId, {
       threadId,
       data: { ...data },
-      workerLabel: safeWorkerLabel(context.workerLabel) || existing?.workerLabel || null,
+      workerLabel: updatedLabel(context, "workerLabel", safeWorkerLabel, existing?.workerLabel),
+      reasoningLabel: updatedLabel(
+        context,
+        "reasoningLabel",
+        safeReasoningLabel,
+        existing?.reasoningLabel
+      ),
       startedAt,
       firstSeen,
     });
@@ -39,7 +45,18 @@ class ActivityBubbleState {
     const existing = this.activities.get(threadId);
     if (!existing) return false;
 
-    existing.workerLabel = safeWorkerLabel(context.workerLabel) || existing.workerLabel;
+    existing.workerLabel = updatedLabel(
+      context,
+      "workerLabel",
+      safeWorkerLabel,
+      existing.workerLabel
+    );
+    existing.reasoningLabel = updatedLabel(
+      context,
+      "reasoningLabel",
+      safeReasoningLabel,
+      existing.reasoningLabel
+    );
     existing.startedAt ??= normalizeStartedAt(context.taskStartedAt);
     return true;
   }
@@ -78,6 +95,7 @@ class ActivityBubbleState {
       ...entry.data,
       title: formatActivityTitle(entry.data.title, {
         workerLabel: entry.workerLabel,
+        reasoningLabel: entry.reasoningLabel,
       }),
       threadId: entry.threadId,
     }));

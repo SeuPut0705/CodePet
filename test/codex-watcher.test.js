@@ -8,6 +8,7 @@ const {
   CodexWatcher,
   classifyShellCommand,
   extractThreadIdFromRolloutPath,
+  normalizeReasoningLabel,
   normalizeWorkerLabel,
 } = require("../src/codex-watcher");
 const { formatActivityTitle } = require("../src/activity-title");
@@ -133,22 +134,39 @@ test("허용된 rollout 모델만 작업자 이름으로 정규화한다", () =>
   assert.equal(normalizeWorkerLabel(null), null);
 });
 
+test("허용된 추론 강도만 표시용 이름으로 정규화한다", () => {
+  assert.equal(normalizeReasoningLabel("low"), "Low");
+  assert.equal(normalizeReasoningLabel("medium"), "Medium");
+  assert.equal(normalizeReasoningLabel("high"), "High");
+  assert.equal(normalizeReasoningLabel("xhigh"), "XHigh");
+  assert.equal(normalizeReasoningLabel("max"), "Max");
+  assert.equal(normalizeReasoningLabel("ultra"), "Ultra");
+  assert.equal(normalizeReasoningLabel("unknown"), null);
+  assert.equal(normalizeReasoningLabel("constructor"), null);
+});
+
 test("동시 rollout은 각자의 작업자 이름과 활성 수를 유지한다", () => {
   const watcher = new CodexWatcher({ getCodexHomes: () => [] });
   const secondPath = ROLLOUT_PATH.replace(THREAD_ID, "019f4a31-1111-7222-8333-444444444444");
   const messages = [];
   watcher.on("agent-message", (message, context) => messages.push({ message, context }));
 
-  watcher.handleLine(ROLLOUT_PATH, JSON.stringify({ type: "turn_context", payload: { model: "gpt-5.6-terra" } }));
-  watcher.handleLine(secondPath, JSON.stringify({ type: "turn_context", payload: { model: "gpt-5.6-luna" } }));
+  watcher.handleLine(ROLLOUT_PATH, JSON.stringify({
+    type: "turn_context",
+    payload: { model: "gpt-5.6-terra", effort: "high" },
+  }));
+  watcher.handleLine(secondPath, JSON.stringify({
+    type: "turn_context",
+    payload: { model: "gpt-5.6-luna", effort: "medium" },
+  }));
   watcher.handleLine(ROLLOUT_PATH, JSON.stringify({ type: "event_msg", payload: { type: "task_started" } }));
   watcher.handleLine(secondPath, JSON.stringify({ type: "event_msg", payload: { type: "task_started" } }));
   watcher.handleLine(ROLLOUT_PATH, JSON.stringify({ type: "event_msg", payload: { type: "agent_message", message: "a" } }));
   watcher.handleLine(secondPath, JSON.stringify({ type: "event_msg", payload: { type: "agent_message", message: "b" } }));
 
   assert.deepEqual(messages.map((item) => item.context), [
-    { threadId: THREAD_ID, workerLabel: "Terra", activeTaskCount: 2 },
-    { threadId: "019f4a31-1111-7222-8333-444444444444", workerLabel: "Luna", activeTaskCount: 2 },
+    { threadId: THREAD_ID, workerLabel: "Terra", reasoningLabel: "High", activeTaskCount: 2 },
+    { threadId: "019f4a31-1111-7222-8333-444444444444", workerLabel: "Luna", reasoningLabel: "Medium", activeTaskCount: 2 },
   ]);
 });
 
@@ -185,8 +203,8 @@ test("동시 작업 하나만 stale이면 그 파일만 활성 수에서 제거�
   const watcher = new CodexWatcher({ getCodexHomes: () => [] });
   const secondPath = ROLLOUT_PATH.replace(THREAD_ID, "019f4a31-1111-7222-8333-444444444444");
   const changes = [];
-  watcher.workerLabels.set(ROLLOUT_PATH, "Terra");
-  watcher.workerLabels.set(secondPath, "Luna");
+  watcher.activityLabels.set(ROLLOUT_PATH, { workerLabel: "Terra", reasoningLabel: "High" });
+  watcher.activityLabels.set(secondPath, { workerLabel: "Luna", reasoningLabel: "Medium" });
   watcher.on("working-changed", (working, _result, context) => changes.push({ working, context }));
   watcher.setWorking(ROLLOUT_PATH);
   watcher.setWorking(secondPath);
@@ -196,8 +214,8 @@ test("동시 작업 하나만 stale이면 그 파일만 활성 수에서 제거�
 
   assert.equal(watcher.workingFiles.size, 1);
   assert.equal(watcher.workingFiles.has(secondPath), true);
-  assert.equal(watcher.workerLabels.has(ROLLOUT_PATH), false);
-  assert.equal(watcher.workerLabels.get(secondPath), "Luna");
+  assert.equal(watcher.activityLabels.has(ROLLOUT_PATH), false);
+  assert.equal(watcher.activityLabels.get(secondPath).workerLabel, "Luna");
   assert.deepEqual(changes.at(-1), {
     working: true,
     context: { threadId: THREAD_ID, workerLabel: null, activeTaskCount: 1, activityChange: "removed" },
@@ -211,13 +229,13 @@ test("첫 poll에서 이미 실행 중인 여러 rollout의 작업자와 활성 
   const firstPath = path.join(tempDir, `rollout-test-${THREAD_ID}.jsonl`);
   const secondPath = path.join(tempDir, `rollout-test-${secondThreadId}.jsonl`);
 
-  for (const [filePath, model, timestamp] of [
-    [firstPath, "gpt-5.6-terra", "2026-07-10T13:02:30.000Z"],
-    [secondPath, "gpt-5.6-luna", "2026-07-10T13:02:10.000Z"],
+  for (const [filePath, model, effort, timestamp] of [
+    [firstPath, "gpt-5.6-terra", "high", "2026-07-10T13:02:30.000Z"],
+    [secondPath, "gpt-5.6-luna", "medium", "2026-07-10T13:02:10.000Z"],
   ]) {
     fs.writeFileSync(
       filePath,
-      `${JSON.stringify({ type: "turn_context", payload: { model } })}\n${JSON.stringify({
+      `${JSON.stringify({ type: "turn_context", payload: { model, effort } })}\n${JSON.stringify({
         type: "event_msg",
         timestamp,
         payload: { type: "task_started" },
@@ -238,14 +256,21 @@ test("첫 poll에서 이미 실행 중인 여러 rollout의 작업자와 활성 
   watcher.poll();
 
   assert.equal(watcher.workingFiles.size, 2);
-  assert.equal(watcher.workerLabels.get(firstPath), "Terra");
-  assert.equal(watcher.workerLabels.get(secondPath), "Luna");
+  assert.deepEqual(watcher.activityLabels.get(firstPath), {
+    workerLabel: "Terra",
+    reasoningLabel: "High",
+  });
+  assert.deepEqual(watcher.activityLabels.get(secondPath), {
+    workerLabel: "Luna",
+    reasoningLabel: "Medium",
+  });
   // 목록 입력은 최신순(first, second)이므로 복원 이벤트는 오래된 second부터, 최신 first가 마지막입니다.
   assert.deepEqual(restored.map((context) => context.threadId), [secondThreadId, THREAD_ID]);
   assert.deepEqual(restored.map((context) => context.taskStartedAt), [
     "2026-07-10T13:02:10.000Z",
     "2026-07-10T13:02:30.000Z",
   ]);
+  assert.deepEqual(restored.map((context) => context.reasoningLabel), ["Medium", "High"]);
 });
 
 test("두 번째 작업 시작은 즉시 활성 수 변경 문맥을 발행한다", () => {
@@ -261,11 +286,14 @@ test("두 번째 작업 시작은 즉시 활성 수 변경 문맥을 발행한�
   ]);
 });
 
-test("활동 제목은 작업자와 상태만 표시하고 작업 수는 행에 반복하지 않는다", () => {
-  assert.equal(formatActivityTitle("작업 중", { workerLabel: "Terra", activeTaskCount: 1 }), "Terra · 작업 중");
+test("활동 제목은 상태를 먼저 쓰고 모델을 뒤에 표시한다", () => {
+  assert.equal(
+    formatActivityTitle("작업 중", { workerLabel: "Terra", reasoningLabel: "High" }),
+    "작업 중 · Terra · 추론 High"
+  );
   assert.equal(formatActivityTitle("작업 중", { activeTaskCount: 3 }), "작업 중");
-  assert.equal(formatActivityTitle("작업 중", { workerLabel: "Terra", activeTaskCount: 3 }), "Terra · 작업 중");
-  assert.equal(formatActivityTitle("작업 중", { workerLabel: "Terra", activeTaskCount: 0 }), "Terra · 작업 중");
+  assert.equal(formatActivityTitle("작업 중", { workerLabel: "Terra", activeTaskCount: 3 }), "작업 중 · Terra");
+  assert.equal(formatActivityTitle("작업 중", { workerLabel: "Terra", activeTaskCount: 0 }), "작업 중 · Terra");
   assert.equal(formatActivityTitle("작업 중", { activeTaskCount: 1 }), "작업 중");
 });
 
@@ -292,7 +320,10 @@ test("동시 작업 하나가 끝나면 완료 작업자 이름을 남은 작업
   watcher.on("working-changed", (working, _result, context) => changes.push({ working, context }));
   watcher.on("task-finished", (result) => finished.push(result));
 
-  watcher.handleLine(ROLLOUT_PATH, JSON.stringify({ type: "turn_context", payload: { model: "gpt-5.6-terra" } }));
+  watcher.handleLine(ROLLOUT_PATH, JSON.stringify({
+    type: "turn_context",
+    payload: { model: "gpt-5.6-terra", effort: "high" },
+  }));
   watcher.handleLine(secondPath, JSON.stringify({ type: "turn_context", payload: { model: "gpt-5.6-luna" } }));
   watcher.handleLine(ROLLOUT_PATH, JSON.stringify({ type: "event_msg", payload: { type: "task_started" } }));
   watcher.handleLine(secondPath, JSON.stringify({ type: "event_msg", payload: { type: "task_started" } }));
@@ -303,7 +334,8 @@ test("동시 작업 하나가 끝나면 완료 작업자 이름을 남은 작업
     context: { threadId: THREAD_ID, workerLabel: null, activeTaskCount: 1, activityChange: "removed" },
   });
   assert.equal(finished.at(-1).workerLabel, "Terra");
+  assert.equal(finished.at(-1).reasoningLabel, "High");
   assert.equal(finished.at(-1).activeTaskCount, 1);
-  assert.equal(watcher.workerLabels.has(ROLLOUT_PATH), false);
-  assert.equal(watcher.workerLabels.get(secondPath), "Luna");
+  assert.equal(watcher.activityLabels.has(ROLLOUT_PATH), false);
+  assert.equal(watcher.activityLabels.get(secondPath).workerLabel, "Luna");
 });

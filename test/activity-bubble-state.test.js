@@ -27,6 +27,7 @@ test("대화는 실제 시작 시각 순서를 유지하고 각 제목 아래 �
   const state = new ActivityBubbleState();
   state.upsert(THREADS[0], activity("테스트 중", "terra detail", "terra status"), {
     workerLabel: "Terra",
+    reasoningLabel: "High",
     taskStartedAt: startedAt(30),
   });
   state.upsert(THREADS[3], activity("AGY 응답 작성 중", "agy detail", "agy status"), {
@@ -37,6 +38,7 @@ test("대화는 실제 시작 시각 순서를 유지하고 각 제목 아래 �
   });
   state.upsert(THREADS[0], activity("빌드 중", "new terra detail", "terra status"), {
     workerLabel: "Terra",
+    reasoningLabel: "High",
     taskStartedAt: startedAt(1),
   });
 
@@ -45,7 +47,7 @@ test("대화는 실제 시작 시각 순서를 유지하고 각 제목 아래 �
   assert.deepEqual(bubble.sections.map((section) => section.title), [
     "AGY 응답 작성 중",
     "Claude 명령 실행 중",
-    "Terra · 빌드 중",
+    "빌드 중 · Terra · 추론 High",
   ]);
   assert.deepEqual(bubble.sections.map((section) => section.text), [
     "agy detail",
@@ -74,13 +76,25 @@ test("한 대화만 남으면 기존 단일 말풍선 형태를 유지한다", (
   const state = new ActivityBubbleState();
   state.upsert(THREADS[0], activity("테스트 중", "terra detail", "terra status"), {
     workerLabel: "Terra",
+    reasoningLabel: "XHigh",
     taskStartedAt: startedAt(10),
   });
 
   const bubble = state.toBubbleData();
   assert.equal(bubble.sections, undefined);
-  assert.equal(bubble.title, "Terra · 테스트 중");
+  assert.equal(bubble.title, "테스트 중 · Terra · 추론 XHigh");
   assert.equal(bubble.text, "terra detail");
+});
+
+test("새 턴에 추론 강도가 없으면 이전 턴의 강도를 제목에서 제거한다", () => {
+  const state = new ActivityBubbleState();
+  state.upsert(THREADS[0], activity("응답 작성 중", "detail", "status"), {
+    workerLabel: "Sol",
+    reasoningLabel: "High",
+  });
+  state.refresh(THREADS[0], { workerLabel: "Sol", reasoningLabel: null });
+
+  assert.equal(state.toBubbleData().title, "응답 작성 중 · Sol");
 });
 
 test("full/status/off 모드는 각 대화 section의 내용에 적용된다", () => {
@@ -111,7 +125,7 @@ test("허용된 Sol/Terra/Luna 라벨만 붙이고 외부 provider 제목은 그
   const bubble = state.toBubbleData();
   assert.deepEqual(bubble.sections.map((section) => section.title), [
     "첫 작업",
-    "Luna · 둘째 작업",
+    "둘째 작업 · Luna",
     "AGY 작업",
   ]);
 });

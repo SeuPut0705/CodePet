@@ -2,6 +2,7 @@ const { EventEmitter } = require("node:events");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
+const { normalizeReasoningLabel, normalizeWorkerLabel } = require("./activity-labels");
 
 // Codex CLI는 모든 세션 이벤트를 CODEX_HOME/sessions/YYYY/MM/DD/rollout-*.jsonl에 실시간으로 append합니다.
 // 이 모듈은 최근 rollout 파일들을 tail해서 작업 상태/메시지/사용량(rate_limits)을 이벤트로 발행합니다.
@@ -418,34 +419,28 @@ function extractActiveTaskStartedAtFromFile(filePath) {
   return null;
 }
 
-// 허용된 rollout model만 사람이 읽는 작업자 이름으로 바꿉니다.
-// 알 수 없는 값은 절대 UI에 그대로 전달하지 않습니다.
-function normalizeWorkerLabel(model) {
-  switch (model) {
-    case "gpt-5.6-sol":
-      return "Sol";
-    case "gpt-5.6-terra":
-      return "Terra";
-    case "gpt-5.6-luna":
-      return "Luna";
-    default:
-      return null;
-  }
+function activityLabelsFromTurnContext(payload = {}) {
+  return {
+    workerLabel: normalizeWorkerLabel(payload.model),
+    reasoningLabel: normalizeReasoningLabel(
+      payload.effort || payload.collaboration_mode?.settings?.reasoning_effort
+    ),
+  };
 }
 
-function extractLatestWorkerLabelFromFile(filePath) {
+function extractLatestActivityLabelsFromFile(filePath) {
   const lines = readTailLines(filePath);
   for (let i = lines.length - 1; i >= 0; i -= 1) {
     try {
       const entry = JSON.parse(lines[i]);
       if (entry?.type === "turn_context") {
-        return normalizeWorkerLabel(entry?.payload?.model);
+        return activityLabelsFromTurnContext(entry.payload);
       }
     } catch {
       // 잘린 줄이면 이전 줄을 계속 확인합니다.
     }
   }
-  return null;
+  return { workerLabel: null, reasoningLabel: null };
 }
 
 // 계정 전환/로그인 실험 중 CODEX_HOME이 여러 곳으로 갈라진 상태에서도 작업 말풍선을 놓치지 않게
@@ -507,8 +502,8 @@ class CodexWatcher extends EventEmitter {
     this.tails = new Map();
     // 현재 task_started 상태인 파일들입니다. 하나라도 있으면 "작업 중"으로 봅니다.
     this.workingFiles = new Set();
-    // rollout 파일별로 검증된 표시 이름만 보관합니다. 세션 간 라벨은 공유하지 않습니다.
-    this.workerLabels = new Map();
+    // rollout 파일별 검증된 모델·추론 라벨입니다. 세션 간 라벨은 공유하지 않습니다.
+    this.activityLabels = new Map();
     // 동시 작업 하나만 멈춰도 개별적으로 stale 해제할 수 있게 파일별 최근 활동 시각을 둡니다.
     this.lastEventAtByFile = new Map();
     this.taskStartedAtByFile = new Map();
@@ -617,7 +612,8 @@ class CodexWatcher extends EventEmitter {
           Date.now() - file.mtimeMs < WATCHER_CONFIG.staleWorkingMs &&
           detectWorkingFromFile(file.filePath)
         ) {
-          this.workerLabels.set(file.filePath, extractLatestWorkerLabelFromFile(file.filePath));
+          const labels = extractLatestActivityLabelsFromFile(file.filePath);
+          this.activityLabels.set(file.filePath, labels);
           this.setWorking(file.filePath, extractActiveTaskStartedAtFromFile(file.filePath));
         }
       }
@@ -673,12 +669,13 @@ class CodexWatcher extends EventEmitter {
     }
   }
 
-  contextFor(filePath, workerLabel = this.workerLabels.get(filePath) || null) {
+  contextFor(filePath, labels = this.activityLabels.get(filePath) || {}) {
     const taskStartedAt = this.taskStartedAtByFile.get(filePath) || null;
     return {
       // rollout 파일명에서만 얻은 검증된 id입니다. 모델명은 세션 식별자로 쓰지 않습니다.
       threadId: extractThreadIdFromRolloutPath(filePath),
-      workerLabel,
+      workerLabel: labels.workerLabel || null,
+      ...(labels.reasoningLabel ? { reasoningLabel: labels.reasoningLabel } : {}),
       activeTaskCount: this.workingFiles.size,
       ...(taskStartedAt ? { taskStartedAt } : {}),
     };
@@ -705,17 +702,17 @@ class CodexWatcher extends EventEmitter {
   }
 
   clearWorking(filePath, result) {
-    const workerLabel = this.workerLabels.get(filePath) || null;
+    const labels = this.activityLabels.get(filePath) || {};
     this.lastEventAtByFile.delete(filePath);
     if (!this.workingFiles.delete(filePath)) {
       this.taskStartedAtByFile.delete(filePath);
-      this.workerLabels.delete(filePath);
+      this.activityLabels.delete(filePath);
       return null;
     }
 
-    const context = this.contextFor(filePath, workerLabel);
+    const context = this.contextFor(filePath, labels);
     this.taskStartedAtByFile.delete(filePath);
-    this.workerLabels.delete(filePath);
+    this.activityLabels.delete(filePath);
 
     // 다른 작업이 남아 있으면 방금 끝난 파일의 작업자 이름을 전역 작업 말풍선에 재사용하지 않습니다.
     // 남은 작업의 다음 이벤트가 도착하기 전까지는 활성 수만 안전하게 표시합니다.
@@ -788,11 +785,14 @@ class CodexWatcher extends EventEmitter {
     }
 
     if (entry?.type === "turn_context") {
-      const workerLabel = normalizeWorkerLabel(entry?.payload?.model);
-      this.workerLabels.set(filePath, workerLabel);
+      const labels = activityLabelsFromTurnContext(entry.payload);
+      this.activityLabels.set(filePath, labels);
       if (this.workingFiles.has(filePath)) {
         this.lastEventAtByFile.set(filePath, Date.now());
-        this.emit("working-changed", true, null, this.contextFor(filePath));
+        this.emit("working-changed", true, null, {
+          ...this.contextFor(filePath),
+          reasoningLabel: labels.reasoningLabel,
+        });
       }
       return;
     }
@@ -809,7 +809,7 @@ class CodexWatcher extends EventEmitter {
         break;
 
       case "task_complete": {
-        const workerLabel = this.workerLabels.get(filePath) || null;
+        const labels = this.activityLabels.get(filePath) || {};
         const context = this.clearWorking(filePath, {
           reason: "complete",
           message: null,
@@ -820,14 +820,15 @@ class CodexWatcher extends EventEmitter {
           message: payload.last_agent_message || null,
           threadId,
           otherTasksWorking: this.working,
-          workerLabel,
+          workerLabel: labels.workerLabel || null,
+          ...(labels.reasoningLabel ? { reasoningLabel: labels.reasoningLabel } : {}),
           activeTaskCount: context?.activeTaskCount || 0,
         });
         break;
       }
 
       case "turn_aborted": {
-        const workerLabel = this.workerLabels.get(filePath) || null;
+        const labels = this.activityLabels.get(filePath) || {};
         const context = this.clearWorking(filePath, {
           reason: "aborted",
           message: null,
@@ -838,7 +839,8 @@ class CodexWatcher extends EventEmitter {
           message: null,
           threadId,
           otherTasksWorking: this.working,
-          workerLabel,
+          workerLabel: labels.workerLabel || null,
+          ...(labels.reasoningLabel ? { reasoningLabel: labels.reasoningLabel } : {}),
           activeTaskCount: context?.activeTaskCount || 0,
         });
         break;
@@ -930,5 +932,6 @@ module.exports = {
   CodexWatcher,
   classifyShellCommand,
   extractThreadIdFromRolloutPath,
+  normalizeReasoningLabel,
   normalizeWorkerLabel,
 };
