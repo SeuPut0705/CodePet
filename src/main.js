@@ -5,6 +5,7 @@ const os = require("node:os");
 const path = require("node:path");
 const { CodexAccountSwitcher } = require("./codex-account-switcher");
 const { CodexWatcher } = require("./codex-watcher");
+const { CodexThreadTitleResolver, readCodexThreadTitle } = require("./codex-thread-title");
 const { AntigravityWatcher } = require("./antigravity-watcher");
 const { ClaudeWatcher } = require("./claude-watcher");
 const { ClaudeAccountSwitcher } = require("./claude-account-switcher");
@@ -650,6 +651,15 @@ function teardownCodexProxyOnQuit() {
 codexAccountSwitcher.cleanupLegacyCodePetState();
 codexAccountSwitcher.ensureCurrentAccountProfile();
 const codexWatcher = new CodexWatcher();
+const codexThreadTitles = new CodexThreadTitleResolver({
+  loadTitle: (threadId) => {
+    const command = codexThreadTitleCommand();
+    return readCodexThreadTitle(threadId, {
+      command,
+      shell: commandNeedsShell(command, process.platform),
+    });
+  },
+});
 const antigravityWatcher = new AntigravityWatcher();
 const claudeWatcher = new ClaudeWatcher();
 // macOS에서는 Claude Code live 자격 증명이 Keychain에 있으므로 플랫폼 저장소를 주입합니다.
@@ -1486,6 +1496,14 @@ function codexCommandCandidates() {
     "/opt/homebrew/bin/codex",
     "/usr/local/bin/codex",
   ];
+}
+
+// 활동 이벤트는 Electron main thread에서 오므로 동기 PATH 탐색 없이 알려진 경로 또는 명령명만 넘깁니다.
+function codexThreadTitleCommand() {
+  return (
+    codexCommandCandidates().find((candidate) => candidate && fs.existsSync(candidate)) ||
+    (process.platform === "win32" ? "codex.cmd" : "codex")
+  );
 }
 
 function resolveAntigravityExecutable() {
@@ -2505,10 +2523,25 @@ async function showUsageBubble() {
 }
 
 // Codex 세션 이벤트를 펫 애니메이션과 말풍선에 연결합니다.
+function contextWithCodexThreadTitle(context = {}) {
+  const sectionLabel = codexThreadTitles.get(context.threadId);
+  return sectionLabel ? { ...context, sectionLabel } : context;
+}
+
+function hydrateCodexThreadTitle(threadId) {
+  if (!CODEX_THREAD_ID_PATTERN.test(threadId || "")) return;
+  void codexThreadTitles.resolve(threadId).then((sectionLabel) => {
+    if (activeActivityBubbles.refresh(threadId, { sectionLabel })) showActiveActivityBubble();
+  });
+}
+
 function showCodexActivityBubble(data, context) {
   const threadId = context?.threadId;
-  if (!activeActivityBubbles.upsert(threadId, data, context)) return false;
-  return showActiveActivityBubble();
+  const visibleContext = contextWithCodexThreadTitle(context);
+  if (!activeActivityBubbles.upsert(threadId, data, visibleContext)) return false;
+  const shown = showActiveActivityBubble();
+  hydrateCodexThreadTitle(threadId);
+  return shown;
 }
 
 function removeCodexActivityBubble(threadId) {
@@ -2534,8 +2567,10 @@ function registerCodexWatcher() {
         if (activeActivityBubbles.size > 0) showActiveActivityBubble();
         return;
       }
-      if (activeActivityBubbles.refresh(context?.threadId, context)) {
+      const threadId = context?.threadId;
+      if (activeActivityBubbles.refresh(threadId, contextWithCodexThreadTitle(context))) {
         showActiveActivityBubble();
+        hydrateCodexThreadTitle(threadId);
         return;
       }
       showCodexActivityBubble({

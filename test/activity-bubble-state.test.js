@@ -109,6 +109,31 @@ test("새 턴에 추론 강도가 없으면 이전 턴의 강도를 제목에서
   assert.equal(state.toBubbleData().statusIcon, "writing");
 });
 
+test("비동기로 확인한 사이드바 작업 제목을 활성 section에 갱신한다", () => {
+  const state = new ActivityBubbleState();
+  state.upsert(THREADS[0], activity("응답 작성 중", "detail", "status"), {
+    workerLabel: "Sol",
+    reasoningLabel: "Medium",
+  });
+
+  state.refresh(THREADS[0], { sectionLabel: "CodePet" });
+
+  assert.equal(state.toBubbleData().title, "CodePet · Sol · Medium");
+  assert.equal(state.toBubbleData().titleLabel, "응답 작성 중 · CodePet · Sol · Medium");
+});
+
+test("사이드바 작업 제목 재조회가 실패하면 기존 상태 제목으로 돌아간다", () => {
+  const state = new ActivityBubbleState();
+  state.upsert(THREADS[0], activity("응답 작성 중", "detail", "status"), {
+    sectionLabel: "Old title",
+    workerLabel: "Sol",
+  });
+
+  state.refresh(THREADS[0], { sectionLabel: null });
+
+  assert.equal(state.toBubbleData().title, "응답 작성 중 · Sol");
+});
+
 test("full/status/off 모드는 각 대화 section의 내용에 적용된다", () => {
   const data = {
     kind: "activity",

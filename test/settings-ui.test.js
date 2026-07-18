@@ -28,6 +28,17 @@ test("활동 아이콘은 SVG 모듈과 접근성 제목으로 렌더링한다",
   assert.match(bubbleCss, /\.status-icon\s*\{/);
   assert.match(bubbleCss, /prefers-reduced-motion:\s*reduce/);
 });
+
+test("Codex 활동은 사이드바 작업 제목을 비동기로 보강한다", () => {
+  const resolverSetup = mainJs.match(/const codexThreadTitles = new CodexThreadTitleResolver\([\s\S]*?\n}\);/)?.[0] || "";
+  const hydrateTitle = mainJs.match(/function hydrateCodexThreadTitle[\s\S]*?\n}/)?.[0] || "";
+  assert.match(mainJs, /new CodexThreadTitleResolver/);
+  assert.match(mainJs, /resolve\(threadId\)/);
+  assert.match(mainJs, /sectionLabel/);
+  assert.match(mainJs, /activeActivityBubbles\.refresh\(threadId/);
+  assert.doesNotMatch(resolverSetup, /resolveCommand\(/);
+  assert.doesNotMatch(hydrateTitle, /if \(!sectionLabel\) return/);
+});
 const rendererJs = source("src/renderer.js");
 const petHtml = source("src/index.html");
 const petCss = source("src/styles.css");

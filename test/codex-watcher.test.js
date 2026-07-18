@@ -302,6 +302,21 @@ test("활동 제목은 상태를 먼저 쓰고 모델을 뒤에 표시한다", (
   });
 });
 
+test("사이드바 작업 제목이 있으면 상태 대신 섹션 제목과 모델 정보를 표시한다", () => {
+  assert.deepEqual(
+    createActivityHeading("응답 작성 중", {
+      sectionLabel: "CodePet",
+      workerLabel: "Sol",
+      reasoningLabel: "Medium",
+    }),
+    {
+      statusIcon: "writing",
+      title: "CodePet · Sol · Medium",
+      titleLabel: "응답 작성 중 · CodePet · Sol · Medium",
+    }
+  );
+});
+
 test("모든 활동 상태를 안정적인 SVG 아이콘 ID로 표시한다", () => {
   const cases = [
     ["요청 확인 중", "review"],

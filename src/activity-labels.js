@@ -33,9 +33,16 @@ function safeReasoningLabel(value) {
   return REASONING_DISPLAY_LABELS.has(value) ? value : null;
 }
 
+function safeSectionLabel(value) {
+  if (typeof value !== "string") return null;
+  const label = value.replace(/\s+/g, " ").trim();
+  return label ? [...label].slice(0, 80).join("") : null;
+}
+
 module.exports = {
   normalizeReasoningLabel,
   normalizeWorkerLabel,
   safeReasoningLabel,
+  safeSectionLabel,
   safeWorkerLabel,
 };

@@ -1,5 +1,5 @@
 const { createActivityHeading } = require("./activity-title");
-const { safeReasoningLabel, safeWorkerLabel } = require("./activity-labels");
+const { safeReasoningLabel, safeSectionLabel, safeWorkerLabel } = require("./activity-labels");
 
 function updatedLabel(context, key, normalize, previous = null) {
   if (!Object.hasOwn(context, key)) return previous;
@@ -23,6 +23,12 @@ class ActivityBubbleState {
     this.activities.set(threadId, {
       threadId,
       data: { ...data },
+      sectionLabel: updatedLabel(
+        context,
+        "sectionLabel",
+        safeSectionLabel,
+        existing?.sectionLabel
+      ),
       workerLabel: updatedLabel(context, "workerLabel", safeWorkerLabel, existing?.workerLabel),
       reasoningLabel: updatedLabel(
         context,
@@ -45,6 +51,12 @@ class ActivityBubbleState {
     const existing = this.activities.get(threadId);
     if (!existing) return false;
 
+    existing.sectionLabel = updatedLabel(
+      context,
+      "sectionLabel",
+      safeSectionLabel,
+      existing.sectionLabel
+    );
     existing.workerLabel = updatedLabel(
       context,
       "workerLabel",
@@ -93,6 +105,7 @@ class ActivityBubbleState {
     const visibleEntries = entries.slice(0, 5);
     const sections = visibleEntries.map((entry) => {
       const titleContext = {
+        sectionLabel: entry.sectionLabel,
         workerLabel: entry.workerLabel,
         reasoningLabel: entry.reasoningLabel,
       };
