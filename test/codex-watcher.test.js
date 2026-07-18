@@ -289,11 +289,15 @@ test("두 번째 작업 시작은 즉시 활성 수 변경 문맥을 발행한�
 test("활동 제목은 상태를 먼저 쓰고 모델을 뒤에 표시한다", () => {
   assert.deepEqual(
     createActivityHeading("작업 중", { workerLabel: "Terra", reasoningLabel: "High" }),
-    { statusIcon: "working", title: "Terra · High", titleLabel: "작업 중 · Terra · High" }
+    {
+      statusIcon: "working",
+      title: "작업 중 · Terra · High",
+      titleLabel: "작업 중 · Terra · High",
+    }
   );
   assert.deepEqual(createActivityHeading("작업 중"), {
     statusIcon: "working",
-    title: "",
+    title: "작업 중",
     titleLabel: "작업 중",
   });
 });
@@ -318,13 +322,13 @@ test("모든 활동 상태를 안정적인 SVG 아이콘 ID로 표시한다", ()
   for (const [title, icon] of cases) {
     assert.deepEqual(createActivityHeading(title, { workerLabel: "Sol" }), {
       statusIcon: icon,
-      title: "Sol",
+      title: `${title} · Sol`,
       titleLabel: `${title} · Sol`,
     });
   }
   assert.deepEqual(createActivityHeading("Claude 응답 작성 중"), {
     statusIcon: "writing",
-    title: "Claude",
+    title: "Claude 응답 작성 중",
     titleLabel: "Claude 응답 작성 중",
   });
 });

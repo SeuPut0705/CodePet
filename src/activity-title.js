@@ -20,11 +20,6 @@ function activityStatusIcon(title) {
   return STATUS_ICON_RULES.find(([pattern]) => pattern.test(source))?.[1] || null;
 }
 
-function externalProviderLabel(title) {
-  const match = String(title || "").match(/^(AGY|Claude)\s/);
-  return match?.[1] || null;
-}
-
 function formatActivityTitleLabel(title, context = {}) {
   const parts = [title];
   if (context.workerLabel) parts.push(context.workerLabel);
@@ -36,9 +31,7 @@ function formatActivityTitleLabel(title, context = {}) {
 // rollout의 원본 모델·추론 값은 이 경로로 전달되지 않습니다.
 function createActivityHeading(title, context = {}) {
   const icon = activityStatusIcon(title);
-  const parts = icon ? [] : [title];
-  const providerLabel = icon ? externalProviderLabel(title) : null;
-  if (providerLabel) parts.push(providerLabel);
+  const parts = [title];
   if (context.workerLabel) parts.push(context.workerLabel);
   if (context.reasoningLabel) parts.push(context.reasoningLabel);
   return {

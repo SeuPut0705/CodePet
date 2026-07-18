@@ -45,9 +45,9 @@ test("대화는 실제 시작 시각 순서를 유지하고 각 제목 아래 �
   const bubble = state.toBubbleData();
   assert.equal(bubble.title, "총 3개 작업 중");
   assert.deepEqual(bubble.sections.map((section) => section.title), [
-    "AGY",
-    "Claude",
-    "Terra · High",
+    "AGY 응답 작성 중",
+    "Claude 명령 실행 중",
+    "빌드 중 · Terra · High",
   ]);
   assert.deepEqual(bubble.sections.map((section) => section.statusIcon), [
     "writing",
@@ -92,7 +92,7 @@ test("한 대화만 남으면 기존 단일 말풍선 형태를 유지한다", (
 
   const bubble = state.toBubbleData();
   assert.equal(bubble.sections, undefined);
-  assert.equal(bubble.title, "Terra · XHigh");
+  assert.equal(bubble.title, "테스트 중 · Terra · XHigh");
   assert.equal(bubble.statusIcon, "test");
   assert.equal(bubble.text, "terra detail");
 });
@@ -105,7 +105,7 @@ test("새 턴에 추론 강도가 없으면 이전 턴의 강도를 제목에서
   });
   state.refresh(THREADS[0], { workerLabel: "Sol", reasoningLabel: null });
 
-  assert.equal(state.toBubbleData().title, "Sol");
+  assert.equal(state.toBubbleData().title, "응답 작성 중 · Sol");
   assert.equal(state.toBubbleData().statusIcon, "writing");
 });
 
