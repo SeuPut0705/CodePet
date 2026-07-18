@@ -225,7 +225,7 @@ function renderActivity(data) {
 
   bubbleElement.replaceChildren();
   bubbleElement.appendChild(createTitle(data.title, true, {
-    usageBadges: data.usageBadges,
+    usageBadges: data.sections.length >= 2 ? data.usageBadges : [],
   }));
   for (const sectionData of data.sections) {
     const section = document.createElement("div");

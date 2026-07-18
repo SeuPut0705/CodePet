@@ -114,6 +114,15 @@ function childWithClass(element, className) {
   return element.children.find((child) => child.className === className) || null;
 }
 
+function descendantWithClass(element, className) {
+  for (const child of element.children || []) {
+    if (child.className === className) return child;
+    const descendant = descendantWithClass(child, className);
+    if (descendant) return descendant;
+  }
+  return null;
+}
+
 test("외부 provider 완료 메시지도 공통 말풍선 정리와 길이 제한을 거친다", () => {
   assert.match(mainJs, /text: truncateForBubble\(result\.message\)/);
 });
@@ -246,10 +255,17 @@ test("다중 활동 헤더 오른쪽에 유효한 5h·7d 배지만 고정 렌더
     "7일 68% 남음",
   ]);
   for (const section of multiBubble.children.slice(1)) {
-    const sectionLabel = section.children[0].children[0];
-    assert.equal(childWithClass(sectionLabel, "activity-usage-badges"), null);
-    assert.equal(childWithClass(sectionLabel, "activity-usage-badge"), null);
+    assert.equal(descendantWithClass(section, "activity-usage-badges"), null);
+    assert.equal(descendantWithClass(section, "activity-usage-badge"), null);
   }
+
+  const oneSectionBubble = renderBubble({
+    kind: "activity",
+    title: "총 1개 작업 중",
+    usageBadges: [{ key: "5h", remainingPercent: 42, ariaLabel: "5시간 42% 남음" }],
+    sections: [{ title: "A", text: "" }],
+  });
+  assert.equal(childWithClass(oneSectionBubble.children[0], "activity-usage-badges"), null);
 
   const singleBubble = renderBubble({
     kind: "activity",
