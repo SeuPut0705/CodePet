@@ -160,6 +160,39 @@ test("서브에이전트 수는 upsert에서 안전한 양의 정수만 보존�
   }
 });
 
+test("child-count가 parent-working보다 먼저 오면 첫 section에 서브에이전트 수를 적용한다", () => {
+  const state = new ActivityBubbleState();
+
+  assert.equal(state.refresh(THREADS[0], { subagentCount: 3 }), false);
+  state.upsert(THREADS[0], activity("응답 작성 중", "a", "status"));
+
+  assert.equal(state.toBubbleData().subagentCount, 3);
+});
+
+test("section 전의 0개 서브에이전트 수는 보류한 양의 수를 지운다", () => {
+  const state = new ActivityBubbleState();
+
+  assert.equal(state.refresh(THREADS[0], { subagentCount: 3 }), false);
+  assert.equal(state.refresh(THREADS[0], { subagentCount: 0 }), false);
+  state.upsert(THREADS[0], activity("응답 작성 중", "a", "status"));
+
+  assert.equal(state.toBubbleData().subagentCount, 0);
+});
+
+test("제거하거나 모두 비우면 보류한 서브에이전트 수를 다음 작업에 재사용하지 않는다", () => {
+  const state = new ActivityBubbleState();
+
+  state.refresh(THREADS[0], { subagentCount: 3 });
+  assert.equal(state.remove(THREADS[0]), false);
+  state.upsert(THREADS[0], activity("새 작업", "a", "status"));
+  assert.equal(state.toBubbleData().subagentCount, 0);
+
+  state.refresh(THREADS[1], { subagentCount: 4 });
+  state.clear();
+  state.upsert(THREADS[1], activity("다음 작업", "b", "status"));
+  assert.equal(state.toBubbleData().subagentCount, 0);
+});
+
 test("사이드바 작업 제목 재조회가 실패하면 기존 상태 제목으로 돌아간다", () => {
   const state = new ActivityBubbleState();
   state.upsert(THREADS[0], activity("응답 작성 중", "detail", "status"), {

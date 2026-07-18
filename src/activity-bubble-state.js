@@ -21,6 +21,7 @@ function updatedSubagentCount(context, previous = 0) {
 class ActivityBubbleState {
   constructor() {
     this.activities = new Map();
+    this.pendingSubagentCounts = new Map();
     this.sequence = 0;
   }
 
@@ -28,6 +29,8 @@ class ActivityBubbleState {
     if (!threadId || !data) return false;
 
     const existing = this.activities.get(threadId);
+    const pendingSubagentCount = this.pendingSubagentCounts.get(threadId);
+    this.pendingSubagentCounts.delete(threadId);
     const firstSeen = existing?.firstSeen || ++this.sequence;
     const startedAt = existing?.startedAt ?? normalizeStartedAt(context.taskStartedAt);
     this.activities.set(threadId, {
@@ -46,7 +49,9 @@ class ActivityBubbleState {
         safeReasoningLabel,
         existing?.reasoningLabel
       ),
-      subagentCount: updatedSubagentCount(context, existing?.subagentCount ?? 0),
+      subagentCount: Object.hasOwn(context, "subagentCount")
+        ? safeSubagentCount(context.subagentCount)
+        : pendingSubagentCount ?? existing?.subagentCount ?? 0,
       startedAt,
       firstSeen,
     });
@@ -54,13 +59,21 @@ class ActivityBubbleState {
   }
 
   remove(threadId) {
+    this.pendingSubagentCounts.delete(threadId);
     return this.activities.delete(threadId);
   }
 
   // turn_context처럼 상세 활동이 없는 이벤트는 기존 내용을 보존합니다. 시작 순서는 절대 바꾸지 않습니다.
   refresh(threadId, context = {}) {
     const existing = this.activities.get(threadId);
-    if (!existing) return false;
+    if (!existing) {
+      if (Object.hasOwn(context, "subagentCount")) {
+        const subagentCount = safeSubagentCount(context.subagentCount);
+        if (subagentCount > 0) this.pendingSubagentCounts.set(threadId, subagentCount);
+        else this.pendingSubagentCounts.delete(threadId);
+      }
+      return false;
+    }
 
     existing.sectionLabel = updatedLabel(
       context,
@@ -87,6 +100,7 @@ class ActivityBubbleState {
 
   clear() {
     this.activities.clear();
+    this.pendingSubagentCounts.clear();
   }
 
   get size() {
