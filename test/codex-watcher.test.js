@@ -68,6 +68,80 @@ test("사용자와 서브에이전트 rollout quota를 분리한다", (t) => {
   assert.equal(recentPaths.filter((filePath) => subagentPaths.includes(filePath)).length, 40);
 });
 
+test("metadata cache 한도를 넘는 서브에이전트도 최신 40개만 내부 작업으로 복원한다", (t) => {
+  const codexHome = fs.mkdtempSync(path.join(os.tmpdir(), "codepet-subagent-cache-"));
+  t.after(() => fs.rmSync(codexHome, { recursive: true, force: true }));
+  const dayDir = path.join(codexHome, "sessions", "2026", "07", "18");
+  fs.mkdirSync(dayDir, { recursive: true });
+
+  const now = Date.now();
+  const userThreadId = "019f4a34-1111-7222-8333-444444444444";
+  const userPath = path.join(dayDir, `rollout-user-${userThreadId}.jsonl`);
+  fs.writeFileSync(userPath, `${JSON.stringify({
+    type: "session_meta",
+    payload: { id: userThreadId, thread_source: "user" },
+  })}\n${JSON.stringify({
+    type: "event_msg",
+    payload: { type: "task_started" },
+  })}\n`, "utf8");
+  fs.utimesSync(userPath, new Date(now - 10_000), new Date(now - 10_000));
+
+  const subagentPaths = [];
+  for (let index = 0; index < 520; index += 1) {
+    const suffix = String(index).padStart(12, "0");
+    const threadId = `019f4a35-1111-7222-8333-${suffix}`;
+    const filePath = path.join(dayDir, `rollout-subagent-${threadId}.jsonl`);
+    fs.writeFileSync(filePath, `${JSON.stringify({
+      type: "session_meta",
+      payload: {
+        id: threadId,
+        thread_source: "subagent",
+        parent_thread_id: userThreadId,
+      },
+    })}\n${JSON.stringify({
+      type: "event_msg",
+      payload: { type: "task_started" },
+    })}\n`, "utf8");
+    fs.utimesSync(filePath, new Date(now - 9_000 + index), new Date(now - 9_000 + index));
+    subagentPaths.push(filePath);
+  }
+
+  const watcher = new CodexWatcher({ getCodexHomes: () => [codexHome] });
+  const messages = [];
+  const tools = [];
+  const workingChanges = [];
+  watcher.on("agent-message", (value) => messages.push(value));
+  watcher.on("tool-activity", (value) => tools.push(value));
+  watcher.on("working-changed", (_working, _result, context) => workingChanges.push(context));
+  watcher.poll();
+
+  const newestSubagents = subagentPaths.slice(-40);
+  assert.deepEqual([...watcher.activeSubagentFiles].sort(), [...newestSubagents].sort());
+  assert.deepEqual([...watcher.workingFiles], [userPath]);
+
+  for (const filePath of newestSubagents) {
+    fs.appendFileSync(filePath, `${[
+      {
+        type: "event_msg",
+        payload: { type: "agent_message", message: "내부 이벤트" },
+      },
+      {
+        type: "response_item",
+        payload: {
+          type: "function_call",
+          name: "shell_command",
+          arguments: JSON.stringify({ command: "npm test" }),
+        },
+      },
+    ].map((entry) => JSON.stringify(entry)).join("\n")}\n`, "utf8");
+  }
+  watcher.poll();
+
+  assert.deepEqual(messages, []);
+  assert.deepEqual(tools, []);
+  assert.equal(workingChanges.every((context) => context.threadId === userThreadId), true);
+});
+
 test("session_meta가 덜 기록된 rollout은 다음 poll까지 보류한다", (t) => {
   const codexHome = fs.mkdtempSync(path.join(os.tmpdir(), "codepet-partial-meta-"));
   t.after(() => fs.rmSync(codexHome, { recursive: true, force: true }));
@@ -215,6 +289,49 @@ test("첫 poll에서 활성 중첩 서브에이전트만 복원한다", (t) => {
 
   assert.equal(counts.at(-1)?.threadId, rootId);
   assert.equal(counts.at(-1)?.subagentCount, 2);
+  assert.equal(watcher.workingFiles.size, 0);
+});
+
+test("512KiB보다 오래된 시작 이벤트가 있는 활성 서브에이전트를 첫 poll에서 복원한다", (t) => {
+  const codexHome = fs.mkdtempSync(path.join(os.tmpdir(), "codepet-subagent-large-"));
+  t.after(() => fs.rmSync(codexHome, { recursive: true, force: true }));
+  const dayDir = path.join(codexHome, "sessions", "2026", "07", "18");
+  fs.mkdirSync(dayDir, { recursive: true });
+  const rootId = "019f4a45-b0a7-73f1-8080-2ba11b4e5d25";
+  const childId = "019f4a46-1111-7222-8333-444444444444";
+  const rootPath = path.join(dayDir, `rollout-root-${rootId}.jsonl`);
+  const childPath = path.join(dayDir, `rollout-child-${childId}.jsonl`);
+  fs.writeFileSync(rootPath, `${JSON.stringify({
+    type: "session_meta",
+    payload: { id: rootId, thread_source: "user" },
+  })}\n`, "utf8");
+
+  const entries = [
+    JSON.stringify({
+      type: "session_meta",
+      payload: { id: childId, thread_source: "subagent", parent_thread_id: rootId },
+    }),
+    JSON.stringify({ type: "event_msg", payload: { type: "task_started" } }),
+  ];
+  const filler = JSON.stringify({
+    type: "response_item",
+    payload: { type: "message", text: "x".repeat(1024) },
+  });
+  let fileBytes = Buffer.byteLength(entries.join("\n"), "utf8");
+  while (fileBytes < 646 * 1024) {
+    entries.push(filler);
+    fileBytes += Buffer.byteLength(filler, "utf8") + 1;
+  }
+  fs.writeFileSync(childPath, `${entries.join("\n")}\n`, "utf8");
+
+  const watcher = new CodexWatcher({ getCodexHomes: () => [codexHome] });
+  const counts = [];
+  watcher.on("subagent-count-changed", (value) => counts.push(value));
+  watcher.poll();
+
+  assert.equal(counts.at(-1)?.threadId, rootId);
+  assert.equal(counts.at(-1)?.subagentCount, 1);
+  assert.deepEqual([...watcher.activeSubagentFiles], [childPath]);
   assert.equal(watcher.workingFiles.size, 0);
 });
 

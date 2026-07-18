@@ -445,23 +445,87 @@ function detectWorkingFromFile(filePath) {
   return false;
 }
 
+// 서브에이전트 lifecycle은 파일 전체를 메모리에 올리지 않고 뒤에서부터 찾습니다.
+// 긴 비수명주기 로그가 tail 한도를 넘겨도 초기 task_started를 복원해야 합니다.
+function findLatestSubagentLifecycleType(filePath) {
+  const lifecycleTypes = ["task_started", "task_complete", "turn_aborted"];
+  const lifecycleTypeSet = new Set(lifecycleTypes);
+  const chunkBytes = 64 * 1024;
+  const maxLineBytes = WATCHER_CONFIG.usageScanBytes;
+  let fd;
+  try {
+    fd = fs.openSync(filePath, "r");
+  } catch {
+    return null;
+  }
+
+  try {
+    let position = fs.fstatSync(fd).size;
+    let suffix = Buffer.from("\n");
+    let discardingLongLine = false;
+
+    while (position > 0) {
+      const readBytes = Math.min(chunkBytes, position);
+      position -= readBytes;
+      const chunk = Buffer.alloc(readBytes);
+      fs.readSync(fd, chunk, 0, readBytes, position);
+
+      let data;
+      if (discardingLongLine) {
+        const boundary = chunk.lastIndexOf(0x0a);
+        if (boundary < 0) continue;
+        data = chunk.subarray(0, boundary + 1);
+        discardingLongLine = false;
+      } else {
+        data = Buffer.concat([chunk, suffix]);
+      }
+      if (position === 0) data = Buffer.concat([Buffer.from("\n"), data]);
+
+      const firstNewline = data.indexOf(0x0a);
+      if (firstNewline < 0) {
+        if (data.length > maxLineBytes) {
+          suffix = Buffer.alloc(0);
+          discardingLongLine = true;
+        } else {
+          suffix = data;
+        }
+        continue;
+      }
+
+      const lines = data.subarray(firstNewline + 1).toString("utf8").split("\n");
+      for (let index = lines.length - 2; index >= 0; index -= 1) {
+        const line = lines[index];
+        if (!lifecycleTypes.some((type) => line.includes(`"${type}"`))) continue;
+        try {
+          const entry = JSON.parse(line);
+          const type = entry?.type === "event_msg" ? entry.payload?.type : null;
+          if (lifecycleTypeSet.has(type)) return type;
+        } catch {
+          // 잘린 줄이면 이전의 완전한 수명 주기 이벤트를 봅니다.
+        }
+      }
+
+      if (position > 0) {
+        const prefixBytes = firstNewline + 1;
+        if (prefixBytes > maxLineBytes) {
+          suffix = Buffer.alloc(0);
+          discardingLongLine = true;
+        } else {
+          suffix = Buffer.from(data.subarray(0, prefixBytes));
+        }
+      }
+    }
+  } catch {
+    return null;
+  } finally {
+    fs.closeSync(fd);
+  }
+  return null;
+}
+
 // 서브에이전트 복원은 메시지나 도구 이벤트가 아니라 명시적 수명 주기만 신뢰합니다.
 function detectSubagentWorkingFromFile(filePath) {
-  const lines = readTailLines(filePath);
-
-  for (let i = lines.length - 1; i >= 0; i -= 1) {
-    try {
-      const entry = JSON.parse(lines[i]);
-      if (entry?.type !== "event_msg") continue;
-      if (entry.payload?.type === "task_started") return true;
-      if (entry.payload?.type === "task_complete" || entry.payload?.type === "turn_aborted") {
-        return false;
-      }
-    } catch {
-      // 잘린 줄이면 이전의 완전한 수명 주기 이벤트를 봅니다.
-    }
-  }
-  return false;
+  return findLatestSubagentLifecycleType(filePath) === "task_started";
 }
 
 // 이미 실행 중인 rollout을 복원할 때는 최근 task_started의 구조화 시각을 보존합니다.
@@ -629,15 +693,17 @@ class CodexWatcher extends EventEmitter {
     const userFiles = [];
     const subagentFiles = [];
     for (const file of files) {
-      const metadata = this.metadataForRollout(file.filePath);
+      // quota 분류 중에는 metadata를 cache/tracker에 등록하지 않습니다.
+      // 선택되지 않을 오래된 rollout이 최신 선택 항목을 축출하면 subagent를 user로 오분류할 수 있습니다.
+      const metadata = this.rolloutMetadata.get(file.filePath) || readRolloutMetadata(file.filePath);
       if (!metadata) continue;
       if (metadata.threadSource === "user" && userFiles.length < limit) {
-        userFiles.push(file);
+        userFiles.push({ file, metadata });
       } else if (
         metadata.threadSource === "subagent" &&
         subagentFiles.length < WATCHER_CONFIG.subagentTailFiles
       ) {
-        subagentFiles.push(file);
+        subagentFiles.push({ file, metadata });
       }
       if (
         userFiles.length >= limit &&
@@ -647,7 +713,13 @@ class CodexWatcher extends EventEmitter {
       }
     }
 
-    return [...userFiles, ...subagentFiles].sort((a, b) => b.mtimeMs - a.mtimeMs);
+    const selected = [...userFiles, ...subagentFiles].sort(
+      (a, b) => b.file.mtimeMs - a.file.mtimeMs
+    );
+    for (const { file, metadata } of selected) {
+      this.registerRolloutMetadata(file.filePath, metadata);
+    }
+    return selected.map(({ file }) => file);
   }
 
   isUserFacingRollout(filePath) {
@@ -661,15 +733,30 @@ class CodexWatcher extends EventEmitter {
   }
 
   registerRolloutMetadata(filePath, metadata) {
-    if (!filePath || !metadata || !this.subagents.registerThread(metadata)) return false;
+    if (
+      !filePath ||
+      !metadata?.threadId ||
+      !["user", "subagent"].includes(metadata.threadSource)
+    ) {
+      return false;
+    }
 
     const previous = this.rolloutMetadata.get(filePath);
-    if (previous?.threadId && previous.threadId !== metadata.threadId) {
+    const preserveActive =
+      previous?.threadId === metadata.threadId &&
+      metadata.threadSource === "subagent" &&
+      this.activeSubagentFiles.has(filePath);
+    if (previous?.threadId) {
       this.subagents.removeThread(previous.threadId);
+    }
+    if (previous?.threadId && previous.threadId !== metadata.threadId) {
       this.activeSubagentFiles.delete(filePath);
       this.lastEventAtByFile.delete(filePath);
     }
+    this.subagents.registerThread(metadata);
+    this.rolloutMetadata.delete(filePath);
     this.rolloutMetadata.set(filePath, metadata);
+    if (preserveActive) this.subagents.setActive(metadata.threadId, true);
 
     while (this.rolloutMetadata.size > WATCHER_CONFIG.rolloutMetadataLimit) {
       const oldestPath = this.rolloutMetadata.keys().next().value;
