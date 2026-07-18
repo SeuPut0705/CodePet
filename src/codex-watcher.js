@@ -3,6 +3,7 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const { normalizeReasoningLabel, normalizeWorkerLabel } = require("./activity-labels");
+const { SubagentActivityTracker } = require("./subagent-activity-tracker");
 
 // Codex CLI는 모든 세션 이벤트를 CODEX_HOME/sessions/YYYY/MM/DD/rollout-*.jsonl에 실시간으로 append합니다.
 // 이 모듈은 최근 rollout 파일들을 tail해서 작업 상태/메시지/사용량(rate_limits)을 이벤트로 발행합니다.
@@ -28,6 +29,9 @@ const WATCHER_CONFIG = Object.freeze({
   maxDayDirsToScan: 180,
   // 동시에 tail할 최근 파일 수입니다. 동시 세션이 이보다 많으면 오래된 세션은 놓칠 수 있습니다.
   tailFiles: 10,
+  // 서브에이전트가 많아도 사용자 rollout quota를 차지하지 않도록 별도로 제한합니다.
+  subagentTailFiles: 40,
+  rolloutMetadataLimit: 512,
   // 작업 중 표시가 이 시간 동안 아무 이벤트 없이 유지되면 Codex가 죽었다고 보고 해제합니다.
   // 정상 작업 중에는 token_count가 주기적으로 기록되므로 이 시간을 넘길 일이 없습니다.
   staleWorkingMs: 5 * 60 * 1000,
@@ -204,7 +208,7 @@ function listRecentRolloutFiles(
 
 // 첫 session_meta 줄이 완전히 기록된 뒤 실제 payload.thread_source만 신뢰합니다.
 // 부분 기록은 다음 poll로 미뤄 subagent 이벤트가 한 번이라도 사용자 화면에 새는 것을 막습니다.
-function readRolloutThreadSource(filePath) {
+function readRolloutMetadata(filePath) {
   let fd;
   try {
     fd = fs.openSync(filePath, "r");
@@ -216,8 +220,12 @@ function readRolloutThreadSource(filePath) {
     if (newlineIndex < 0) return null;
 
     const entry = JSON.parse(text.slice(0, newlineIndex));
-    if (entry?.type !== "session_meta" || !entry.payload) return null;
-    return entry.payload.thread_source || "user";
+    if (entry?.type !== "session_meta" || !entry.payload?.id) return null;
+    return {
+      threadId: entry.payload.id,
+      threadSource: entry.payload.thread_source || "user",
+      parentThreadId: entry.payload.parent_thread_id || null,
+    };
   } catch {
     return null;
   } finally {
@@ -437,6 +445,25 @@ function detectWorkingFromFile(filePath) {
   return false;
 }
 
+// 서브에이전트 복원은 메시지나 도구 이벤트가 아니라 명시적 수명 주기만 신뢰합니다.
+function detectSubagentWorkingFromFile(filePath) {
+  const lines = readTailLines(filePath);
+
+  for (let i = lines.length - 1; i >= 0; i -= 1) {
+    try {
+      const entry = JSON.parse(lines[i]);
+      if (entry?.type !== "event_msg") continue;
+      if (entry.payload?.type === "task_started") return true;
+      if (entry.payload?.type === "task_complete" || entry.payload?.type === "turn_aborted") {
+        return false;
+      }
+    } catch {
+      // 잘린 줄이면 이전의 완전한 수명 주기 이벤트를 봅니다.
+    }
+  }
+  return false;
+}
+
 // 이미 실행 중인 rollout을 복원할 때는 최근 task_started의 구조화 시각을 보존합니다.
 // tail에 시작 이벤트가 없으면 ActivityBubbleState가 결정적 first-seen 순서를 사용합니다.
 function extractActiveTaskStartedAtFromFile(filePath) {
@@ -521,6 +548,7 @@ function discoverDefaultCodexHomes() {
 //  - "waiting" (waiting)                    : 사용자 입력/실행 승인을 기다리는 상태
 //  - "task-finished" (result)               : 세션별 완료/중단과 해당 thread id
 //  - "usage-updated" (usage)                : rate_limits 갱신
+//  - "subagent-count-changed" (count)       : 사용자 thread별 활성 서브에이전트 수
 class CodexWatcher extends EventEmitter {
   constructor(options = {}) {
     super();
@@ -540,8 +568,13 @@ class CodexWatcher extends EventEmitter {
     // 동시 작업 하나만 멈춰도 개별적으로 stale 해제할 수 있게 파일별 최근 활동 시각을 둡니다.
     this.lastEventAtByFile = new Map();
     this.taskStartedAtByFile = new Map();
-    // session_meta 분류는 rollout 수명 동안 바뀌지 않으므로 poll마다 큰 첫 줄을 다시 읽지 않습니다.
-    this.userFacingRollouts = new Map();
+    // session_meta의 thread 관계를 파일별로 캐시하고 활성 자손을 최상위 사용자 thread에 합산합니다.
+    this.rolloutMetadata = new Map();
+    this.subagents = new SubagentActivityTracker({
+      maxThreads: WATCHER_CONFIG.rolloutMetadataLimit,
+    });
+    this.activeSubagentFiles = new Set();
+    this.lastSubagentCounts = new Map();
     this.firstPoll = true;
     this.cachedUsage = null;
   }
@@ -589,30 +622,92 @@ class CodexWatcher extends EventEmitter {
   listRecentRolloutFiles(limit) {
     const files = [];
     for (const sessionsDir of this.getSessionDirs()) {
-      files.push(
-        ...listRecentRolloutFiles(
-          limit,
-          sessionsDir,
-          (filePath) => this.isUserFacingRollout(filePath)
-        )
-      );
+      files.push(...listRecentRolloutFiles(Infinity, sessionsDir));
     }
 
     files.sort((a, b) => b.mtimeMs - a.mtimeMs);
-    return files.slice(0, limit);
+    const userFiles = [];
+    const subagentFiles = [];
+    for (const file of files) {
+      const metadata = this.metadataForRollout(file.filePath);
+      if (!metadata) continue;
+      if (metadata.threadSource === "user" && userFiles.length < limit) {
+        userFiles.push(file);
+      } else if (
+        metadata.threadSource === "subagent" &&
+        subagentFiles.length < WATCHER_CONFIG.subagentTailFiles
+      ) {
+        subagentFiles.push(file);
+      }
+      if (
+        userFiles.length >= limit &&
+        subagentFiles.length >= WATCHER_CONFIG.subagentTailFiles
+      ) {
+        break;
+      }
+    }
+
+    return [...userFiles, ...subagentFiles].sort((a, b) => b.mtimeMs - a.mtimeMs);
   }
 
   isUserFacingRollout(filePath) {
-    if (this.userFacingRollouts.has(filePath)) return this.userFacingRollouts.get(filePath);
+    return this.metadataForRollout(filePath)?.threadSource === "user";
+  }
 
-    const threadSource = readRolloutThreadSource(filePath);
-    if (!threadSource) return false;
-    const isUserFacing = threadSource !== "subagent";
-    this.userFacingRollouts.set(filePath, isUserFacing);
-    if (this.userFacingRollouts.size > 256) {
-      this.userFacingRollouts.delete(this.userFacingRollouts.keys().next().value);
+  metadataForRollout(filePath) {
+    if (this.rolloutMetadata.has(filePath)) return this.rolloutMetadata.get(filePath);
+    const metadata = readRolloutMetadata(filePath);
+    return this.registerRolloutMetadata(filePath, metadata) ? metadata : null;
+  }
+
+  registerRolloutMetadata(filePath, metadata) {
+    if (!filePath || !metadata || !this.subagents.registerThread(metadata)) return false;
+
+    const previous = this.rolloutMetadata.get(filePath);
+    if (previous?.threadId && previous.threadId !== metadata.threadId) {
+      this.subagents.removeThread(previous.threadId);
+      this.activeSubagentFiles.delete(filePath);
+      this.lastEventAtByFile.delete(filePath);
     }
-    return isUserFacing;
+    this.rolloutMetadata.set(filePath, metadata);
+
+    while (this.rolloutMetadata.size > WATCHER_CONFIG.rolloutMetadataLimit) {
+      const oldestPath = this.rolloutMetadata.keys().next().value;
+      const oldest = this.rolloutMetadata.get(oldestPath);
+      this.rolloutMetadata.delete(oldestPath);
+      this.activeSubagentFiles.delete(oldestPath);
+      this.lastEventAtByFile.delete(oldestPath);
+      if (oldest?.threadId) this.subagents.removeThread(oldest.threadId);
+    }
+    this.emitChangedSubagentCounts();
+    return true;
+  }
+
+  setSubagentActive(filePath, active) {
+    const metadata = this.rolloutMetadata.get(filePath);
+    if (metadata?.threadSource !== "subagent") return false;
+    if (active) {
+      this.activeSubagentFiles.add(filePath);
+      this.lastEventAtByFile.set(filePath, Date.now());
+    } else {
+      this.activeSubagentFiles.delete(filePath);
+      this.lastEventAtByFile.delete(filePath);
+    }
+    this.subagents.setActive(metadata.threadId, active);
+    this.emitChangedSubagentCounts();
+    return true;
+  }
+
+  emitChangedSubagentCounts() {
+    const next = this.subagents.countsByRoot();
+    const roots = new Set([...this.lastSubagentCounts.keys(), ...next.keys()]);
+    for (const threadId of roots) {
+      const subagentCount = next.get(threadId) || 0;
+      if ((this.lastSubagentCounts.get(threadId) || 0) !== subagentCount) {
+        this.emit("subagent-count-changed", { threadId, subagentCount });
+      }
+    }
+    this.lastSubagentCounts = next;
   }
 
   // tail 중 캐시된 값이 있으면 그대로 쓰고,
@@ -643,7 +738,11 @@ class CodexWatcher extends EventEmitter {
     for (const filePath of [...this.tails.keys()]) {
       if (!recentPaths.has(filePath)) {
         this.tails.delete(filePath);
-        this.clearWorking(filePath, { reason: "stale", message: null });
+        if (this.rolloutMetadata.get(filePath)?.threadSource === "subagent") {
+          this.setSubagentActive(filePath, false);
+        } else {
+          this.clearWorking(filePath, { reason: "stale", message: null });
+        }
       }
     }
 
@@ -661,15 +760,26 @@ class CodexWatcher extends EventEmitter {
 
         // 앱 시작 시점에 "작업 중" 상태로 끝난 최근 파일은 각각 복원합니다.
         // 그래야 CodePet보다 먼저 시작한 동시 작업 수도 첫 화면부터 맞습니다.
-        if (
-          this.firstPoll &&
-          Date.now() - file.mtimeMs < WATCHER_CONFIG.staleWorkingMs &&
-          detectWorkingFromFile(file.filePath)
-        ) {
-          const labels = extractLatestActivityLabelsFromFile(file.filePath);
-          this.activityLabels.set(file.filePath, labels);
-          this.setWorking(file.filePath, extractActiveTaskStartedAtFromFile(file.filePath));
+        const metadata = this.rolloutMetadata.get(file.filePath);
+        if (this.firstPoll && Date.now() - file.mtimeMs < WATCHER_CONFIG.staleWorkingMs) {
+          if (
+            metadata?.threadSource === "subagent" &&
+            detectSubagentWorkingFromFile(file.filePath)
+          ) {
+            this.setSubagentActive(file.filePath, true);
+          } else if (
+            metadata?.threadSource !== "subagent" &&
+            detectWorkingFromFile(file.filePath)
+          ) {
+            const labels = extractLatestActivityLabelsFromFile(file.filePath);
+            this.activityLabels.set(file.filePath, labels);
+            this.setWorking(file.filePath, extractActiveTaskStartedAtFromFile(file.filePath));
+          }
         }
+      }
+
+      if (this.activeSubagentFiles.has(file.filePath)) {
+        this.lastEventAtByFile.set(file.filePath, file.mtimeMs);
       }
 
       // 파일이 줄어들었다면(비정상 케이스) 처음부터 다시 읽습니다.
@@ -691,6 +801,12 @@ class CodexWatcher extends EventEmitter {
       const lastEventAtMs = this.lastEventAtByFile.get(filePath) || 0;
       if (now - lastEventAtMs > WATCHER_CONFIG.staleWorkingMs) {
         this.clearWorking(filePath, { reason: "stale", message: null });
+      }
+    }
+    for (const filePath of [...this.activeSubagentFiles]) {
+      const lastEventAtMs = this.lastEventAtByFile.get(filePath) || 0;
+      if (now - lastEventAtMs > WATCHER_CONFIG.staleWorkingMs) {
+        this.setSubagentActive(filePath, false);
       }
     }
   }
@@ -823,6 +939,15 @@ class CodexWatcher extends EventEmitter {
     }
   }
 
+  handleSubagentLine(filePath, entry) {
+    const type = entry?.type === "event_msg" ? entry.payload?.type : null;
+    if (type === "task_started") {
+      this.setSubagentActive(filePath, true);
+    } else if (type === "task_complete" || type === "turn_aborted") {
+      this.setSubagentActive(filePath, false);
+    }
+  }
+
   handleLine(filePath, line) {
     if (!line.trim()) return;
 
@@ -830,6 +955,20 @@ class CodexWatcher extends EventEmitter {
     try {
       entry = JSON.parse(line);
     } catch {
+      return;
+    }
+
+    if (entry?.type === "session_meta") {
+      this.registerRolloutMetadata(filePath, {
+        threadId: entry.payload?.id,
+        threadSource: entry.payload?.thread_source || "user",
+        parentThreadId: entry.payload?.parent_thread_id || null,
+      });
+      return;
+    }
+
+    if (this.rolloutMetadata.get(filePath)?.threadSource === "subagent") {
+      this.handleSubagentLine(filePath, entry);
       return;
     }
 

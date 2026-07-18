@@ -25,7 +25,7 @@ test("rollout 파일명에서 Codex thread id를 추출한다", () => {
   assert.equal(extractThreadIdFromRolloutPath(""), null);
 });
 
-test("최근 rollout 목록에서 서브에이전트 thread를 제외한다", (t) => {
+test("사용자와 서브에이전트 rollout quota를 분리한다", (t) => {
   const codexHome = fs.mkdtempSync(path.join(os.tmpdir(), "codepet-subagent-"));
   t.after(() => fs.rmSync(codexHome, { recursive: true, force: true }));
   const dayDir = path.join(codexHome, "sessions", "2026", "07", "18");
@@ -43,7 +43,8 @@ test("최근 rollout 목록에서 서브에이전트 thread를 제외한다", (t
     },
   })}\n`, "utf8");
   fs.utimesSync(userPath, new Date(1_000), new Date(1_000));
-  for (let index = 0; index < 12; index += 1) {
+  const subagentPaths = [];
+  for (let index = 0; index < 45; index += 1) {
     const suffix = String(index).padStart(12, "0");
     const subagentThreadId = `019f4a32-1111-7222-8333-${suffix}`;
     const subagentPath = path.join(dayDir, `rollout-subagent-${subagentThreadId}.jsonl`);
@@ -57,13 +58,14 @@ test("최근 rollout 목록에서 서브에이전트 thread를 제외한다", (t
       },
     })}\n`, "utf8");
     fs.utimesSync(subagentPath, new Date(2_000 + index), new Date(2_000 + index));
+    subagentPaths.push(subagentPath);
   }
 
   const watcher = new CodexWatcher({ getCodexHomes: () => [codexHome] });
-  assert.deepEqual(
-    watcher.listRecentRolloutFiles(10).map((file) => file.filePath),
-    [userPath]
-  );
+  const recentPaths = watcher.listRecentRolloutFiles(10).map((file) => file.filePath);
+  assert.equal(recentPaths.length, 41);
+  assert.equal(recentPaths.includes(userPath), true);
+  assert.equal(recentPaths.filter((filePath) => subagentPaths.includes(filePath)).length, 40);
 });
 
 test("session_meta가 덜 기록된 rollout은 다음 poll까지 보류한다", (t) => {
@@ -86,6 +88,166 @@ test("session_meta가 덜 기록된 rollout은 다음 poll까지 보류한다", 
     watcher.listRecentRolloutFiles(10).map((file) => file.filePath),
     [filePath]
   );
+});
+
+test("서브에이전트 메시지는 숨기고 부모 작업에 재귀 활성 수만 발행한다", () => {
+  const rootId = "019f4a30-b0a7-73f1-8080-2ba11b4e5d25";
+  const childId = "019f4a31-1111-7222-8333-444444444444";
+  const grandchildId = "019f4a32-1111-7222-8333-444444444444";
+  const rootPath = `/tmp/rollout-${rootId}.jsonl`;
+  const childPath = `/tmp/rollout-${childId}.jsonl`;
+  const grandchildPath = `/tmp/rollout-${grandchildId}.jsonl`;
+  const watcher = new CodexWatcher({ getCodexHomes: () => [] });
+  const counts = [];
+  const messages = [];
+  const tools = [];
+  const workingChanges = [];
+  const finished = [];
+  watcher.on("subagent-count-changed", (value) => counts.push(value));
+  watcher.on("agent-message", (value) => messages.push(value));
+  watcher.on("user-message", (value) => messages.push(value));
+  watcher.on("tool-activity", (value) => tools.push(value));
+  watcher.on("working-changed", (value) => workingChanges.push(value));
+  watcher.on("task-finished", (value) => finished.push(value));
+
+  watcher.registerRolloutMetadata(rootPath, {
+    threadId: rootId,
+    threadSource: "user",
+    parentThreadId: null,
+  });
+  watcher.registerRolloutMetadata(childPath, {
+    threadId: childId,
+    threadSource: "subagent",
+    parentThreadId: rootId,
+  });
+  watcher.registerRolloutMetadata(grandchildPath, {
+    threadId: grandchildId,
+    threadSource: "subagent",
+    parentThreadId: childId,
+  });
+  watcher.handleLine(
+    childPath,
+    JSON.stringify({ type: "event_msg", payload: { type: "task_started" } })
+  );
+  watcher.handleLine(
+    grandchildPath,
+    JSON.stringify({ type: "event_msg", payload: { type: "task_started" } })
+  );
+  watcher.handleLine(
+    childPath,
+    JSON.stringify({ type: "turn_context", payload: { model: "gpt-5.6-luna", effort: "ultra" } })
+  );
+  watcher.handleLine(
+    childPath,
+    JSON.stringify({
+      type: "response_item",
+      payload: {
+        type: "function_call",
+        name: "shell_command",
+        arguments: JSON.stringify({ command: "npm test" }),
+      },
+    })
+  );
+  watcher.handleLine(
+    childPath,
+    JSON.stringify({ type: "event_msg", payload: { type: "agent_message", message: "내부 검토" } })
+  );
+  watcher.handleLine(
+    childPath,
+    JSON.stringify({ type: "event_msg", payload: { type: "user_message", message: "내부 지시" } })
+  );
+  watcher.handleLine(
+    childPath,
+    JSON.stringify({ type: "event_msg", payload: { type: "task_complete" } })
+  );
+  watcher.handleLine(
+    grandchildPath,
+    JSON.stringify({ type: "event_msg", payload: { type: "turn_aborted" } })
+  );
+
+  assert.deepEqual(counts.map((item) => item.subagentCount), [1, 2, 1, 0]);
+  assert.deepEqual(messages, []);
+  assert.deepEqual(tools, []);
+  assert.deepEqual(workingChanges, []);
+  assert.deepEqual(finished, []);
+  assert.equal(watcher.workingFiles.size, 0);
+  assert.equal(watcher.activityLabels.has(childPath), false);
+});
+
+test("첫 poll에서 활성 중첩 서브에이전트만 복원한다", (t) => {
+  const codexHome = fs.mkdtempSync(path.join(os.tmpdir(), "codepet-subagent-restore-"));
+  t.after(() => fs.rmSync(codexHome, { recursive: true, force: true }));
+  const dayDir = path.join(codexHome, "sessions", "2026", "07", "18");
+  fs.mkdirSync(dayDir, { recursive: true });
+  const rootId = "019f4a40-b0a7-73f1-8080-2ba11b4e5d25";
+  const childId = "019f4a41-1111-7222-8333-444444444444";
+  const grandchildId = "019f4a42-1111-7222-8333-444444444444";
+  const completedId = "019f4a43-1111-7222-8333-444444444444";
+  const staleId = "019f4a44-1111-7222-8333-444444444444";
+  const writeRollout = (threadId, threadSource, parentThreadId, events) => {
+    const filePath = path.join(dayDir, `rollout-test-${threadId}.jsonl`);
+    const entries = [
+      {
+        type: "session_meta",
+        payload: {
+          id: threadId,
+          thread_source: threadSource,
+          parent_thread_id: parentThreadId,
+        },
+      },
+      ...events.map((type) => ({ type: "event_msg", payload: { type } })),
+    ];
+    fs.writeFileSync(filePath, `${entries.map((entry) => JSON.stringify(entry)).join("\n")}\n`, "utf8");
+    return filePath;
+  };
+
+  writeRollout(rootId, "user", null, []);
+  writeRollout(childId, "subagent", rootId, ["task_started"]);
+  writeRollout(grandchildId, "subagent", childId, ["task_started"]);
+  writeRollout(completedId, "subagent", rootId, ["task_started", "task_complete"]);
+  const stalePath = writeRollout(staleId, "subagent", rootId, ["task_started"]);
+  fs.utimesSync(stalePath, new Date(0), new Date(0));
+
+  const watcher = new CodexWatcher({ getCodexHomes: () => [codexHome] });
+  const counts = [];
+  watcher.on("subagent-count-changed", (value) => counts.push(value));
+  watcher.poll();
+
+  assert.equal(counts.at(-1)?.threadId, rootId);
+  assert.equal(counts.at(-1)?.subagentCount, 2);
+  assert.equal(watcher.workingFiles.size, 0);
+});
+
+test("stale 서브에이전트를 비활성화하고 사용자 working 상태는 유지한다", () => {
+  const rootId = "019f4a50-b0a7-73f1-8080-2ba11b4e5d25";
+  const childId = "019f4a51-1111-7222-8333-444444444444";
+  const rootPath = `/tmp/rollout-${rootId}.jsonl`;
+  const childPath = `/tmp/rollout-${childId}.jsonl`;
+  const watcher = new CodexWatcher({ getCodexHomes: () => [] });
+  const counts = [];
+  watcher.on("subagent-count-changed", (value) => counts.push(value.subagentCount));
+  watcher.registerRolloutMetadata(rootPath, {
+    threadId: rootId,
+    threadSource: "user",
+    parentThreadId: null,
+  });
+  watcher.registerRolloutMetadata(childPath, {
+    threadId: childId,
+    threadSource: "subagent",
+    parentThreadId: rootId,
+  });
+  watcher.setWorking(rootPath);
+  watcher.handleLine(
+    childPath,
+    JSON.stringify({ type: "event_msg", payload: { type: "task_started" } })
+  );
+  watcher.lastEventAtByFile.set(childPath, 0);
+  watcher.listRecentRolloutFiles = () => [];
+  watcher.poll();
+
+  assert.deepEqual(counts, [1, 0]);
+  assert.equal(watcher.workingFiles.has(rootPath), true);
+  assert.equal(watcher.workingFiles.has(childPath), false);
 });
 
 test("shell 명령을 테스트, 빌드, 일반 명령으로 분류한다", () => {
