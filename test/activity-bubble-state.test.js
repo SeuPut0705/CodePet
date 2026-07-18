@@ -49,7 +49,11 @@ test("대화는 실제 시작 시각 순서를 유지하고 각 제목 아래 �
     "Claude",
     "Terra · High",
   ]);
-  assert.deepEqual(bubble.sections.map((section) => section.statusIcon), ["✦", "⌘", "▣"]);
+  assert.deepEqual(bubble.sections.map((section) => section.statusIcon), [
+    "writing",
+    "terminal",
+    "build",
+  ]);
   assert.deepEqual(bubble.sections.map((section) => section.text), [
     "agy detail",
     "claude detail",
@@ -89,7 +93,7 @@ test("한 대화만 남으면 기존 단일 말풍선 형태를 유지한다", (
   const bubble = state.toBubbleData();
   assert.equal(bubble.sections, undefined);
   assert.equal(bubble.title, "Terra · XHigh");
-  assert.equal(bubble.statusIcon, "⊙");
+  assert.equal(bubble.statusIcon, "test");
   assert.equal(bubble.text, "terra detail");
 });
 
@@ -102,7 +106,7 @@ test("새 턴에 추론 강도가 없으면 이전 턴의 강도를 제목에서
   state.refresh(THREADS[0], { workerLabel: "Sol", reasoningLabel: null });
 
   assert.equal(state.toBubbleData().title, "Sol");
-  assert.equal(state.toBubbleData().statusIcon, "✦");
+  assert.equal(state.toBubbleData().statusIcon, "writing");
 });
 
 test("full/status/off 모드는 각 대화 section의 내용에 적용된다", () => {

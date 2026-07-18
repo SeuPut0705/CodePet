@@ -289,30 +289,30 @@ test("두 번째 작업 시작은 즉시 활성 수 변경 문맥을 발행한�
 test("활동 제목은 상태를 먼저 쓰고 모델을 뒤에 표시한다", () => {
   assert.deepEqual(
     createActivityHeading("작업 중", { workerLabel: "Terra", reasoningLabel: "High" }),
-    { statusIcon: "◌", title: "Terra · High", titleLabel: "작업 중 · Terra · High" }
+    { statusIcon: "working", title: "Terra · High", titleLabel: "작업 중 · Terra · High" }
   );
   assert.deepEqual(createActivityHeading("작업 중"), {
-    statusIcon: "◌",
+    statusIcon: "working",
     title: "",
     titleLabel: "작업 중",
   });
 });
 
-test("모든 활동 상태를 구분 가능한 단색 아이콘으로 표시한다", () => {
+test("모든 활동 상태를 안정적인 SVG 아이콘 ID로 표시한다", () => {
   const cases = [
-    ["요청 확인 중", "◎"],
-    ["응답 작성 중", "✦"],
-    ["파일 수정 중", "✎"],
-    ["자료 확인 중", "⌕"],
-    ["파일 확인 중", "⌕"],
-    ["이미지 생성 중", "◇"],
-    ["테스트 중", "⊙"],
-    ["빌드 중", "▣"],
-    ["명령 실행 중", "⌘"],
-    ["승인 대기", "…"],
-    ["입력 대기", "…"],
-    ["작업 완료", "✓"],
-    ["작업 실패", "!"],
+    ["요청 확인 중", "review"],
+    ["응답 작성 중", "writing"],
+    ["파일 수정 중", "edit"],
+    ["자료 확인 중", "inspect"],
+    ["파일 확인 중", "inspect"],
+    ["이미지 생성 중", "image"],
+    ["테스트 중", "test"],
+    ["빌드 중", "build"],
+    ["명령 실행 중", "terminal"],
+    ["승인 대기", "waiting"],
+    ["입력 대기", "waiting"],
+    ["작업 완료", "success"],
+    ["작업 실패", "error"],
   ];
 
   for (const [title, icon] of cases) {
@@ -323,7 +323,7 @@ test("모든 활동 상태를 구분 가능한 단색 아이콘으로 표시한�
     });
   }
   assert.deepEqual(createActivityHeading("Claude 응답 작성 중"), {
-    statusIcon: "✦",
+    statusIcon: "writing",
     title: "Claude",
     titleLabel: "Claude 응답 작성 중",
   });
