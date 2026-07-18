@@ -1,7 +1,7 @@
 const crypto = require("node:crypto");
 const path = require("node:path");
 const os = require("node:os");
-const { ExternalWatcher, recursiveJsonl, text } = require("./external-watcher");
+const { ExternalWatcher, messageText, recursiveJsonl, text } = require("./external-watcher");
 
 function serializeToolInput(input) {
   if (!input || typeof input !== "object") return "";
@@ -36,7 +36,7 @@ function parseClaudeRow(row, file = "") {
     )
     .map((part) => (typeof part === "string" ? part : part.text || ""))
     .filter(Boolean)
-    .join(" ");
+    .join("\n\n");
   const isToolResult =
     row.type === "user" && content.length > 0 && content.every((part) => part?.type === "tool_result");
 
@@ -44,7 +44,9 @@ function parseClaudeRow(row, file = "") {
   let visible = visibleText;
   let kind = null;
   if (row.type === "user" && !isToolResult && visible) type = "user";
-  else if (tool) {
+  else if (row.type === "assistant" && visible) {
+    type = "assistant";
+  } else if (tool) {
     type = "tool";
     const detail = serializeToolInput(tool.input);
     visible = [tool.name, detail].filter(Boolean).join(": ");
@@ -53,15 +55,13 @@ function parseClaudeRow(row, file = "") {
       : /grep|search|glob/i.test(tool.name || "")
         ? "search"
         : "command";
-  } else if (row.type === "assistant" && visible) {
-    type = "assistant";
   }
 
   return {
     sessionId: row.sessionId || row.session_id || path.basename(file, path.extname(file)),
     eventId: type ? claudeEventId(row) : null,
     cwd: row.cwd || null,
-    text: text(visible),
+    text: type === "user" || type === "assistant" ? messageText(visible) : text(visible),
     type,
     kind,
     // thinking-only end_turn 뒤에 실제 text end_turn이 한 줄 더 오는 경우가 있어, 보이는 응답에서만 종료합니다.

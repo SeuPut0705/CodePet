@@ -1,7 +1,7 @@
 const crypto = require("node:crypto");
 const path = require("node:path");
 const os = require("node:os");
-const { ExternalWatcher, recursiveJsonl, text } = require("./external-watcher");
+const { ExternalWatcher, messageText, recursiveJsonl, text } = require("./external-watcher");
 
 function rowId(row) {
   return crypto
@@ -32,7 +32,7 @@ function toolLabel(type, content) {
 function parseAntigravityRow(row, file) {
   const sessionId = path.basename(path.dirname(path.dirname(path.dirname(file)))) || "unknown";
   const sourceType = String(row.type || "");
-  const visible = text(row.content);
+  const visible = messageText(row.content);
   let type = null;
   let kind = null;
 

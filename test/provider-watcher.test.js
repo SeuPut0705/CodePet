@@ -77,6 +77,48 @@ test("Claude는 tool_result와 thinking-only 행을 숨기고 보이는 end_turn
   assert.equal(complete.finished, true);
 });
 
+test("Claude와 AGY 응답은 펫 말풍선에 전달할 문단과 목록을 보존한다", () => {
+  const claude = parseClaudeRow({
+    type: "assistant",
+    sessionId: "session-1",
+    message: {
+      content: [{ type: "text", text: "첫 문단\n\n- Claude 목록" }],
+      stop_reason: "end_turn",
+    },
+  });
+  const agy = parseAntigravityRow(
+    {
+      step_index: 3,
+      type: "PLANNER_RESPONSE",
+      status: "DONE",
+      created_at: "2026-01-01T00:00:02Z",
+      content: "첫 문단\n\n- AGY 목록",
+    },
+    "/brain/session-1/.system_generated/logs/transcript.jsonl"
+  );
+
+  assert.equal(claude.text, "첫 문단\n\n- Claude 목록");
+  assert.equal(agy.text, "첫 문단\n\n- AGY 목록");
+});
+
+test("Claude text와 tool_use가 섞인 행은 보이는 메시지를 우선한다", () => {
+  const mixed = parseClaudeRow({
+    type: "assistant",
+    sessionId: "session-1",
+    message: {
+      content: [
+        { type: "text", text: "먼저 확인할게요." },
+        { type: "tool_use", name: "Read", input: { file_path: "/tmp/app.js" } },
+      ],
+      stop_reason: "tool_use",
+    },
+  });
+
+  assert.equal(mixed.type, "assistant");
+  assert.equal(mixed.text, "먼저 확인할게요.");
+  assert.equal(mixed.finished, false);
+});
+
 test("EOF watcher는 시작 전 기록은 건너뛰고 새 파일의 첫 한글 이벤트부터 읽는다", (t) => {
   const root = tempDir(t);
   const existing = path.join(root, "existing.jsonl");

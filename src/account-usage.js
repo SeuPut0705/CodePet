@@ -26,8 +26,11 @@ async function loadAccountUsageCards({ providerId, providerLabel, profiles, load
     try {
       const usage = await loadUsage(profile);
       return { ...base, gauges: usage?.gauges || [] };
-    } catch {
-      return { ...base, error: "조회 불가", gauges: [] };
+    } catch (error) {
+      const displayMessage = typeof error?.displayMessage === "string"
+        ? error.displayMessage
+        : "조회 불가";
+      return { ...base, error: displayMessage, gauges: [] };
     }
   }));
 }

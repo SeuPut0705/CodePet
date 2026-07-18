@@ -13,6 +13,10 @@ const settingsCss = source("src/settings.css");
 const bubbleCss = source("src/bubble.css");
 const bubbleJs = source("src/bubble.js");
 const mainJs = source("src/main.js");
+
+test("외부 provider 완료 메시지도 공통 말풍선 정리와 길이 제한을 거친다", () => {
+  assert.match(mainJs, /text: truncateForBubble\(result\.message\)/);
+});
 const rendererJs = source("src/renderer.js");
 const petHtml = source("src/index.html");
 const petCss = source("src/styles.css");

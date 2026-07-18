@@ -121,7 +121,12 @@ function applyActivityPrivacy(data, mode) {
   return applyToSection(data);
 }
 
+function shouldRestoreActiveActivityBubble({ activeActivityCount, anyProviderWorking }) {
+  return Boolean(anyProviderWorking && activeActivityCount > 0);
+}
+
 module.exports = {
   ActivityBubbleState,
   applyActivityPrivacy,
+  shouldRestoreActiveActivityBubble,
 };

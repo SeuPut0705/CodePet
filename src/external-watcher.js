@@ -1,6 +1,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const { EventEmitter } = require("node:events");
+const { takeGraphemes } = require("./activity-message");
 
 const MAX_RECENT_EVENTS = 1200;
 
@@ -8,6 +9,19 @@ function text(value, limit = 280) {
   if (value === null || value === undefined) return "";
   const source = typeof value === "string" ? value : String(value);
   return source.replace(/\s+/g, " ").trim().slice(0, limit);
+}
+
+function messageText(value, limit = 1200) {
+  if (value === null || value === undefined) return "";
+  const source = typeof value === "string" ? value : String(value);
+  const normalized = source
+    .replace(/\r\n?/g, "\n")
+    .split("\n")
+    .map((line) => line.replace(/[ \t]+/g, " ").trim())
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+  return takeGraphemes(normalized, limit);
 }
 
 function readBytes(file, offset, size) {
@@ -181,9 +195,9 @@ class ExternalWatcher extends EventEmitter {
     session.lastAt = now;
     session.cwd ||= event.cwd || null;
     const context = { threadId: id, cwd: session.cwd, provider: this.provider };
-    if (event.type === "user") this.emit("user-message", text(event.text), context);
+    if (event.type === "user") this.emit("user-message", messageText(event.text), context);
     if (event.type === "assistant") {
-      session.lastMessage = text(event.text);
+      session.lastMessage = messageText(event.text);
       this.emit("agent-message", session.lastMessage, context);
     }
     if (event.type === "tool") {
@@ -203,7 +217,7 @@ class ExternalWatcher extends EventEmitter {
     const result = {
       threadId: id,
       reason,
-      message: text(message) || session.lastMessage,
+      message: messageText(message) || session.lastMessage,
       provider: this.provider,
       otherTasksWorking: this.sessions.size > 0,
     };
@@ -246,5 +260,6 @@ module.exports = {
   recursiveJsonl,
   readBytes,
   splitCompleteLines,
+  messageText,
   text,
 };

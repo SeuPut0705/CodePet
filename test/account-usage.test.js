@@ -14,7 +14,11 @@ test("연결된 모든 계정의 사용량을 카드로 만들고 계정별 조�
     providerLabel: "Codex",
     profiles,
     loadUsage: async (profile) => {
-      if (profile.key === "stale") throw new Error("expired");
+      if (profile.key === "stale") {
+        const error = new Error("expired");
+        error.displayMessage = "로그인 만료 · 계정 탭에서 다시 로그인";
+        throw error;
+      }
       return { gauges: [{ label: "5시간", usedPercent: 20 }] };
     },
   });
@@ -34,7 +38,7 @@ test("연결된 모든 계정의 사용량을 카드로 만들고 계정별 조�
       providerLabel: "Codex",
       accountLabel: "stale@example.com",
       active: false,
-      error: "조회 불가",
+      error: "로그인 만료 · 계정 탭에서 다시 로그인",
       gauges: [],
     },
   ]);

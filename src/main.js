@@ -25,7 +25,12 @@ const {
   enableProxyInConfig,
 } = require("./codex-proxy");
 const { formatActivityTitle } = require("./activity-title");
-const { ActivityBubbleState, applyActivityPrivacy } = require("./activity-bubble-state");
+const { formatActivityMessage } = require("./activity-message");
+const {
+  ActivityBubbleState,
+  applyActivityPrivacy,
+  shouldRestoreActiveActivityBubble,
+} = require("./activity-bubble-state");
 const {
   createStableWindowBounds,
   normalizeWindowSize,
@@ -2356,7 +2361,10 @@ async function openCodexThread(threadId) {
 }
 
 function restoreActiveActivityBubble() {
-  if (!codexWatcher.working || activeActivityBubbles.size === 0) {
+  if (!shouldRestoreActiveActivityBubble({
+    activeActivityCount: activeActivityBubbles.size,
+    anyProviderWorking: isAnyProviderWorking(),
+  })) {
     hideBubble();
     return;
   }
@@ -2382,24 +2390,9 @@ function hideBubble() {
   }
 }
 
-// agent_message는 마크다운 원문이므로 말풍선용 평문으로 정리합니다.
-// 완벽한 파싱이 아니라 자주 쓰이는 기호(코드블록/백틱/볼드/헤더/링크)만 걷어냅니다.
-function stripMarkdown(text) {
-  return String(text ?? "")
-    .replace(/```[\s\S]*?```/g, " [코드] ")
-    .replace(/`([^`]*)`/g, "$1")
-    .replace(/^#{1,6}\s+/gm, "")
-    .replace(/\*\*([^*]+)\*\*/g, "$1")
-    .replace(/\*([^*]+)\*/g, "$1")
-    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
-    .replace(/\n{3,}/g, "\n\n");
-}
-
 // 말풍선에 넣기 좋게 메시지를 정리합니다. 너무 길면 잘라서 화면을 덮지 않게 합니다.
 function truncateForBubble(text) {
-  const trimmed = stripMarkdown(text).trim();
-  if (trimmed.length <= BUBBLE_CONFIG.activityMaxChars) return trimmed;
-  return `${trimmed.slice(0, BUBBLE_CONFIG.activityMaxChars)}…`;
+  return formatActivityMessage(text, { maxChars: BUBBLE_CONFIG.activityMaxChars });
 }
 
 // window_minutes를 "5시간 한도", "주간 한도" 같은 라벨로 바꿉니다.
@@ -2889,7 +2882,7 @@ function registerExternalWatcher(watcher, providerLabel) {
       kind: "activity",
       title: `${providerLabel} ${failed ? "작업 실패" : "작업 완료"}`,
       busy: false,
-      text: result.message || (failed
+      text: truncateForBubble(result.message) || (failed
         ? `${providerLabel} 작업 중 문제가 발생했어요.`
         : `${providerLabel} 작업이 끝났어요.`),
       statusText: failed

@@ -47,6 +47,153 @@ test("Claude 한도는 전체 및 모델별 창을 표시하고 범위를 보정
   assert.deepEqual(gauges.map((item) => item.usedPercent), [50, 100, 25]);
 });
 
+test("Claude access-only 토큰이 만료되면 API 호출 없이 재로그인을 안내한다", async (t) => {
+  const originalFetch = global.fetch;
+  let calls = 0;
+  t.after(() => {
+    global.fetch = originalFetch;
+    clearUsageCache();
+  });
+  global.fetch = async () => {
+    calls += 1;
+    return jsonResponse({}, 401);
+  };
+
+  const credentialStore = {
+    read: () => ({
+      claudeAiOauth: {
+        accessToken: "expired",
+        expiresAt: Date.now() - 60_000,
+      },
+    }),
+    write: () => {},
+  };
+
+  await assert.rejects(
+    fetchClaudeUsage({ force: true, credentialStore }),
+    (error) => {
+      assert.equal(error.displayMessage, "로그인 만료 · 계정 탭에서 다시 로그인");
+      return true;
+    }
+  );
+  assert.equal(calls, 0);
+});
+
+test("Claude access-only 토큰이 서버에서 폐기됐으면 재로그인을 안내한다", async (t) => {
+  const originalFetch = global.fetch;
+  t.after(() => {
+    global.fetch = originalFetch;
+    clearUsageCache();
+  });
+  global.fetch = async () => jsonResponse({}, 401);
+
+  await assert.rejects(
+    fetchClaudeUsage({
+      force: true,
+      credentialStore: {
+        read: () => ({ claudeAiOauth: { accessToken: "revoked", expiresAt: Date.now() + 3_600_000 } }),
+        write: () => {},
+      },
+    }),
+    (error) => {
+      assert.equal(error.displayMessage, "로그인 만료 · 계정 탭에서 다시 로그인");
+      return true;
+    }
+  );
+});
+
+test("Claude 사용량 API가 제한되면 잠시 후 재시도를 안내한다", async (t) => {
+  const originalFetch = global.fetch;
+  t.after(() => {
+    global.fetch = originalFetch;
+    clearUsageCache();
+  });
+  global.fetch = async () => jsonResponse({}, 429);
+
+  await assert.rejects(
+    fetchClaudeUsage({
+      force: true,
+      credentialStore: {
+        read: () => ({
+          claudeAiOauth: {
+            accessToken: "limited",
+            refreshToken: "refresh",
+            expiresAt: Date.now() + 3_600_000,
+          },
+        }),
+        write: () => {},
+      },
+    }),
+    (error) => {
+      assert.equal(error.displayMessage, "요청 제한 · 잠시 후 다시 시도");
+      return true;
+    }
+  );
+});
+
+test("Claude 갱신 토큰이 폐기됐으면 재로그인을 안내한다", async (t) => {
+  const originalFetch = global.fetch;
+  t.after(() => {
+    global.fetch = originalFetch;
+    clearUsageCache();
+  });
+  global.fetch = async () => jsonResponse({}, 400);
+
+  await assert.rejects(
+    fetchClaudeUsage({
+      force: true,
+      credentialStore: {
+        read: () => ({
+          claudeAiOauth: {
+            accessToken: "expired",
+            refreshToken: "revoked-refresh",
+            expiresAt: Date.now() - 60_000,
+          },
+        }),
+        write: () => {},
+      },
+    }),
+    (error) => {
+      assert.equal(error.displayMessage, "로그인 만료 · 계정 탭에서 다시 로그인");
+      return true;
+    }
+  );
+});
+
+test("Claude 토큰 갱신 뒤 사용량 API가 제한돼도 재시도를 안내한다", async (t) => {
+  const originalFetch = global.fetch;
+  const responses = [
+    jsonResponse({}, 401),
+    jsonResponse({ access_token: "renewed", refresh_token: "renewed-refresh", expires_in: 3600 }),
+    jsonResponse({}, 429),
+  ];
+  t.after(() => {
+    global.fetch = originalFetch;
+    clearUsageCache();
+  });
+  global.fetch = async () => responses.shift();
+
+  await assert.rejects(
+    fetchClaudeUsage({
+      force: true,
+      credentialStore: {
+        read: () => ({
+          claudeAiOauth: {
+            accessToken: "stale",
+            refreshToken: "refresh",
+            expiresAt: Date.now() + 3_600_000,
+          },
+        }),
+        write: () => {},
+      },
+    }),
+    (error) => {
+      assert.equal(error.displayMessage, "요청 제한 · 잠시 후 다시 시도");
+      return true;
+    }
+  );
+});
+
 test("AGY 응답에서 계정, 플랜, 한도만 정규화한다", async (t) => {
   const originalFetch = global.fetch;
   t.after(() => {

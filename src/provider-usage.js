@@ -14,6 +14,41 @@ class HttpError extends Error {
   }
 }
 
+class ProviderUsageError extends Error {
+  constructor(message, displayMessage) {
+    super(message);
+    this.displayMessage = displayMessage;
+  }
+}
+
+function claudeLoginExpiredError() {
+  return new ProviderUsageError(
+    "Claude OAuth access token이 만료됐고 갱신 토큰이 없습니다.",
+    "로그인 만료 · 계정 탭에서 다시 로그인"
+  );
+}
+
+function claudeRateLimitError() {
+  return new ProviderUsageError(
+    "Claude 사용량 API 요청 제한에 도달했습니다.",
+    "요청 제한 · 잠시 후 다시 시도"
+  );
+}
+
+function normalizeClaudeRefreshError(error) {
+  if (error instanceof ProviderUsageError) return error;
+  if ([400, 401, 403].includes(error?.status)) return claudeLoginExpiredError();
+  if (error?.status === 429) return claudeRateLimitError();
+  return error;
+}
+
+function normalizeClaudeRequestError(error) {
+  if (error instanceof ProviderUsageError) return error;
+  if ([401, 403].includes(error?.status)) return claudeLoginExpiredError();
+  if (error?.status === 429) return claudeRateLimitError();
+  return error;
+}
+
 function clampPercent(value) {
   return Math.min(100, Math.max(0, Math.round(value)));
 }
@@ -152,12 +187,24 @@ async function fetchClaudeUsage({ home = os.homedir(), force = false, credential
   if (!credentials) throw new Error("Claude 로그인 정보가 없습니다.");
   let oauth = credentials.claudeAiOauth;
   if (!oauth?.accessToken) throw new Error("Claude 로그인 정보가 없습니다.");
+  const expiresAt = Number(oauth.expiresAt);
+  if (!oauth.refreshToken && Number.isFinite(expiresAt) && expiresAt <= Date.now() + 60_000) {
+    throw claudeLoginExpiredError();
+  }
   const key = tokenKey("claude", oauth.refreshToken || oauth.accessToken);
 
   return cached(key, async () => {
+    const refreshOauth = async () => {
+      try {
+        oauth = await refreshClaudeOAuth(credentials, store);
+      } catch (error) {
+        throw normalizeClaudeRefreshError(error);
+      }
+    };
+
     // refreshToken이 없는 자격 증명(데스크톱 앱 관리 인증)은 현재 accessToken으로 그대로 시도합니다.
     if (oauth.refreshToken && oauth.expiresAt && Number(oauth.expiresAt) <= Date.now() + 60000) {
-      oauth = await refreshClaudeOAuth(credentials, store);
+      await refreshOauth();
     }
 
     const request = () => json("https://api.anthropic.com/api/oauth/usage", {
@@ -171,9 +218,15 @@ async function fetchClaudeUsage({ home = os.homedir(), force = false, credential
     try {
       data = await request();
     } catch (error) {
-      if (error.status !== 401 || !oauth.refreshToken) throw error;
-      oauth = await refreshClaudeOAuth(credentials, store);
-      data = await request();
+      if (error.status === 401 && !oauth.refreshToken) throw claudeLoginExpiredError();
+      if (error.status === 429) throw claudeRateLimitError();
+      if (error.status !== 401) throw error;
+      await refreshOauth();
+      try {
+        data = await request();
+      } catch (retryError) {
+        throw normalizeClaudeRequestError(retryError);
+      }
     }
     return { provider: "claude", gauges: normalizeClaudeUsage(data) };
   }, { force });

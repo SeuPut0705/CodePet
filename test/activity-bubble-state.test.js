@@ -1,6 +1,10 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { ActivityBubbleState, applyActivityPrivacy } = require("../src/activity-bubble-state");
+const {
+  ActivityBubbleState,
+  applyActivityPrivacy,
+  shouldRestoreActiveActivityBubble,
+} = require("../src/activity-bubble-state");
 
 const THREADS = [
   "019f4a30-b0a7-73f1-8080-2ba11b4e5d25",
@@ -110,4 +114,19 @@ test("허용된 Sol/Terra/Luna 라벨만 붙이고 외부 provider 제목은 그
     "Luna · 둘째 작업",
     "AGY 작업",
   ]);
+});
+
+test("Codex 없이 AGY나 Claude만 작업 중이어도 활성 말풍선을 복원한다", () => {
+  assert.equal(
+    shouldRestoreActiveActivityBubble({ activeActivityCount: 1, anyProviderWorking: true }),
+    true
+  );
+  assert.equal(
+    shouldRestoreActiveActivityBubble({ activeActivityCount: 1, anyProviderWorking: false }),
+    false
+  );
+  assert.equal(
+    shouldRestoreActiveActivityBubble({ activeActivityCount: 0, anyProviderWorking: true }),
+    false
+  );
 });
