@@ -130,6 +130,25 @@ body {
   animation: none;
 }
 
+.activity-usage-badges {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  color: color-mix(in srgb, var(--bubble-ink) 68%, transparent);
+  font-size: 10px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+  text-transform: none;
+  white-space: nowrap;
+}
+
+.activity-usage-badge {
+  white-space: nowrap;
+}
+
 .status-icon[data-status="working"],
 .status-icon[data-status="writing"],
 .status-icon[data-status="edit"] {

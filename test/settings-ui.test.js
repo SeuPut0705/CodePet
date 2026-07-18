@@ -222,6 +222,52 @@ test("서브에이전트 배지는 좁은 말풍선용 고정 크기이며 애�
   assert.match(titleTextRule, /white-space:\s*nowrap/);
 });
 
+test("다중 활동 헤더 오른쪽에 유효한 5h·7d 배지만 고정 렌더링한다", () => {
+  const multiBubble = renderBubble({
+    kind: "activity",
+    title: "총 3개 작업 중",
+    usageBadges: [
+      { key: "5h", remainingPercent: 42, ariaLabel: "5시간 42% 남음" },
+      { key: "7d", remainingPercent: 68, ariaLabel: "7일 68% 남음" },
+    ],
+    sections: [{ title: "A", text: "" }, { title: "B", text: "" }],
+  });
+  const header = multiBubble.children[0];
+  const group = childWithClass(header, "activity-usage-badges");
+
+  assert.ok(group);
+  assert.deepEqual(group.children.map((badge) => badge.textContent), ["5h 42%", "7d 68%"]);
+  assert.deepEqual(group.children.map((badge) => badge.attributes["aria-label"]), [
+    "5시간 42% 남음",
+    "7일 68% 남음",
+  ]);
+
+  const singleBubble = renderBubble({
+    kind: "activity",
+    title: "작업 중",
+    usageBadges: [{ key: "5h", remainingPercent: 42, ariaLabel: "5시간 42% 남음" }],
+    text: "",
+  });
+  assert.equal(childWithClass(singleBubble.children[0], "activity-usage-badges"), null);
+
+  const invalidBubble = renderBubble({
+    kind: "activity",
+    title: "총 2개 작업 중",
+    usageBadges: [{ key: "5h", remainingPercent: "42", ariaLabel: "잘못된 값" }],
+    sections: [{ title: "A", text: "" }, { title: "B", text: "" }],
+  });
+  assert.equal(childWithClass(invalidBubble.children[0], "activity-usage-badges"), null);
+});
+
+test("사용량 배지는 좁은 헤더에서도 줄바꿈과 숫자 흔들림이 없다", () => {
+  const groupRule = bubbleCss.match(/\.activity-usage-badges\s*\{[^}]*}/s)?.[0] || "";
+  assert.match(groupRule, /display:\s*inline-flex/);
+  assert.match(groupRule, /flex:\s*none/);
+  assert.match(groupRule, /white-space:\s*nowrap/);
+  assert.match(groupRule, /font-variant-numeric:\s*tabular-nums/);
+  assert.match(groupRule, /color:\s*color-mix/);
+});
+
 test("Codex 활동은 사이드바 작업 제목을 비동기로 보강한다", () => {
   const resolverSetup = mainJs.match(/const codexThreadTitles = new CodexThreadTitleResolver\([\s\S]*?\n}\);/)?.[0] || "";
   const hydrateTitle = mainJs.match(/function hydrateCodexThreadTitle[\s\S]*?\n}/)?.[0] || "";

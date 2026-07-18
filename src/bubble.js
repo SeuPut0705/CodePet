@@ -65,10 +65,39 @@ function appendSubagentBadge(element, count) {
   element.appendChild(badge);
 }
 
+function appendUsageBadges(element, badges) {
+  if (!Array.isArray(badges)) return;
+  const validBadges = badges.filter((badge) =>
+    ["5h", "7d"].includes(badge?.key) &&
+    Number.isSafeInteger(badge?.remainingPercent) &&
+    badge.remainingPercent >= 0 &&
+    badge.remainingPercent <= 100 &&
+    typeof badge.ariaLabel === "string" &&
+    badge.ariaLabel
+  );
+  if (validBadges.length === 0) return;
+
+  const group = document.createElement("span");
+  group.className = "activity-usage-badges";
+  for (const badgeData of validBadges) {
+    const badge = document.createElement("span");
+    badge.className = "activity-usage-badge";
+    badge.textContent = `${badgeData.key} ${badgeData.remainingPercent}%`;
+    badge.setAttribute("aria-label", badgeData.ariaLabel);
+    group.appendChild(badge);
+  }
+  element.appendChild(group);
+}
+
 function createTitle(
   titleText,
   busy,
-  { titleLabel = null, statusIcon = null, subagentCount = 0 } = {}
+  {
+    titleLabel = null,
+    statusIcon = null,
+    subagentCount = 0,
+    usageBadges = [],
+  } = {}
 ) {
   const title = document.createElement("div");
   title.className = "title";
@@ -78,6 +107,7 @@ function createTitle(
 
   const hasStatusIcon = appendStatusHeadingContent(title, titleText, statusIcon);
   appendSubagentBadge(title, subagentCount);
+  appendUsageBadges(title, usageBadges);
   if (!hasStatusIcon) {
     const dot = document.createElement("span");
     dot.className = busy ? "dot busy" : "dot";
@@ -194,7 +224,9 @@ function renderActivity(data) {
   }
 
   bubbleElement.replaceChildren();
-  bubbleElement.appendChild(createTitle(data.title, true));
+  bubbleElement.appendChild(createTitle(data.title, true, {
+    usageBadges: data.usageBadges,
+  }));
   for (const sectionData of data.sections) {
     const section = document.createElement("div");
     section.className = "activity-section";
