@@ -35,16 +35,16 @@ window.bubbleApi.onAppearance((appearance) => {
 });
 
 function appendStatusHeadingContent(element, titleText, statusIcon) {
-  if (statusIcon) {
-    const icon = document.createElement("span");
-    icon.className = "status-icon";
-    icon.setAttribute("aria-hidden", "true");
-    icon.textContent = `${statusIcon}\uFE0E`;
+  const icon = statusIcon
+    ? window.activityIcons.createActivityIcon(document, statusIcon)
+    : null;
+  if (icon) {
     element.appendChild(icon);
   }
   if (titleText) {
-    element.appendChild(document.createTextNode(statusIcon ? ` · ${titleText}` : titleText));
+    element.appendChild(document.createTextNode(titleText));
   }
+  return Boolean(icon);
 }
 
 function createTitle(titleText, busy, { titleLabel = null, statusIcon = null } = {}) {
@@ -54,12 +54,12 @@ function createTitle(titleText, busy, { titleLabel = null, statusIcon = null } =
   title.setAttribute("aria-level", "2");
   if (titleLabel) title.setAttribute("aria-label", titleLabel);
 
-  if (!statusIcon) {
+  const hasStatusIcon = appendStatusHeadingContent(title, titleText, statusIcon);
+  if (!hasStatusIcon) {
     const dot = document.createElement("span");
     dot.className = busy ? "dot busy" : "dot";
-    title.appendChild(dot);
+    title.prepend(dot);
   }
-  appendStatusHeadingContent(title, titleText, statusIcon);
 
   return title;
 }

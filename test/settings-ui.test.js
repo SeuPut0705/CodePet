@@ -12,19 +12,21 @@ const settingsJs = source("src/settings.js");
 const settingsCss = source("src/settings.css");
 const bubbleCss = source("src/bubble.css");
 const bubbleJs = source("src/bubble.js");
+const bubbleHtml = source("src/bubble.html");
 const mainJs = source("src/main.js");
 
 test("외부 provider 완료 메시지도 공통 말풍선 정리와 길이 제한을 거친다", () => {
   assert.match(mainJs, /text: truncateForBubble\(result\.message\)/);
 });
 
-test("활동 아이콘은 별도 심볼 요소와 접근성 제목으로 렌더링한다", () => {
-  assert.match(bubbleJs, /className = "status-icon"/);
-  assert.match(bubbleJs, /setAttribute\("aria-hidden", "true"\)/);
+test("활동 아이콘은 SVG 모듈과 접근성 제목으로 렌더링한다", () => {
+  assert.equal(fs.existsSync(path.join(__dirname, "..", "src", "activity-icons.js")), true);
+  assert.match(bubbleHtml, /activity-icons\.js[\s\S]*bubble\.js/);
+  assert.match(bubbleJs, /window\.activityIcons\.createActivityIcon\(document, statusIcon\)/);
   assert.match(bubbleJs, /setAttribute\("role", "heading"\)/);
   assert.match(bubbleJs, /setAttribute\("aria-label", titleLabel\)/);
   assert.match(bubbleCss, /\.status-icon\s*\{/);
-  assert.match(bubbleCss, /"Segoe UI Symbol"/);
+  assert.match(bubbleCss, /prefers-reduced-motion:\s*reduce/);
 });
 const rendererJs = source("src/renderer.js");
 const petHtml = source("src/index.html");

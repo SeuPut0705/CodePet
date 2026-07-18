@@ -10,6 +10,13 @@
   --bubble-track: rgba(15, 23, 42, 0.08);
   --bubble-warn: #ca8a04;
   --bubble-danger: #dc2626;
+  --status-active: #0d9488;
+  --status-info: #2563eb;
+  --status-image: #7c3aed;
+  --status-test: #0891b2;
+  --status-waiting: #d97706;
+  --status-success: #16a34a;
+  --status-error: #dc2626;
 }
 
 html,
@@ -90,13 +97,75 @@ body {
 }
 
 .status-icon {
+  width: 15px;
+  height: 15px;
   flex: none;
-  font-family: "Apple Symbols", "Segoe UI Symbol", "Noto Sans Symbols 2", sans-serif;
-  font-variant-emoji: text;
-  font-size: 1.08em;
-  font-style: normal;
-  font-weight: 700;
-  line-height: 1;
+  color: var(--bubble-ink);
+  transform-origin: center;
+}
+
+.status-icon[data-status="working"],
+.status-icon[data-status="writing"],
+.status-icon[data-status="edit"] {
+  color: var(--status-active);
+}
+
+.status-icon[data-status="review"],
+.status-icon[data-status="inspect"],
+.status-icon[data-status="build"] {
+  color: var(--status-info);
+}
+
+.status-icon[data-status="image"] {
+  color: var(--status-image);
+}
+
+.status-icon[data-status="test"] {
+  color: var(--status-test);
+}
+
+.status-icon[data-status="waiting"] {
+  color: var(--status-waiting);
+}
+
+.status-icon[data-status="success"] {
+  color: var(--status-success);
+}
+
+.status-icon[data-status="error"] {
+  color: var(--status-error);
+}
+
+.status-icon[data-status="working"] {
+  animation: status-spin 1.3s linear infinite;
+}
+
+.status-icon[data-status="writing"],
+.status-icon[data-status="image"] {
+  animation: status-breathe 1.6s ease-in-out infinite;
+}
+
+@keyframes status-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes status-breathe {
+  0%, 100% {
+    opacity: 0.72;
+    transform: scale(0.94);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .status-icon {
+    animation: none !important;
+  }
 }
 
 @keyframes pulse {
@@ -131,6 +200,9 @@ body {
 }
 
 .activity-row-label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
   overflow: hidden;
   color: var(--bubble-ink);
   font-size: 11px;
