@@ -37,6 +37,11 @@ const { commandNeedsShell, selectCommandPath } = require("./command-resolution")
 const { buildWindowsCodexLaunchScript } = require("./codex-desktop-launch");
 const { getInstalledFonts } = require("./installed-fonts");
 const {
+  clearUnsupportedAutoLaunch,
+  getLoginItemOptions: resolveLoginItemOptions,
+  isAutoLaunchSupported: resolveAutoLaunchSupported,
+} = require("./auto-launch");
+const {
   movementPreferencesPatch,
   normalizeMovementPreferences,
 } = require("./movement-preferences");
@@ -1152,28 +1157,38 @@ function toggleManualPause() {
   refreshTrayMenu();
 }
 
-// 윈도우 로그인 시 자동 실행 설정입니다.
-// - portable exe: 임시 폴더의 execPath가 아니라 원래 exe 경로를 등록해야 합니다.
-// - 개발 모드(npm run dev): 실행 파일이 electron.exe라서 앱 경로를 인자로 함께 등록합니다.
-// - 설치형/일반 패키징: 실행 파일 자체를 등록하면 됩니다.
+function getAutoLaunchContext() {
+  return {
+    platform: process.platform,
+    isPackaged: app.isPackaged,
+    execPath: process.execPath,
+    appPath: app.getAppPath(),
+    portableExecutableFile: process.env.PORTABLE_EXECUTABLE_FILE,
+  };
+}
+
+// macOS 로그인 항목은 실행 인자를 보존하지 않으므로 패키징된 CodePet.app만 등록합니다.
+// Windows 개발/portable 실행은 기존처럼 실행 경로와 프로젝트 인자를 사용합니다.
 function getLoginItemOptions() {
-  if (process.env.PORTABLE_EXECUTABLE_FILE) {
-    return { path: process.env.PORTABLE_EXECUTABLE_FILE };
-  }
-  return app.isPackaged
-    ? {}
-    : { path: process.execPath, args: [app.getAppPath()] };
+  return resolveLoginItemOptions(getAutoLaunchContext());
+}
+
+function isAutoLaunchSupported() {
+  return resolveAutoLaunchSupported(getAutoLaunchContext());
 }
 
 function isAutoLaunchEnabled() {
+  if (!isAutoLaunchSupported()) return false;
   return app.getLoginItemSettings(getLoginItemOptions()).openAtLogin;
 }
 
 function toggleAutoLaunch() {
+  if (!isAutoLaunchSupported()) return false;
   app.setLoginItemSettings({
     openAtLogin: !isAutoLaunchEnabled(),
     ...getLoginItemOptions(),
   });
+  return true;
 }
 
 // 펫 선택 메뉴는 펫 우클릭 메뉴와 시스템 트레이 메뉴에서 같이 사용합니다.
@@ -2064,6 +2079,7 @@ function showContextMenu() {
       label: "로그인 시 자동 실행",
       type: "checkbox",
       checked: isAutoLaunchEnabled(),
+      enabled: isAutoLaunchSupported(),
       click: toggleAutoLaunch,
     },
     { type: "separator" },
@@ -3261,7 +3277,11 @@ function registerIpcHandlers() {
     if (typeof next.followMouse === "boolean" && next.followMouse !== runtime.followMouse) {
       toggleFollowMouse();
     }
-    if (typeof next.autoStart === "boolean" && next.autoStart !== isAutoLaunchEnabled()) {
+    if (
+      isAutoLaunchSupported() &&
+      typeof next.autoStart === "boolean" &&
+      next.autoStart !== isAutoLaunchEnabled()
+    ) {
       toggleAutoLaunch();
     }
 
@@ -3332,6 +3352,7 @@ function registerIpcHandlers() {
 
 // 앱 수명주기 진입점입니다.
 app.whenReady().then(() => {
+  clearUnsupportedAutoLaunch(app, getAutoLaunchContext());
   // macOS에서는 데스크톱 펫이 Dock에 남아 있을 이유가 없어 메뉴바(트레이)로만 동작하게 합니다.
   if (process.platform === "darwin" && app.dock) {
     app.dock.hide();
@@ -3523,6 +3544,7 @@ async function getSettingsData({ forceUsage = false } = {}) {
     activityBubbleMode: settings.activityBubbleMode || "full",
     followMouse: runtime.followMouse,
     autoStart: isAutoLaunchEnabled(),
+    autoStartSupported: isAutoLaunchSupported(),
     providers: [
       { id: "codex", label: "Codex", accounts: codexAccounts },
       { id: "agy", label: "AGY", accounts: agy.accounts },

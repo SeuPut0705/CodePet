@@ -145,3 +145,11 @@ test("메뉴에서 사용량 보기와 활동 말풍선 항목을 제거하고 �
     /function showWatcherActivityBubble[\s\S]*pendingBubbleData && !pendingBubbleData\.activityPrivacy/
   );
 });
+
+test("macOS 개발 실행은 자동 실행을 비활성화하고 잘못 등록된 Electron 항목을 정리한다", () => {
+  assert.match(mainJs, /clearUnsupportedAutoLaunch\(app, getAutoLaunchContext\(\)\)/);
+  assert.match(mainJs, /autoStartSupported:\s*isAutoLaunchSupported\(\)/);
+  assert.match(mainJs, /enabled:\s*isAutoLaunchSupported\(\)/);
+  assert.match(settingsJs, /autostart\.disabled = state\.autoStartSupported === false/);
+  assert.match(settingsHtml, /id="autostart-note"/);
+});

@@ -157,7 +157,12 @@ function renderGeneral({ resetAppearance = false } = {}) {
   );
   $("#bubble-mode").value = state.activityBubbleMode;
   $("#follow").checked = state.followMouse;
-  $("#autostart").checked = state.autoStart;
+  const autostart = $("#autostart");
+  autostart.checked = state.autoStart;
+  autostart.disabled = state.autoStartSupported === false;
+  $("#autostart-note").textContent = autostart.disabled
+    ? "macOS 개발 실행에서는 앱 빌드 후 사용할 수 있습니다."
+    : "";
 
   const bgVal = state.appearance.bubbleBgColor || "";
   $("#bubble-bg-color").value = bgVal;
