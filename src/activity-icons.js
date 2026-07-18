@@ -3,7 +3,7 @@
 
   const SVG_NS = "http://www.w3.org/2000/svg";
 
-  const ICON_PATHS = Object.freeze({
+  const ICON_SHAPES = Object.freeze({
     working: [
       ["path", { d: "M8 1.5a6.5 6.5 0 1 1-5.15 2.53" }],
       ["path", { d: "M2.6 1.9v2.55h2.55" }],
@@ -61,8 +61,8 @@
   });
 
   function createActivityIcon(documentRef, iconId) {
-    const paths = ICON_PATHS[iconId];
-    if (!paths) return null;
+    if (!Object.hasOwn(ICON_SHAPES, iconId)) return null;
+    const shapes = ICON_SHAPES[iconId];
 
     const svg = documentRef.createElementNS(SVG_NS, "svg");
     svg.setAttribute("class", "status-icon");
@@ -76,7 +76,7 @@
     svg.setAttribute("focusable", "false");
     svg.dataset.status = iconId;
 
-    for (const [tagName, attributes] of paths) {
+    for (const [tagName, attributes] of shapes) {
       const shape = documentRef.createElementNS(SVG_NS, tagName);
       for (const [name, value] of Object.entries(attributes)) {
         shape.setAttribute(name, value);

@@ -67,5 +67,8 @@ test("모든 활동 상태를 16px용 SVG 아이콘으로 만든다", () => {
 
 test("허용되지 않은 상태는 SVG를 만들지 않는다", () => {
   assert.equal(createActivityIcon(fakeDocument, "<script>alert(1)</script>"), null);
+  assert.equal(createActivityIcon(fakeDocument, "__proto__"), null);
+  assert.equal(createActivityIcon(fakeDocument, "constructor"), null);
+  assert.equal(createActivityIcon(fakeDocument, "toString"), null);
   assert.equal(createActivityIcon(fakeDocument, null), null);
 });

@@ -32,7 +32,7 @@ function formatActivityTitleLabel(title, context = {}) {
   return parts.join(" · ");
 }
 
-// 아이콘은 renderer가 전용 글꼴로 그릴 수 있도록 제목 문자열과 분리합니다.
+// 아이콘 ID는 renderer가 안전한 SVG로 그릴 수 있도록 제목 문자열과 분리합니다.
 // rollout의 원본 모델·추론 값은 이 경로로 전달되지 않습니다.
 function createActivityHeading(title, context = {}) {
   const icon = activityStatusIcon(title);
