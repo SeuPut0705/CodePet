@@ -928,6 +928,34 @@ test("runtime task_started의 구조화 timestamp를 작업 문맥에 전달한�
   assert.equal(changes[0].taskStartedAt, "2026-07-10T13:02:17.000Z");
 });
 
+test("token_count 사용량에 정확한 thread context를 함께 발행한다", () => {
+  const watcher = new CodexWatcher({ getCodexHomes: () => [] });
+  const updates = [];
+  watcher.on("usage-updated", (...args) => updates.push(args));
+
+  watcher.handleLine(
+    ROLLOUT_PATH,
+    JSON.stringify({
+      timestamp: "2026-07-10T13:02:17.000Z",
+      type: "event_msg",
+      payload: {
+        type: "token_count",
+        rate_limits: {
+          primary: { window_minutes: 300, used_percent: 58, resets_at: 500 },
+        },
+      },
+    })
+  );
+
+  assert.equal(updates.length, 1);
+  assert.equal(updates[0][0].rateLimits.primary.used_percent, 58);
+  assert.deepEqual(updates[0][1], {
+    threadId: THREAD_ID,
+    workerLabel: null,
+    activeTaskCount: 1,
+  });
+});
+
 test("동시 작업 하나가 끝나면 완료 작업자 이름을 남은 작업 문맥에 재사용하지 않는다", () => {
   const watcher = new CodexWatcher({ getCodexHomes: () => [] });
   const secondPath = ROLLOUT_PATH.replace(THREAD_ID, "019f4a31-1111-7222-8333-444444444444");

@@ -316,21 +316,40 @@ test("Codex watcher만 작업별 서브에이전트 수 변경을 활성 section
   assert.doesNotMatch(externalRegistration, /subagent-count-changed/);
 });
 
-test("Codex 실시간 사용량을 다중 활동 헤더 데이터에 연결한다", () => {
+test("Codex 세션별 raw 사용량을 활성 집계 헤더와 reset timer에 연결한다", () => {
   const buildActiveBubble = mainJs.match(
     /function buildActiveActivityBubble\(\)[\s\S]*?\n}/
+  )?.[0] || "";
+  const removeActiveBubble = mainJs.match(
+    /function removeCodexActivityBubble\(threadId\)[\s\S]*?\n}/
   )?.[0] || "";
   const codexRegistration = mainJs.match(
     /function registerCodexWatcher\(\)[\s\S]*?\n}\n\n\/\/ 한도 사용률/
   )?.[0] || "";
 
   assert.match(mainJs, /require\("\.\/activity-usage"\)/);
-  assert.match(mainJs, /let latestActivityUsageBadges = \[\]/);
+  assert.match(mainJs, /const activityUsageState = new ActivityUsageState\(\)/);
+  assert.doesNotMatch(mainJs, /latestActivityUsageBadges/);
   assert.match(buildActiveBubble, /decorateActivityBubbleWithUsage/);
+  assert.match(buildActiveBubble, /activityUsageState\.buildBadges\(\)/);
   assert.match(buildActiveBubble, /codexWorking: codexWatcher\.working/);
-  assert.match(codexRegistration, /codexWatcher\.on\("usage-updated"/);
-  assert.match(codexRegistration, /buildActivityUsageBadges\(usage\)/);
-  assert.match(codexRegistration, /showActiveActivityBubble\(\)/);
+  assert.match(removeActiveBubble, /activityUsageState\.remove\(threadId\)/);
+  assert.match(removeActiveBubble, /if \(!codexWatcher\.working\) activityUsageState\.clear\(\)/);
+  assert.match(removeActiveBubble, /scheduleActivityUsageReset\(\)/);
+  assert.match(codexRegistration, /codexWatcher\.on\("usage-updated", \(usage, context\)/);
+  assert.match(codexRegistration, /if \(!context\?\.threadId\) return/);
+  assert.match(
+    codexRegistration,
+    /const badgesChanged = activityUsageState\.update\(context\.threadId, usage\)/
+  );
+  assert.match(
+    codexRegistration,
+    /if \(badgesChanged && codexWatcher\.working && activeActivityBubbles\.size > 1\)/
+  );
+  assert.match(mainJs, /activityUsageState\.nextResetAt\(nowMs\)/);
+  assert.match(mainJs, /activityUsageResetTimer = setTimeout/);
+  assert.match(mainJs, /activityUsageState\.refresh\(\)/);
+  assert.match(mainJs, /clearTimeout\(activityUsageResetTimer\)/);
 });
 const rendererJs = source("src/renderer.js");
 const petHtml = source("src/index.html");

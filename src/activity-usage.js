@@ -43,13 +43,16 @@ function badgeForWindow(rateWindow, target, nowMs) {
   };
 }
 
-function buildActivityUsageBadges(usage, nowMs = Date.now()) {
+function rateLimitWindows(usage) {
   const rateLimits = usage?.rateLimits;
   if (!rateLimits || typeof rateLimits !== "object") return [];
-
-  const windows = Array.isArray(rateLimits.windows)
+  return Array.isArray(rateLimits.windows)
     ? rateLimits.windows
     : [rateLimits.primary, rateLimits.secondary].filter(Boolean);
+}
+
+function buildActivityUsageBadges(usage, nowMs = Date.now()) {
+  const windows = rateLimitWindows(usage);
 
   return TARGET_WINDOWS.flatMap((target) => {
     for (const rateWindow of windows) {
@@ -58,6 +61,74 @@ function buildActivityUsageBadges(usage, nowMs = Date.now()) {
     }
     return [];
   });
+}
+
+function usageBadgesEqual(left, right) {
+  return (
+    left.length === right.length &&
+    left.every((badge, index) => (
+      badge.key === right[index].key &&
+      badge.remainingPercent === right[index].remainingPercent &&
+      badge.ariaLabel === right[index].ariaLabel
+    ))
+  );
+}
+
+class ActivityUsageState {
+  constructor() {
+    this.sessions = new Map();
+    this.sequence = 0;
+    this.observedBadges = [];
+  }
+
+  update(threadId, usage, nowMs = Date.now()) {
+    if (typeof threadId !== "string" || !threadId) return false;
+    this.sessions.set(threadId, { usage, sequence: ++this.sequence });
+    return this.refresh(nowMs);
+  }
+
+  remove(threadId, nowMs = Date.now()) {
+    if (!this.sessions.delete(threadId)) return false;
+    return this.refresh(nowMs);
+  }
+
+  clear(nowMs = Date.now()) {
+    this.sessions.clear();
+    return this.refresh(nowMs);
+  }
+
+  latestUsage() {
+    let latest = null;
+    for (const session of this.sessions.values()) {
+      if (!latest || session.sequence > latest.sequence) latest = session;
+    }
+    return latest?.usage || null;
+  }
+
+  buildBadges(nowMs = Date.now()) {
+    return buildActivityUsageBadges(this.latestUsage(), nowMs);
+  }
+
+  refresh(nowMs = Date.now()) {
+    const nextBadges = this.buildBadges(nowMs);
+    const changed = !usageBadgesEqual(this.observedBadges, nextBadges);
+    this.observedBadges = nextBadges;
+    return changed;
+  }
+
+  nextResetAt(nowMs = Date.now()) {
+    let nextResetAt = null;
+    for (const rateWindow of rateLimitWindows(this.latestUsage())) {
+      const target = TARGET_WINDOWS.find(
+        ({ minutes }) => normalizeFiniteNumber(rateWindow?.window_minutes) === minutes
+      );
+      if (!target || !badgeForWindow(rateWindow, target, nowMs)) continue;
+      const resetAtMs = resetAtMilliseconds(rateWindow);
+      if (resetAtMs <= nowMs) continue;
+      if (nextResetAt === null || resetAtMs < nextResetAt) nextResetAt = resetAtMs;
+    }
+    return nextResetAt;
+  }
 }
 
 function decorateActivityBubbleWithUsage(
@@ -79,6 +150,7 @@ function decorateActivityBubbleWithUsage(
 }
 
 module.exports = {
+  ActivityUsageState,
   buildActivityUsageBadges,
   decorateActivityBubbleWithUsage,
 };

@@ -613,7 +613,7 @@ function discoverDefaultCodexHomes() {
 //  - "tool-activity" (activity)             : 파일 수정/웹 검색/이미지 생성 등 도구 사용
 //  - "waiting" (waiting)                    : 사용자 입력/실행 승인을 기다리는 상태
 //  - "task-finished" (result)               : 세션별 완료/중단과 해당 thread id
-//  - "usage-updated" (usage)                : rate_limits 갱신
+//  - "usage-updated" (usage, context)       : 세션별 rate_limits 갱신
 //  - "subagent-count-changed" (count)       : 사용자 thread별 활성 서브에이전트 수
 class CodexWatcher extends EventEmitter {
   constructor(options = {}) {
@@ -1312,17 +1312,18 @@ class CodexWatcher extends EventEmitter {
         break;
       }
 
-      case "token_count":
-        this.setWorking(filePath);
+      case "token_count": {
+        const context = this.setWorking(filePath);
         if (payload.rate_limits) {
           this.cachedUsage = normalizeUsage(
             payload.rate_limits,
             entry.timestamp || null,
             "sessions-tail"
           );
-          this.emit("usage-updated", this.cachedUsage);
+          this.emit("usage-updated", this.cachedUsage, context);
         }
         break;
+      }
 
       default:
         break;

@@ -1,6 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const {
+  ActivityUsageState,
   buildActivityUsageBadges,
   decorateActivityBubbleWithUsage,
 } = require("../src/activity-usage");
@@ -131,4 +132,85 @@ test("Codex가 작업 중인 다중 활동에만 사용량 배지를 붙인다",
   assert.equal(decorateActivityBubbleWithUsage(multi, badges, { codexWorking: false }), multi);
   assert.equal(decorateActivityBubbleWithUsage(single, badges, { codexWorking: true }), single);
   assert.equal(decorateActivityBubbleWithUsage(multi, [], { codexWorking: true }), multi);
+});
+
+test("가장 최근 활성 세션 사용량을 표시하고 종료 시 이전 활성 세션 값을 복원한다", () => {
+  const state = new ActivityUsageState();
+  const usageA = {
+    rateLimits: {
+      windows: [{ window_minutes: 300, used_percent: 70, resets_at: 500 }],
+    },
+  };
+  const usageB = {
+    rateLimits: {
+      windows: [{ window_minutes: 300, used_percent: 20, resets_at: 500 }],
+    },
+  };
+
+  state.update("thread-a", usageA, 1_000);
+  state.update("thread-b", usageB, 1_000);
+  assert.equal(state.buildBadges(1_000)[0].remainingPercent, 80);
+
+  state.remove("thread-b", 1_000);
+  assert.equal(state.buildBadges(1_000)[0].remainingPercent, 30);
+
+  state.remove("thread-a", 1_000);
+  assert.deepEqual(state.buildBadges(1_000), []);
+  assert.equal(state.update("", usageB, 1_000), false);
+  assert.deepEqual(state.buildBadges(1_000), []);
+});
+
+test("raw usage를 보존해 reset 이후 다시 계산하고 idle에서는 과거 값을 비운다", () => {
+  const state = new ActivityUsageState();
+  state.update("thread-a", {
+    rateLimits: {
+      windows: [{ window_minutes: 300, used_percent: 60, resets_at: 2 }],
+    },
+  }, 1_000);
+
+  assert.equal(state.buildBadges(1_000)[0].remainingPercent, 40);
+  assert.equal(state.buildBadges(2_000)[0].remainingPercent, 100);
+
+  state.clear();
+  assert.deepEqual(state.buildBadges(3_000), []);
+});
+
+test("표시 배지가 같은 usage 갱신은 변경으로 보고하지 않는다", () => {
+  const state = new ActivityUsageState();
+  const usage = (usedPercent, resetsAt) => ({
+    rateLimits: {
+      windows: [{
+        window_minutes: 300,
+        used_percent: usedPercent,
+        resets_at: resetsAt,
+      }],
+    },
+  });
+
+  assert.equal(state.update("thread-a", usage(60, 500), 1_000), true);
+  assert.equal(state.update("thread-b", usage(60, 600), 1_000), false);
+  assert.equal(state.update("thread-b", usage(61, 600), 1_000), true);
+});
+
+test("가장 가까운 target reset을 선택하고 reset 시점에 표시 변경을 감지한다", () => {
+  const state = new ActivityUsageState();
+  state.update("thread-a", {
+    rateLimits: {
+      windows: [
+        { window_minutes: 10080, used_percent: 20, resets_at: 5 },
+        { window_minutes: 300, used_percent: 60, resets_at: 2 },
+        { window_minutes: 60, used_percent: 10, resets_at: 1.5 },
+      ],
+    },
+  }, 1_000);
+
+  assert.equal(state.nextResetAt(1_000), 2_000);
+  assert.equal(state.refresh(1_000), false);
+  assert.equal(state.refresh(2_000), true);
+  assert.equal(state.refresh(2_000), false);
+  assert.equal(state.nextResetAt(2_000), 5_000);
+  assert.deepEqual(
+    state.buildBadges(2_000).map((badge) => badge.remainingPercent),
+    [100, 80]
+  );
 });

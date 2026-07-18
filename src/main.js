@@ -33,7 +33,7 @@ const {
   shouldRestoreActiveActivityBubble,
 } = require("./activity-bubble-state");
 const {
-  buildActivityUsageBadges,
+  ActivityUsageState,
   decorateActivityBubbleWithUsage,
 } = require("./activity-usage");
 const {
@@ -492,7 +492,8 @@ let bubbleHeight = 80;
 let currentActivityBubbleData = null;
 // rollout thread별 마지막 활동입니다. 다중 작업이면 renderer에 sections로 전달합니다.
 const activeActivityBubbles = new ActivityBubbleState();
-let latestActivityUsageBadges = [];
+const activityUsageState = new ActivityUsageState();
+let activityUsageResetTimer = null;
 
 // 사용률이 이 값을 넘으면 펫이 자발적으로 경고 말풍선을 띄웁니다.
 const USAGE_WARN_THRESHOLD_PERCENT = 90;
@@ -2325,10 +2326,31 @@ function createVisibleActivityBubble(data) {
   return visible ? { ...visible, activityPrivacy: true } : null;
 }
 
+function clearActivityUsageResetTimer() {
+  clearTimeout(activityUsageResetTimer);
+  activityUsageResetTimer = null;
+}
+
+function scheduleActivityUsageReset() {
+  clearActivityUsageResetTimer();
+  const nowMs = Date.now();
+  const resetAtMs = activityUsageState.nextResetAt(nowMs);
+  if (!Number.isFinite(resetAtMs)) return;
+
+  activityUsageResetTimer = setTimeout(() => {
+    activityUsageResetTimer = null;
+    const badgesChanged = activityUsageState.refresh();
+    scheduleActivityUsageReset();
+    if (badgesChanged && codexWatcher.working && activeActivityBubbles.size > 1) {
+      showActiveActivityBubble();
+    }
+  }, Math.max(0, resetAtMs - nowMs));
+}
+
 function buildActiveActivityBubble() {
   return decorateActivityBubbleWithUsage(
     activeActivityBubbles.toBubbleData(),
-    latestActivityUsageBadges,
+    activityUsageState.buildBadges(),
     { codexWorking: codexWatcher.working }
   );
 }
@@ -2555,6 +2577,9 @@ function showCodexActivityBubble(data, context) {
 
 function removeCodexActivityBubble(threadId) {
   activeActivityBubbles.remove(threadId);
+  activityUsageState.remove(threadId);
+  if (!codexWatcher.working) activityUsageState.clear();
+  scheduleActivityUsageReset();
 }
 
 function didTaskFail(result) {
@@ -2566,9 +2591,11 @@ function didTaskFail(result) {
 }
 
 function registerCodexWatcher() {
-  codexWatcher.on("usage-updated", (usage) => {
-    latestActivityUsageBadges = buildActivityUsageBadges(usage);
-    if (codexWatcher.working && activeActivityBubbles.size > 1) {
+  codexWatcher.on("usage-updated", (usage, context) => {
+    if (!context?.threadId) return;
+    const badgesChanged = activityUsageState.update(context.threadId, usage);
+    scheduleActivityUsageReset();
+    if (badgesChanged && codexWatcher.working && activeActivityBubbles.size > 1) {
       showActiveActivityBubble();
     }
   });
@@ -3409,6 +3436,7 @@ app.on("before-quit", () => {
 // 타이머를 모두 정리하고 앱을 종료합니다.
 app.on("window-all-closed", () => {
   stopMovementLoop();
+  clearActivityUsageResetTimer();
   clearTimeout(phaseTimer);
   clearTimeout(reactionTimer);
   clearTimeout(bubbleHideTimer);
