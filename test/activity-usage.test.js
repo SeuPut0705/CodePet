@@ -72,6 +72,52 @@ test("숫자가 아닌 초기화 시각의 대상 창은 숨긴다", () => {
   assert.deepEqual(buildActivityUsageBadges(usage, 1_000), []);
 });
 
+const INVALID_NUMERIC_VALUES = [
+  ["빈 문자열", ""],
+  ["공백 문자열", "   "],
+  ["boolean", false],
+  ["배열", []],
+];
+
+for (const [label, resetsAt] of INVALID_NUMERIC_VALUES) {
+  test(`${label} 초기화 시각의 대상 창은 숨긴다`, () => {
+    const usage = {
+      rateLimits: {
+        windows: [{ window_minutes: 300, used_percent: 40, resets_at: resetsAt }],
+      },
+    };
+
+    assert.deepEqual(buildActivityUsageBadges(usage, 1_000), []);
+  });
+}
+
+for (const [label, usedPercent] of INVALID_NUMERIC_VALUES) {
+  test(`${label} 사용률의 대상 창은 숨긴다`, () => {
+    const usage = {
+      rateLimits: {
+        windows: [{ window_minutes: 300, used_percent: usedPercent, resets_at: 500 }],
+      },
+    };
+
+    assert.deepEqual(buildActivityUsageBadges(usage, 1_000), []);
+  });
+}
+
+test("배열 기간은 숨기고 다음 유효 숫자 문자열 창을 사용한다", () => {
+  const usage = {
+    rateLimits: {
+      windows: [
+        { window_minutes: [300], used_percent: 40, resets_at: 500 },
+        { window_minutes: "300", used_percent: "58.4", resets_at: "500" },
+      ],
+    },
+  };
+
+  assert.deepEqual(buildActivityUsageBadges(usage, 1_000), [
+    { key: "5h", remainingPercent: 42, ariaLabel: "5시간 42% 남음" },
+  ]);
+});
+
 test("Codex가 작업 중인 다중 활동에만 사용량 배지를 붙인다", () => {
   const badges = [
     { key: "5h", remainingPercent: 42, ariaLabel: "5시간 42% 남음" },

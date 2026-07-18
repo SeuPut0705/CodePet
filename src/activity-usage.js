@@ -7,17 +7,27 @@ function clampPercent(value) {
   return Math.min(100, Math.max(0, value));
 }
 
+function normalizeFiniteNumber(value) {
+  if (typeof value === "number") return Number.isFinite(value) ? value : null;
+  if (typeof value !== "string" || value.trim() === "") return null;
+
+  const normalized = Number(value);
+  return Number.isFinite(normalized) ? normalized : null;
+}
+
 function resetAtMilliseconds(rateWindow) {
-  const resetAt = Number(rateWindow?.resets_at ?? rateWindow?.reset_at);
-  return Number.isFinite(resetAt) ? resetAt * 1000 : null;
+  const resetAt = normalizeFiniteNumber(rateWindow?.resets_at ?? rateWindow?.reset_at);
+  return resetAt === null ? null : resetAt * 1000;
 }
 
 function badgeForWindow(rateWindow, target, nowMs) {
   if (!rateWindow || rateWindow.scope) return null;
-  if (Number(rateWindow.window_minutes) !== target.minutes) return null;
+  if (normalizeFiniteNumber(rateWindow.window_minutes) !== target.minutes) return null;
 
-  const rawUsedPercent = Number(rateWindow.used_percent ?? rateWindow.usedPercent);
-  if (!Number.isFinite(rawUsedPercent)) return null;
+  const rawUsedPercent = normalizeFiniteNumber(
+    rateWindow.used_percent ?? rateWindow.usedPercent
+  );
+  if (rawUsedPercent === null) return null;
 
   const resetAtMs = resetAtMilliseconds(rateWindow);
   if (resetAtMs === null) return null;
