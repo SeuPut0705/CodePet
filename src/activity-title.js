@@ -4,7 +4,7 @@
 function formatActivityTitle(title, context = {}) {
   const parts = [title];
   if (context.workerLabel) parts.push(context.workerLabel);
-  if (context.reasoningLabel) parts.push(`추론 ${context.reasoningLabel}`);
+  if (context.reasoningLabel) parts.push(context.reasoningLabel);
   return parts.join(" · ");
 }
 

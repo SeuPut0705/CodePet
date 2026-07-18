@@ -289,7 +289,7 @@ test("두 번째 작업 시작은 즉시 활성 수 변경 문맥을 발행한�
 test("활동 제목은 상태를 먼저 쓰고 모델을 뒤에 표시한다", () => {
   assert.equal(
     formatActivityTitle("작업 중", { workerLabel: "Terra", reasoningLabel: "High" }),
-    "작업 중 · Terra · 추론 High"
+    "작업 중 · Terra · High"
   );
   assert.equal(formatActivityTitle("작업 중", { activeTaskCount: 3 }), "작업 중");
   assert.equal(formatActivityTitle("작업 중", { workerLabel: "Terra", activeTaskCount: 3 }), "작업 중 · Terra");

@@ -47,7 +47,7 @@ test("대화는 실제 시작 시각 순서를 유지하고 각 제목 아래 �
   assert.deepEqual(bubble.sections.map((section) => section.title), [
     "AGY 응답 작성 중",
     "Claude 명령 실행 중",
-    "빌드 중 · Terra · 추론 High",
+    "빌드 중 · Terra · High",
   ]);
   assert.deepEqual(bubble.sections.map((section) => section.text), [
     "agy detail",
@@ -82,7 +82,7 @@ test("한 대화만 남으면 기존 단일 말풍선 형태를 유지한다", (
 
   const bubble = state.toBubbleData();
   assert.equal(bubble.sections, undefined);
-  assert.equal(bubble.title, "테스트 중 · Terra · 추론 XHigh");
+  assert.equal(bubble.title, "테스트 중 · Terra · XHigh");
   assert.equal(bubble.text, "terra detail");
 });
 
