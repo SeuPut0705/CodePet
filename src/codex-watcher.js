@@ -164,7 +164,11 @@ function listSessionDayDirs(limit = WATCHER_CONFIG.maxDayDirsToScan, sessionsDir
 
 // day 폴더들에서 rollout 파일을 수정 시각 내림차순으로 모아 돌려줍니다.
 // 오래된 thread가 오늘 append되는 경우 폴더명은 오래됐지만 mtime은 최신이므로 반드시 mtime을 기준으로 합니다.
-function listRecentRolloutFiles(limit, sessionsDir = DEFAULT_SESSIONS_DIR) {
+function listRecentRolloutFiles(
+  limit,
+  sessionsDir = DEFAULT_SESSIONS_DIR,
+  includeFile = () => true
+) {
   const files = [];
 
   for (const dayDir of listSessionDayDirs(WATCHER_CONFIG.maxDayDirsToScan, sessionsDir)) {
@@ -189,7 +193,36 @@ function listRecentRolloutFiles(limit, sessionsDir = DEFAULT_SESSIONS_DIR) {
   }
 
   files.sort((a, b) => b.mtimeMs - a.mtimeMs);
-  return files.slice(0, limit);
+  const selected = [];
+  for (const file of files) {
+    if (!includeFile(file.filePath)) continue;
+    selected.push(file);
+    if (selected.length >= limit) break;
+  }
+  return selected;
+}
+
+// 첫 session_meta 줄이 완전히 기록된 뒤 실제 payload.thread_source만 신뢰합니다.
+// 부분 기록은 다음 poll로 미뤄 subagent 이벤트가 한 번이라도 사용자 화면에 새는 것을 막습니다.
+function readRolloutThreadSource(filePath) {
+  let fd;
+  try {
+    fd = fs.openSync(filePath, "r");
+    const size = Math.min(fs.fstatSync(fd).size, 2 * 1024 * 1024);
+    const buffer = Buffer.alloc(size);
+    const bytesRead = fs.readSync(fd, buffer, 0, size, 0);
+    const text = buffer.toString("utf8", 0, bytesRead);
+    const newlineIndex = text.indexOf("\n");
+    if (newlineIndex < 0) return null;
+
+    const entry = JSON.parse(text.slice(0, newlineIndex));
+    if (entry?.type !== "session_meta" || !entry.payload) return null;
+    return entry.payload.thread_source || "user";
+  } catch {
+    return null;
+  } finally {
+    if (fd !== undefined) fs.closeSync(fd);
+  }
 }
 
 // 파일 끝에서 usageScanBytes만 읽어 줄 단위로 돌려줍니다. 뒤에서부터 스캔하는 용도입니다.
@@ -507,6 +540,8 @@ class CodexWatcher extends EventEmitter {
     // 동시 작업 하나만 멈춰도 개별적으로 stale 해제할 수 있게 파일별 최근 활동 시각을 둡니다.
     this.lastEventAtByFile = new Map();
     this.taskStartedAtByFile = new Map();
+    // session_meta 분류는 rollout 수명 동안 바뀌지 않으므로 poll마다 큰 첫 줄을 다시 읽지 않습니다.
+    this.userFacingRollouts = new Map();
     this.firstPoll = true;
     this.cachedUsage = null;
   }
@@ -554,11 +589,30 @@ class CodexWatcher extends EventEmitter {
   listRecentRolloutFiles(limit) {
     const files = [];
     for (const sessionsDir of this.getSessionDirs()) {
-      files.push(...listRecentRolloutFiles(limit, sessionsDir));
+      files.push(
+        ...listRecentRolloutFiles(
+          limit,
+          sessionsDir,
+          (filePath) => this.isUserFacingRollout(filePath)
+        )
+      );
     }
 
     files.sort((a, b) => b.mtimeMs - a.mtimeMs);
     return files.slice(0, limit);
+  }
+
+  isUserFacingRollout(filePath) {
+    if (this.userFacingRollouts.has(filePath)) return this.userFacingRollouts.get(filePath);
+
+    const threadSource = readRolloutThreadSource(filePath);
+    if (!threadSource) return false;
+    const isUserFacing = threadSource !== "subagent";
+    this.userFacingRollouts.set(filePath, isUserFacing);
+    if (this.userFacingRollouts.size > 256) {
+      this.userFacingRollouts.delete(this.userFacingRollouts.keys().next().value);
+    }
+    return isUserFacing;
   }
 
   // tail 중 캐시된 값이 있으면 그대로 쓰고,

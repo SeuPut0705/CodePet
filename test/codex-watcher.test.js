@@ -25,6 +25,69 @@ test("rollout 파일명에서 Codex thread id를 추출한다", () => {
   assert.equal(extractThreadIdFromRolloutPath(""), null);
 });
 
+test("최근 rollout 목록에서 서브에이전트 thread를 제외한다", (t) => {
+  const codexHome = fs.mkdtempSync(path.join(os.tmpdir(), "codepet-subagent-"));
+  t.after(() => fs.rmSync(codexHome, { recursive: true, force: true }));
+  const dayDir = path.join(codexHome, "sessions", "2026", "07", "18");
+  fs.mkdirSync(dayDir, { recursive: true });
+
+  const userThreadId = "019f4a31-1111-7222-8333-444444444444";
+  const userPath = path.join(dayDir, `rollout-user-${userThreadId}.jsonl`);
+  fs.writeFileSync(userPath, `${JSON.stringify({
+    type: "session_meta",
+    payload: {
+      id: userThreadId,
+      thread_source: "user",
+      base_instructions: { text: '문서 예시: "thread_source":"subagent"' },
+      extra: { example: { thread_source: "subagent" } },
+    },
+  })}\n`, "utf8");
+  fs.utimesSync(userPath, new Date(1_000), new Date(1_000));
+  for (let index = 0; index < 12; index += 1) {
+    const suffix = String(index).padStart(12, "0");
+    const subagentThreadId = `019f4a32-1111-7222-8333-${suffix}`;
+    const subagentPath = path.join(dayDir, `rollout-subagent-${subagentThreadId}.jsonl`);
+    fs.writeFileSync(subagentPath, `${JSON.stringify({
+      type: "session_meta",
+      payload: {
+        id: subagentThreadId,
+        parent_thread_id: userThreadId,
+        thread_source: "subagent",
+        source: { subagent: { thread_spawn: { parent_thread_id: userThreadId } } },
+      },
+    })}\n`, "utf8");
+    fs.utimesSync(subagentPath, new Date(2_000 + index), new Date(2_000 + index));
+  }
+
+  const watcher = new CodexWatcher({ getCodexHomes: () => [codexHome] });
+  assert.deepEqual(
+    watcher.listRecentRolloutFiles(10).map((file) => file.filePath),
+    [userPath]
+  );
+});
+
+test("session_meta가 덜 기록된 rollout은 다음 poll까지 보류한다", (t) => {
+  const codexHome = fs.mkdtempSync(path.join(os.tmpdir(), "codepet-partial-meta-"));
+  t.after(() => fs.rmSync(codexHome, { recursive: true, force: true }));
+  const dayDir = path.join(codexHome, "sessions", "2026", "07", "18");
+  fs.mkdirSync(dayDir, { recursive: true });
+  const threadId = "019f4a33-1111-7222-8333-444444444444";
+  const filePath = path.join(dayDir, `rollout-partial-${threadId}.jsonl`);
+  fs.writeFileSync(filePath, '{"type":"session_meta","payload":', "utf8");
+
+  const watcher = new CodexWatcher({ getCodexHomes: () => [codexHome] });
+  assert.deepEqual(watcher.listRecentRolloutFiles(10), []);
+
+  fs.writeFileSync(filePath, `${JSON.stringify({
+    type: "session_meta",
+    payload: { id: threadId, thread_source: "user" },
+  })}\n`, "utf8");
+  assert.deepEqual(
+    watcher.listRecentRolloutFiles(10).map((file) => file.filePath),
+    [filePath]
+  );
+});
+
 test("shell 명령을 테스트, 빌드, 일반 명령으로 분류한다", () => {
   assert.equal(classifyShellCommand("npm test").kind, "test");
   assert.equal(classifyShellCommand("node --test test/codex-watcher.test.js").kind, "test");
