@@ -33,6 +33,10 @@ const {
   shouldRestoreActiveActivityBubble,
 } = require("./activity-bubble-state");
 const {
+  buildActivityUsageBadges,
+  decorateActivityBubbleWithUsage,
+} = require("./activity-usage");
+const {
   createStableWindowBounds,
   normalizeWindowSize,
   resizeWindowGeometry,
@@ -488,6 +492,7 @@ let bubbleHeight = 80;
 let currentActivityBubbleData = null;
 // rollout thread별 마지막 활동입니다. 다중 작업이면 renderer에 sections로 전달합니다.
 const activeActivityBubbles = new ActivityBubbleState();
+let latestActivityUsageBadges = [];
 
 // 사용률이 이 값을 넘으면 펫이 자발적으로 경고 말풍선을 띄웁니다.
 const USAGE_WARN_THRESHOLD_PERCENT = 90;
@@ -2321,7 +2326,11 @@ function createVisibleActivityBubble(data) {
 }
 
 function buildActiveActivityBubble() {
-  return activeActivityBubbles.toBubbleData();
+  return decorateActivityBubbleWithUsage(
+    activeActivityBubbles.toBubbleData(),
+    latestActivityUsageBadges,
+    { codexWorking: codexWatcher.working }
+  );
 }
 
 function showWatcherActivityBubble(data, { active = false } = {}) {
@@ -2557,6 +2566,13 @@ function didTaskFail(result) {
 }
 
 function registerCodexWatcher() {
+  codexWatcher.on("usage-updated", (usage) => {
+    latestActivityUsageBadges = buildActivityUsageBadges(usage);
+    if (codexWatcher.working && activeActivityBubbles.size > 1) {
+      showActiveActivityBubble();
+    }
+  });
+
   codexWatcher.on("subagent-count-changed", ({ threadId, subagentCount }) => {
     if (activeActivityBubbles.refresh(threadId, { subagentCount })) {
       showActiveActivityBubble();

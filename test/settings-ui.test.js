@@ -243,6 +243,23 @@ test("Codex watcher만 작업별 서브에이전트 수 변경을 활성 section
   );
   assert.doesNotMatch(externalRegistration, /subagent-count-changed/);
 });
+
+test("Codex 실시간 사용량을 다중 활동 헤더 데이터에 연결한다", () => {
+  const buildActiveBubble = mainJs.match(
+    /function buildActiveActivityBubble\(\)[\s\S]*?\n}/
+  )?.[0] || "";
+  const codexRegistration = mainJs.match(
+    /function registerCodexWatcher\(\)[\s\S]*?\n}\n\n\/\/ 한도 사용률/
+  )?.[0] || "";
+
+  assert.match(mainJs, /require\("\.\/activity-usage"\)/);
+  assert.match(mainJs, /let latestActivityUsageBadges = \[\]/);
+  assert.match(buildActiveBubble, /decorateActivityBubbleWithUsage/);
+  assert.match(buildActiveBubble, /codexWorking: codexWatcher\.working/);
+  assert.match(codexRegistration, /codexWatcher\.on\("usage-updated"/);
+  assert.match(codexRegistration, /buildActivityUsageBadges\(usage\)/);
+  assert.match(codexRegistration, /showActiveActivityBubble\(\)/);
+});
 const rendererJs = source("src/renderer.js");
 const petHtml = source("src/index.html");
 const petCss = source("src/styles.css");
