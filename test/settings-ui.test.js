@@ -196,6 +196,73 @@ test("main은 renderer 크기를 work area에 제한하고 실제 폭으로 배�
   assert.doesNotMatch(mainJs, /BUBBLE_CONFIG\.width\s*\/\s*2/);
 });
 
+test("main은 배치와 생성 전에 저장된 말풍선 크기를 현재 work area에 다시 제한한다", () => {
+  const constrainSize = mainJs.slice(
+    mainJs.indexOf("function constrainBubbleSizeToWorkArea"),
+    mainJs.indexOf("function positionBubble")
+  );
+  const positionBubble = mainJs.slice(
+    mainJs.indexOf("function positionBubble"),
+    mainJs.indexOf("function clearBubbleLoadWatchdog")
+  );
+  const createBubbleWindow = mainJs.slice(
+    mainJs.indexOf("function createBubbleWindow"),
+    mainJs.indexOf("function createWindow")
+  );
+
+  assert.match(constrainSize, /normalizeBubbleSize\(size,\s*\{/);
+  assert.match(constrainSize, /workArea,/);
+  assert.match(constrainSize, /bubbleWidth = normalized\.width/);
+  assert.match(constrainSize, /bubbleHeight = normalized\.height/);
+  assert.match(
+    positionBubble,
+    /const workArea = getCurrentWorkArea\(\);[\s\S]*constrainBubbleSizeToWorkArea\(null, workArea\)/
+  );
+  assert.match(positionBubble, /bubbleSize,/);
+  assert.match(
+    createBubbleWindow,
+    /const initialBubbleSize = constrainBubbleSizeToWorkArea\(\);/
+  );
+  assert.match(createBubbleWindow, /width: initialBubbleSize\.width/);
+  assert.match(createBubbleWindow, /height: initialBubbleSize\.height/);
+});
+
+test("main은 display 변경 때 보이는 말풍선만 현재 화면에 다시 배치한다", () => {
+  const displayHandler = mainJs.slice(
+    mainJs.indexOf("function repositionVisibleBubbleForDisplayChange"),
+    mainJs.indexOf("function registerBubbleDisplayListeners")
+  );
+  const displayRegistration = mainJs.slice(
+    mainJs.indexOf("function registerBubbleDisplayListeners"),
+    mainJs.indexOf("function unregisterBubbleDisplayListeners")
+  );
+  const readyLifecycle = mainJs.slice(
+    mainJs.indexOf("app.whenReady().then"),
+    mainJs.indexOf('app.on("before-quit"')
+  );
+  const quitLifecycle = mainJs.slice(
+    mainJs.indexOf('app.on("before-quit"'),
+    mainJs.indexOf('app.on("window-all-closed"')
+  );
+
+  assert.match(displayHandler, /bubbleWindow\.isVisible\(\)/);
+  assert.match(displayHandler, /positionBubble\(\)/);
+  assert.match(
+    displayRegistration,
+    /screen\.on\("display-metrics-changed", repositionVisibleBubbleForDisplayChange\)/
+  );
+  assert.match(
+    displayRegistration,
+    /screen\.on\("display-added", repositionVisibleBubbleForDisplayChange\)/
+  );
+  assert.match(
+    displayRegistration,
+    /screen\.on\("display-removed", repositionVisibleBubbleForDisplayChange\)/
+  );
+  assert.match(readyLifecycle, /registerBubbleDisplayListeners\(\)/);
+  assert.match(quitLifecycle, /unregisterBubbleDisplayListeners\(\)/);
+});
+
 test("말풍선 renderer는 콘텐츠 선호 폭과 현재 높이를 함께 보고한다", () => {
   const reports = [];
   const { bubble, root, update } = createBubbleHarness({

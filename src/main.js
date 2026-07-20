@@ -2236,8 +2236,26 @@ function ensurePetWindowVisibleForBubble() {
   return recoverPetWindowVisuals();
 }
 
+function constrainBubbleSizeToWorkArea(size = null, workArea = getCurrentWorkArea()) {
+  const normalized = normalizeBubbleSize(size, {
+    workArea,
+    currentWidth: bubbleWidth,
+    currentHeight: bubbleHeight,
+    minWidth: BUBBLE_CONFIG.minWidth,
+    maxWidth: BUBBLE_CONFIG.maxWidth,
+    minHeight: BUBBLE_CONFIG.minHeight,
+    maxHeight: BUBBLE_CONFIG.maxHeight,
+    marginPx: BUBBLE_CONFIG.marginPx,
+  });
+  bubbleWidth = normalized.width;
+  bubbleHeight = normalized.height;
+  return normalized;
+}
+
 function positionBubble() {
   if (!bubbleWindow || bubbleWindow.isDestroyed()) return;
+  const workArea = getCurrentWorkArea();
+  const bubbleSize = constrainBubbleSizeToWorkArea(null, workArea);
   const bounds = positionBubbleBounds({
     petBounds: {
       x: runtime.x,
@@ -2245,11 +2263,28 @@ function positionBubble() {
       width: runtime.width,
       height: runtime.height,
     },
-    workArea: getCurrentWorkArea(),
-    bubbleSize: { width: bubbleWidth, height: bubbleHeight },
+    workArea,
+    bubbleSize,
     gapPx: BUBBLE_CONFIG.gapPx,
   });
   bubbleWindow.setBounds(bounds);
+}
+
+function repositionVisibleBubbleForDisplayChange() {
+  if (!bubbleWindow || bubbleWindow.isDestroyed() || !bubbleWindow.isVisible()) return;
+  positionBubble();
+}
+
+function registerBubbleDisplayListeners() {
+  screen.on("display-metrics-changed", repositionVisibleBubbleForDisplayChange);
+  screen.on("display-added", repositionVisibleBubbleForDisplayChange);
+  screen.on("display-removed", repositionVisibleBubbleForDisplayChange);
+}
+
+function unregisterBubbleDisplayListeners() {
+  screen.removeListener("display-metrics-changed", repositionVisibleBubbleForDisplayChange);
+  screen.removeListener("display-added", repositionVisibleBubbleForDisplayChange);
+  screen.removeListener("display-removed", repositionVisibleBubbleForDisplayChange);
 }
 
 // 준비된 말풍선 renderer로 보류 중인 데이터를 보냅니다.
@@ -3000,11 +3035,12 @@ function registerExternalWatcher(watcher, providerLabel) {
 // 말풍선용 투명 창을 만듭니다. 포커스를 뺏지 않도록 focusable을 끕니다.
 function createBubbleWindow() {
   bubbleReady = false;
+  const initialBubbleSize = constrainBubbleSizeToWorkArea();
 
   bubbleWindow = new BrowserWindow({
     ...WINDOW_CONFIG,
-    width: bubbleWidth,
-    height: bubbleHeight,
+    width: initialBubbleSize.width,
+    height: initialBubbleSize.height,
     show: false,
     focusable: false,
     webPreferences: {
@@ -3251,18 +3287,7 @@ function registerIpcHandlers() {
   ipcMain.on(BUBBLE_CHANNELS.RESIZE, (_event, size) => {
     if (!bubbleWindow || bubbleWindow.isDestroyed()) return;
 
-    const normalized = normalizeBubbleSize(size, {
-      workArea: getCurrentWorkArea(),
-      currentWidth: bubbleWidth,
-      currentHeight: bubbleHeight,
-      minWidth: BUBBLE_CONFIG.minWidth,
-      maxWidth: BUBBLE_CONFIG.maxWidth,
-      minHeight: BUBBLE_CONFIG.minHeight,
-      maxHeight: BUBBLE_CONFIG.maxHeight,
-      marginPx: BUBBLE_CONFIG.marginPx,
-    });
-    bubbleWidth = normalized.width;
-    bubbleHeight = normalized.height;
+    constrainBubbleSizeToWorkArea(size);
 
     positionBubble();
     clearTimeout(bubbleRenderFallbackTimer);
@@ -3439,6 +3464,7 @@ app.whenReady().then(() => {
   createTray();
   createWindow();
   createBubbleWindow();
+  registerBubbleDisplayListeners();
   if (process.argv.includes("--settings")) {
     openSettingsWindow();
   }
@@ -3460,6 +3486,7 @@ app.whenReady().then(() => {
 
 app.on("before-quit", () => {
   isQuitting = true;
+  unregisterBubbleDisplayListeners();
   activityUsageController.dispose();
   kimiUsageController.dispose();
   teardownCodexProxyOnQuit();

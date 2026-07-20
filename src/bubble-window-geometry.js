@@ -31,6 +31,13 @@ function normalizeBubbleSize(payload, options) {
   const availableWidth = Math.max(1, workWidth - marginPx * 2);
   const effectiveMaxWidth = Math.min(maxWidth, availableWidth);
   const effectiveMinWidth = Math.min(minWidth, effectiveMaxWidth);
+  const reportedWorkHeight = roundedFinite(workArea?.height);
+  const workHeight = Math.max(
+    1,
+    reportedWorkHeight === null ? minHeight : reportedWorkHeight
+  );
+  const effectiveMaxHeight = Math.min(maxHeight, workHeight);
+  const effectiveMinHeight = Math.min(minHeight, effectiveMaxHeight);
   const reportedWidth = roundedFinite(report.width);
   const reportedHeight = roundedFinite(report.height);
   const safeCurrentWidth = clamp(
@@ -43,23 +50,33 @@ function normalizeBubbleSize(payload, options) {
       ? safeCurrentWidth
       : clamp(reportedWidth, effectiveMinWidth, effectiveMaxWidth),
     height: reportedHeight === null
-      ? clamp(roundedFinite(currentHeight) || minHeight, minHeight, maxHeight)
-      : clamp(reportedHeight, minHeight, maxHeight),
+      ? clamp(
+        roundedFinite(currentHeight) || effectiveMinHeight,
+        effectiveMinHeight,
+        effectiveMaxHeight
+      )
+      : clamp(reportedHeight, effectiveMinHeight, effectiveMaxHeight),
   };
 }
 
 function positionBubbleBounds({ petBounds, workArea, bubbleSize, gapPx }) {
-  const maxX = workArea.x + workArea.width - bubbleSize.width;
+  const workWidth = Math.max(1, roundedFinite(workArea?.width) || 1);
+  const workHeight = Math.max(1, roundedFinite(workArea?.height) || 1);
+  const safeBubbleSize = {
+    width: clamp(roundedFinite(bubbleSize?.width) || 1, 1, workWidth),
+    height: clamp(roundedFinite(bubbleSize?.height) || 1, 1, workHeight),
+  };
+  const maxX = workArea.x + workWidth - safeBubbleSize.width;
   const centeredX = Math.round(
-    petBounds.x + petBounds.width / 2 - bubbleSize.width / 2
+    petBounds.x + petBounds.width / 2 - safeBubbleSize.width / 2
   );
   const x = clamp(centeredX, workArea.x, maxX);
-  let y = Math.round(petBounds.y - bubbleSize.height - gapPx);
+  let y = Math.round(petBounds.y - safeBubbleSize.height - gapPx);
   if (y < workArea.y) {
     y = Math.round(petBounds.y + petBounds.height + gapPx);
   }
-  y = clamp(y, workArea.y, workArea.y + workArea.height - bubbleSize.height);
-  return { x, y, width: bubbleSize.width, height: bubbleSize.height };
+  y = clamp(y, workArea.y, workArea.y + workHeight - safeBubbleSize.height);
+  return { x, y, width: safeBubbleSize.width, height: safeBubbleSize.height };
 }
 
 module.exports = { normalizeBubbleSize, positionBubbleBounds };

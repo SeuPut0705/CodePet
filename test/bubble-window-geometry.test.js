@@ -42,6 +42,35 @@ test("작은 work area에서는 좌우 12px 여백 상한을 우선한다", () =
   );
 });
 
+test("이전 큰 크기는 현재 작은 work area의 폭과 높이에 다시 맞춘다", () => {
+  assert.deepEqual(
+    normalizeBubbleSize(null, {
+      ...limits,
+      currentWidth: 520,
+      currentHeight: 420,
+      workArea: { x: 40, y: 20, width: 320, height: 200 },
+    }),
+    { width: 296, height: 200 }
+  );
+});
+
+test("일반 화면은 48px 최소 높이를 지키고 더 작은 화면은 실제 높이에 맞춘다", () => {
+  assert.deepEqual(
+    normalizeBubbleSize({ width: 300, height: 20 }, {
+      ...limits,
+      workArea: { x: 0, y: 0, width: 800, height: 600 },
+    }),
+    { width: 300, height: 48 }
+  );
+  assert.deepEqual(
+    normalizeBubbleSize({ width: 300, height: 100 }, {
+      ...limits,
+      workArea: { x: 0, y: 0, width: 800, height: 32 },
+    }),
+    { width: 300, height: 32 }
+  );
+});
+
 test("legacy 숫자 height와 잘못된 width는 현재 폭을 보존한다", () => {
   assert.deepEqual(
     normalizeBubbleSize(160, {
@@ -99,5 +128,26 @@ test("실제 반응형 폭으로 pet 중심과 화면 좌우 경계를 보정한
       gapPx: 2,
     }),
     { x: 300, y: 398, width: 500, height: 100 }
+  );
+});
+
+test("oversize 말풍선 입력도 작은 work area 안에 완전히 포함한다", () => {
+  const workArea = { x: 40, y: 20, width: 320, height: 200 };
+  const bounds = positionBubbleBounds({
+    petBounds: { x: 280, y: 160, width: 120, height: 120 },
+    workArea,
+    bubbleSize: { width: 520, height: 420 },
+    gapPx: 2,
+  });
+
+  assert.deepEqual(bounds, { x: 40, y: 20, width: 320, height: 200 });
+  assert.deepEqual(
+    {
+      left: bounds.x >= workArea.x,
+      top: bounds.y >= workArea.y,
+      right: bounds.x + bounds.width <= workArea.x + workArea.width,
+      bottom: bounds.y + bounds.height <= workArea.y + workArea.height,
+    },
+    { left: true, top: true, right: true, bottom: true }
   );
 });
