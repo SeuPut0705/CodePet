@@ -2548,7 +2548,9 @@ function contextWithCodexThreadTitle(context = {}) {
 
 function hydrateCodexThreadTitle(threadId, context = {}) {
   if (context.clientKind !== "desktop" || !CODEX_THREAD_ID_PATTERN.test(threadId || "")) return;
+  const expectedContext = { provider: context.provider, clientKind: context.clientKind };
   void codexThreadTitles.resolve(threadId).then((sectionLabel) => {
+    if (!activeActivityBubbles.matchesContext(threadId, expectedContext)) return;
     if (activeActivityBubbles.refresh(threadId, { sectionLabel })) showActiveActivityBubble();
   });
 }

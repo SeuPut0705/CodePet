@@ -21,6 +21,7 @@ function claudeEventId(row) {
 }
 
 function parseClaudeRow(row, file = "") {
+  const cwd = typeof row.cwd === "string" && row.cwd.trim() ? row.cwd.trim() : null;
   const message = row.message || {};
   const content = Array.isArray(message.content)
     ? message.content
@@ -61,8 +62,8 @@ function parseClaudeRow(row, file = "") {
   return {
     sessionId: row.sessionId || row.session_id || path.basename(file, path.extname(file)),
     eventId: type ? claudeEventId(row) : null,
-    cwd: row.cwd || null,
-    sectionLabel: projectLabelFromCwd(row.cwd, "Claude"),
+    cwd,
+    sectionLabel: projectLabelFromCwd(cwd, "Claude"),
     clientKind: "cli",
     text: type === "user" || type === "assistant" ? messageText(visible) : text(visible),
     type,
@@ -93,6 +94,19 @@ class ClaudeWatcher extends ExternalWatcher {
 
   contextFor(session, extra = {}) {
     return { ...super.contextFor(session, extra), clientKind: "cli" };
+  }
+
+  accept(event, now) {
+    const existing = event?.sessionId
+      ? this.sessions.get(`${this.provider}:${event.sessionId}`)
+      : null;
+    if (existing?.cwd && !projectLabelFromCwd(event?.cwd, null)) {
+      const preserved = { ...event };
+      delete preserved.sectionLabel;
+      super.accept(preserved, now);
+      return;
+    }
+    super.accept(event, now);
   }
 }
 

@@ -6,6 +6,11 @@ function updatedLabel(context, key, normalize, previous = null) {
   return normalize(context[key]);
 }
 
+function updatedIdentity(context, key, previous = null) {
+  if (!Object.hasOwn(context, key)) return previous;
+  return typeof context[key] === "string" && context[key] ? context[key] : null;
+}
+
 function safeSubagentCount(value) {
   const count = Number(value);
   return Number.isSafeInteger(count) && count > 0 ? count : 0;
@@ -43,6 +48,8 @@ class ActivityBubbleState {
     this.activities.set(threadId, {
       threadId,
       data: { ...data },
+      provider: updatedIdentity(context, "provider", existing?.provider),
+      clientKind: updatedIdentity(context, "clientKind", existing?.clientKind),
       sectionLabel: updatedLabel(
         context,
         "sectionLabel",
@@ -79,6 +86,8 @@ class ActivityBubbleState {
     const existing = this.activities.get(threadId);
     if (!existing) return false;
 
+    existing.provider = updatedIdentity(context, "provider", existing.provider);
+    existing.clientKind = updatedIdentity(context, "clientKind", existing.clientKind);
     existing.sectionLabel = updatedLabel(
       context,
       "sectionLabel",
@@ -102,6 +111,15 @@ class ActivityBubbleState {
     }
     existing.startedAt ??= normalizeStartedAt(context.taskStartedAt);
     return true;
+  }
+
+  matchesContext(threadId, context = {}) {
+    const existing = this.activities.get(threadId);
+    return Boolean(
+      existing &&
+      existing.provider === context.provider &&
+      existing.clientKind === context.clientKind
+    );
   }
 
   clear() {

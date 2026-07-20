@@ -122,6 +122,33 @@ test("비동기로 확인한 사이드바 작업 제목을 활성 section에 갱
   assert.equal(state.toBubbleData().titleLabel, "응답 작성 중 · CodePet · Sol · Medium");
 });
 
+test("활성 section은 같은 thread의 provider와 client 종류를 재검증한다", () => {
+  const state = new ActivityBubbleState();
+  state.upsert(THREADS[0], activity("응답 작성 중", "detail", "status"), {
+    provider: "codex",
+    clientKind: "desktop",
+  });
+
+  assert.equal(
+    state.matchesContext(THREADS[0], { provider: "codex", clientKind: "desktop" }),
+    true
+  );
+  assert.equal(
+    state.matchesContext(THREADS[0], { provider: "codex", clientKind: "cli" }),
+    false
+  );
+
+  state.refresh(THREADS[0], { provider: "codex", clientKind: "cli" });
+  assert.equal(
+    state.matchesContext(THREADS[0], { provider: "codex", clientKind: "desktop" }),
+    false
+  );
+  assert.equal(
+    state.matchesContext(THREADS[0], { provider: "codex", clientKind: "cli" }),
+    true
+  );
+});
+
 test("서브에이전트 수를 작업별 section에만 저장하고 접근성 이름에만 더한다", () => {
   const state = new ActivityBubbleState();
   state.upsert(THREADS[0], activity("응답 작성 중", "a", "status"), {

@@ -6,7 +6,7 @@ const path = require("node:path");
 const { ExternalWatcher } = require("../src/external-watcher");
 const { projectLabelFromCwd } = require("../src/activity-labels");
 const { parseAntigravityRow } = require("../src/antigravity-watcher");
-const { parseClaudeRow } = require("../src/claude-watcher");
+const { ClaudeWatcher, parseClaudeRow } = require("../src/claude-watcher");
 
 function tempDir(t) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "codepet-watcher-"));
@@ -81,6 +81,8 @@ test("Claude는 tool_result와 thinking-only 행을 숨기고 보이는 end_turn
 test("CLI 프로젝트 라벨은 경로 구분자와 빈 경로를 안전하게 처리한다", () => {
   assert.equal(projectLabelFromCwd("/work/shortput/", "Claude"), "shortput");
   assert.equal(projectLabelFromCwd("C:\\work\\CodePet\\", "Claude"), "CodePet");
+  assert.equal(projectLabelFromCwd("C:\\", "Claude"), "Claude");
+  assert.equal(projectLabelFromCwd("/work/\u0000\u001f", "Claude"), "Claude");
   assert.equal(projectLabelFromCwd(" ", "Claude"), "Claude");
 });
 
@@ -91,6 +93,27 @@ test("Claude CLI는 cwd 프로젝트명을 activity context로 전달한다", ()
   );
   assert.equal(event.sectionLabel, "mowda-one");
   assert.equal(event.clientKind, "cli");
+});
+
+test("Claude CLI는 후속 행에 cwd가 없어도 세션 프로젝트명을 유지한다", () => {
+  const watcher = new ClaudeWatcher({ roots: [], findFiles: () => [], quietMs: 60_000 });
+  const messages = [];
+  watcher.on("agent-message", (message, context) => messages.push({ message, context }));
+
+  watcher.accept(parseClaudeRow({
+    type: "user",
+    sessionId: "stable-project",
+    cwd: "/work/mowda-one",
+    message: { content: "진행" },
+  }), 1);
+  watcher.accept(parseClaudeRow({
+    type: "assistant",
+    sessionId: "stable-project",
+    message: { content: [{ type: "text", text: "확인 중" }] },
+  }), 2);
+
+  assert.equal(messages.at(-1).context.cwd, "/work/mowda-one");
+  assert.equal(messages.at(-1).context.sectionLabel, "mowda-one");
 });
 
 test("Claude와 AGY 응답은 펫 말풍선에 전달할 문단과 목록을 보존한다", () => {

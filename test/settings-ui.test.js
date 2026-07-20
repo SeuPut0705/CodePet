@@ -307,7 +307,47 @@ test("Codex 활동은 사이드바 작업 제목을 비동기로 보강한다", 
   assert.match(contextTitle, /context\.clientKind !== "desktop"/);
   assert.match(hydrateTitle, /context\.clientKind !== "desktop"/);
   assert.match(hydrateTitle, /codexThreadTitles\.resolve\(threadId\)/);
+  assert.match(hydrateTitle, /activeActivityBubbles\.matchesContext\(threadId, expectedContext\)/);
   assert.match(mainJs, /hydrateCodexThreadTitle\(threadId, context\)/);
+});
+
+test("늦게 끝난 Desktop 제목 조회는 같은 thread의 CLI section을 덮어쓰지 않는다", async () => {
+  const threadId = "019f4a30-b0a7-73f1-8080-2ba11b4e5d25";
+  const hydrateSource = mainJs.match(/function hydrateCodexThreadTitle[\s\S]*?\n}/)?.[0] || "";
+  let resolveTitle;
+  let activeContext = { provider: "codex", clientKind: "desktop" };
+  const refreshed = [];
+  const titlePromise = new Promise((resolve) => {
+    resolveTitle = resolve;
+  });
+  const hydrate = vm.runInNewContext(`(${hydrateSource})`, {
+    CODEX_THREAD_ID_PATTERN: /^[0-9a-f-]{36}$/,
+    codexThreadTitles: { resolve: () => titlePromise },
+    activeActivityBubbles: {
+      matchesContext: (_threadId, context) =>
+        activeContext.provider === context.provider &&
+        activeContext.clientKind === context.clientKind,
+      refresh: (resolvedThreadId, context) => {
+        refreshed.push({ threadId: resolvedThreadId, context });
+        return true;
+      },
+    },
+    showActiveActivityBubble() {},
+  });
+
+  hydrate(threadId, { provider: "codex", clientKind: "desktop" });
+  activeContext = { provider: "codex", clientKind: "cli" };
+  resolveTitle("Desktop 자동 제목");
+  await titlePromise;
+  await Promise.resolve();
+  assert.deepEqual(refreshed, []);
+
+  activeContext = { provider: "codex", clientKind: "desktop" };
+  hydrate(threadId, activeContext);
+  await Promise.resolve();
+  assert.equal(refreshed.length, 1);
+  assert.equal(refreshed[0].threadId, threadId);
+  assert.equal(refreshed[0].context.sectionLabel, "Desktop 자동 제목");
 });
 
 test("Codex watcher만 작업별 서브에이전트 수 변경을 활성 section에 전달한다", () => {

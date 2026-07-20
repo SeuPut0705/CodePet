@@ -43,14 +43,16 @@ function safeReasoningLabel(value) {
 
 function safeSectionLabel(value) {
   if (typeof value !== "string") return null;
-  const label = value.replace(/\s+/g, " ").trim();
+  const label = value.replace(/[\u0000-\u001f\u007f-\u009f]/g, " ").replace(/\s+/g, " ").trim();
   return label ? [...label].slice(0, 80).join("") : null;
 }
 
 function projectLabelFromCwd(cwd, fallback = null) {
   if (typeof cwd !== "string" || !cwd.trim()) return safeSectionLabel(fallback);
   const normalized = cwd.trim().replace(/[\\/]+$/, "").replace(/\\/g, "/");
-  return safeSectionLabel(path.posix.basename(normalized) || fallback);
+  const basename = path.posix.basename(normalized);
+  if (/^[a-z]:$/i.test(basename)) return safeSectionLabel(fallback);
+  return safeSectionLabel(basename) || safeSectionLabel(fallback);
 }
 
 module.exports = {
