@@ -1,5 +1,12 @@
 "use strict";
 
+const TRANSIENT_ERROR_CODES = new Set([
+  "KIMI_USAGE_TIMEOUT",
+  "KIMI_USAGE_NETWORK",
+  "KIMI_USAGE_RATE_LIMIT",
+  "KIMI_USAGE_SERVER",
+]);
+
 function badgesEqual(left, right) {
   return (
     left.length === right.length &&
@@ -73,8 +80,10 @@ class KimiUsageController {
       if (!this.disposed && this.working && generation === this.generation) {
         this.setBadges(copyBadges(badges));
       }
-    } catch {
-      // Keep the last successful values and retry on the next scheduled poll.
+    } catch (error) {
+      // 네트워크 계열 일시 오류만 마지막 성공값을 유지합니다. 인증·미지원·응답 오류는
+      // 이미 무효한 한도를 계속 보여주지 않도록 즉시 비웁니다.
+      if (!TRANSIENT_ERROR_CODES.has(error?.code)) this.setBadges([]);
     } finally {
       if (this.inFlight === inFlight) {
         this.inFlight = null;
@@ -122,8 +131,9 @@ class KimiUsageController {
     this.generation += 1;
     this.inFlight = null;
     this.cancelTimer();
-    this.setBadges([]);
+    // 종료 중 renderer를 다시 그리지 않도록 내부 상태만 폐기합니다.
+    this.badges = [];
   }
 }
 
-module.exports = { KimiUsageController };
+module.exports = { KimiUsageController, TRANSIENT_ERROR_CODES };

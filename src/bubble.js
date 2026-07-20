@@ -64,7 +64,7 @@ window.bubbleApi.onAppearance((appearance) => {
   }
 });
 
-function appendStatusHeadingContent(element, titleText, statusIcon) {
+function appendStatusHeadingContent(element, titleText, statusIcon, titleLabel = null) {
   const icon = statusIcon
     ? window.activityIcons.createActivityIcon(document, statusIcon)
     : null;
@@ -75,6 +75,7 @@ function appendStatusHeadingContent(element, titleText, statusIcon) {
     const title = document.createElement("span");
     title.className = "activity-title-text";
     title.textContent = titleText;
+    if (titleLabel) title.setAttribute("aria-label", titleLabel);
     element.appendChild(title);
   }
   return Boolean(icon);
@@ -85,6 +86,7 @@ function appendSubagentBadge(element, count) {
 
   const badge = document.createElement("span");
   badge.className = "subagent-badge";
+  badge.setAttribute("aria-label", `활성 서브에이전트 ${count}개`);
   const icon = window.activityIcons.createActivityIcon(document, "agents");
   if (icon) badge.appendChild(icon);
 
@@ -133,9 +135,8 @@ function createTitle(
   title.className = "title";
   title.setAttribute("role", "heading");
   title.setAttribute("aria-level", "2");
-  if (titleLabel) title.setAttribute("aria-label", titleLabel);
 
-  const hasStatusIcon = appendStatusHeadingContent(title, titleText, statusIcon);
+  const hasStatusIcon = appendStatusHeadingContent(title, titleText, statusIcon, titleLabel);
   appendSubagentBadge(title, subagentCount);
   appendUsageBadges(title, usageBadges);
   if (!hasStatusIcon) {
@@ -274,8 +275,12 @@ function renderActivity(data) {
     label.className = "activity-row-label";
     label.setAttribute("role", "heading");
     label.setAttribute("aria-level", "3");
-    if (sectionData.titleLabel) label.setAttribute("aria-label", sectionData.titleLabel);
-    appendStatusHeadingContent(label, sectionData.title, sectionData.statusIcon);
+    appendStatusHeadingContent(
+      label,
+      sectionData.title,
+      sectionData.statusIcon,
+      sectionData.titleLabel
+    );
     appendSubagentBadge(label, sectionData.subagentCount);
     appendUsageBadges(label, sectionData.usageBadges);
     row.appendChild(label);

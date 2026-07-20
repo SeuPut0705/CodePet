@@ -40,7 +40,7 @@ function badgeForWindow(rateWindow, target, nowMs) {
   return {
     key: target.key,
     remainingPercent,
-    ariaLabel: `${target.accessibleName} ${remainingPercent}% 남음`,
+    ariaLabel: `Codex ${target.accessibleName} ${remainingPercent}% 남음`,
   };
 }
 

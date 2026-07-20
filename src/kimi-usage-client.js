@@ -114,17 +114,15 @@ class KimiUsageClient {
       },
     }, { allowAuthStatus: true });
 
-    if (result.status === 401) {
-      const reloaded = await this.readCredentials();
-      if (reloaded.access_token === credentials.access_token) throw usageError("KIMI_USAGE_AUTH");
-      credentials = reloaded;
+    if (result.status === 401 || result.status === 403) {
+      credentials = await this.recoverFromAuthFailure(credentials);
       result = await this.request(KIMI_USAGE_URL, {
         headers: {
           Authorization: `Bearer ${credentials.access_token}`,
           Accept: "application/json",
         },
       }, { allowAuthStatus: true });
-      if (result.status === 401) throw usageError("KIMI_USAGE_AUTH");
+      if (result.status === 401 || result.status === 403) throw usageError("KIMI_USAGE_AUTH");
     }
     return buildKimiUsageBadges(result.payload);
   }
@@ -149,6 +147,25 @@ class KimiUsageClient {
     try {
       const reloaded = await this.readCredentials();
       if (!this.shouldRefresh(reloaded)) return reloaded;
+      if (!reloaded.refresh_token) throw usageError("KIMI_USAGE_AUTH");
+      const refreshed = await this.refresh(reloaded);
+      await this.writeCredentials(refreshed);
+      return refreshed;
+    } finally {
+      await release();
+    }
+  }
+
+  async recoverFromAuthFailure(rejectedCredentials) {
+    const release = await this.acquireLock();
+    try {
+      const reloaded = await this.readCredentials();
+      if (
+        reloaded.access_token !== rejectedCredentials.access_token &&
+        !this.shouldRefresh(reloaded)
+      ) {
+        return reloaded;
+      }
       if (!reloaded.refresh_token) throw usageError("KIMI_USAGE_AUTH");
       const refreshed = await this.refresh(reloaded);
       await this.writeCredentials(refreshed);
@@ -198,8 +215,9 @@ class KimiUsageClient {
     try {
       const response = await this.fetchImpl(url, { ...options, signal: controller.signal });
       if (!response || typeof response.status !== "number") throw usageError("KIMI_USAGE_RESPONSE");
-      if (!response.ok && !(allowAuthStatus && response.status === 401)) throw mapStatus(response.status);
-      if (allowAuthStatus && response.status === 401) return { status: response.status };
+      const allowedAuthFailure = allowAuthStatus && [401, 403].includes(response.status);
+      if (!response.ok && !allowedAuthFailure) throw mapStatus(response.status);
+      if (allowedAuthFailure) return { status: response.status };
       let payload;
       try {
         payload = await response.json();
@@ -232,16 +250,63 @@ class KimiUsageClient {
     while (true) {
       try {
         await this.fs.mkdir(this.lockDir);
-        const directoryHandle = await this.fs.open(this.lockDir, "r");
-        const owner = await directoryHandle.stat();
-        return this.maintainLock(owner, directoryHandle);
       } catch (error) {
         if (error?.code !== "EEXIST") throw usageError("KIMI_USAGE_LOCK");
+
+        const remaining = deadline - this.nowMilliseconds();
+        if (remaining <= 0) throw usageError("KIMI_USAGE_LOCK");
+        await this.sleep(Math.min(LOCK_RETRY_MS, remaining));
+        continue;
       }
 
-      const remaining = deadline - this.nowMilliseconds();
-      if (remaining <= 0) throw usageError("KIMI_USAGE_LOCK");
-      await this.sleep(Math.min(LOCK_RETRY_MS, remaining));
+      let directoryHandle = null;
+      let owner = null;
+      try {
+        // mkdir 직후 inode를 먼저 확보해야 이후 open/stat 실패나 경로 교체가 있어도
+        // 우리가 만든 directory만 정리할 수 있습니다.
+        for (let attempt = 0; attempt < 2 && !owner; attempt += 1) {
+          try {
+            owner = await this.fs.stat(this.lockDir);
+          } catch {}
+        }
+        if (!owner) throw usageError("KIMI_USAGE_LOCK");
+        directoryHandle = await this.fs.open(this.lockDir, "r");
+        const openedOwner = await directoryHandle.stat();
+        if (!sameIdentity(owner, openedOwner)) throw usageError("KIMI_USAGE_LOCK");
+        return this.maintainLock(owner, directoryHandle);
+      } catch {
+        await this.cleanupOwnedLock({ owner, directoryHandle });
+        throw usageError("KIMI_USAGE_LOCK");
+      }
+    }
+  }
+
+  async cleanupOwnedLock({ owner, directoryHandle }) {
+    try {
+      let capturedOwner = owner;
+      if (!capturedOwner && directoryHandle) {
+        try {
+          capturedOwner = await directoryHandle.stat();
+        } catch {}
+      }
+      if (!capturedOwner) {
+        try {
+          capturedOwner = await this.fs.stat(this.lockDir);
+        } catch {
+          return false;
+        }
+      }
+
+      const before = await this.fs.stat(this.lockDir);
+      if (!sameIdentity(capturedOwner, before)) return false;
+      await this.fs.rmdir(this.lockDir);
+      return true;
+    } catch {
+      return false;
+    } finally {
+      try {
+        await directoryHandle?.close();
+      } catch {}
     }
   }
 
@@ -260,17 +325,14 @@ class KimiUsageClient {
       releaseStarted = true;
       try {
         const now = new Date(this.nowMilliseconds());
-        await directoryHandle.utimes(now, now);
-        const current = await this.fs.stat(this.lockDir);
-        if (!sameIdentity(owner, current)) return;
-        await this.fs.rmdir(this.lockDir);
-      } catch {
-        // 이미 사라졌거나 교체된 lock은 이 프로세스의 소유가 아니므로 건드리지 않습니다.
+        try {
+          await directoryHandle.utimes(now, now);
+        } catch {
+          // 마지막 heartbeat 실패와 lock 소유권 정리는 별개로 수행합니다.
+        }
+        await this.cleanupOwnedLock({ owner, directoryHandle });
       } finally {
         this.clearInterval(heartbeat);
-        try {
-          await directoryHandle.close();
-        } catch {}
       }
     };
   }

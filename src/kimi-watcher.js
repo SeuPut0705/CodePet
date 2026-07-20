@@ -12,6 +12,9 @@ const {
 } = require("./activity-labels");
 
 const DEFAULT_KIMI_ROOT = path.join(os.homedir(), ".kimi-code", "sessions");
+const DEFAULT_KIMI_HOME = path.dirname(DEFAULT_KIMI_ROOT);
+const MANAGED_KIMI_BASE_URL = "https://api.kimi.com/coding/v1";
+const MANAGED_KIMI_OAUTH_HOST = "https://auth.kimi.com";
 const KIMI_POLL_MS = 1800;
 const KIMI_QUIET_MS = 5 * 60 * 1000;
 const KIMI_SESSION_LIMIT = 20;
@@ -53,6 +56,99 @@ function readKimiSessionMetadata(file) {
   } catch {
     return { sessionId, sectionLabel: "Kimi", cwd: null, clientKind: "cli" };
   }
+}
+
+function parseTomlString(value) {
+  const source = String(value || "").trim();
+  if (source.startsWith('"')) {
+    const match = source.match(/^"(?:\\.|[^"\\])*"/);
+    if (!match) return null;
+    try {
+      return JSON.parse(match[0]);
+    } catch {
+      return null;
+    }
+  }
+  const match = source.match(/^'([^']*)'/);
+  return match ? match[1] : null;
+}
+
+function normalizedEndpoint(value) {
+  if (typeof value !== "string" || !value.trim()) return null;
+  try {
+    const url = new URL(value);
+    if (url.username || url.password || url.search || url.hash) return null;
+    return `${url.origin.toLowerCase()}${url.pathname.replace(/\/+$/, "")}`;
+  } catch {
+    return null;
+  }
+}
+
+function sectionName(line, prefix) {
+  const match = line.match(/^\[\s*([a-z_]+)\.("(?:\\.|[^"\\])*"|'[^']*')\s*\]$/i);
+  if (!match || match[1] !== prefix) return null;
+  return parseTomlString(match[2]);
+}
+
+function readManagedKimiSettings(configFile, env = process.env) {
+  let source;
+  try {
+    source = fs.readFileSync(configFile, "utf8");
+  } catch {
+    return { baseUrl: null, modelAliases: new Set() };
+  }
+
+  let section = null;
+  let managedBaseUrl = null;
+  let managedProviderType = null;
+  let configuredOAuthHost = null;
+  const modelProviders = new Map();
+  for (const rawLine of source.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith("#")) continue;
+    if (line.startsWith("[")) {
+      const provider = sectionName(line, "providers");
+      const model = sectionName(line, "models");
+      if (provider !== null) section = { kind: "provider", name: provider };
+      else if (model !== null) section = { kind: "model", name: model };
+      else if (/^\[\s*providers\.(?:"managed:kimi-code"|'managed:kimi-code')\.oauth\s*\]$/.test(line)) {
+        section = { kind: "oauth", name: "managed:kimi-code" };
+      } else section = null;
+      continue;
+    }
+
+    const assignment = line.match(/^([a-z_]+)\s*=\s*(.+)$/i);
+    if (!assignment || !section) continue;
+    const value = parseTomlString(assignment[2]);
+    if (value === null) continue;
+    if (section.kind === "provider" && section.name === "managed:kimi-code") {
+      if (assignment[1] === "base_url") managedBaseUrl = value;
+      if (assignment[1] === "type") managedProviderType = value;
+    } else if (section.kind === "oauth" && assignment[1] === "oauth_host") {
+      configuredOAuthHost = value;
+    } else if (section.kind === "model" && assignment[1] === "provider") {
+      modelProviders.set(section.name, value);
+    }
+  }
+
+  const envBaseUrl = Object.hasOwn(env, "KIMI_CODE_BASE_URL")
+    ? env.KIMI_CODE_BASE_URL
+    : managedBaseUrl;
+  const envOAuthHost = env.KIMI_CODE_OAUTH_HOST ?? env.KIMI_OAUTH_HOST ?? configuredOAuthHost;
+  const managedBase =
+    managedProviderType === "kimi" &&
+    normalizedEndpoint(envBaseUrl) === normalizedEndpoint(MANAGED_KIMI_BASE_URL);
+  const managedOAuth = envOAuthHost === null || envOAuthHost === undefined
+    ? true
+    : normalizedEndpoint(envOAuthHost) === normalizedEndpoint(MANAGED_KIMI_OAUTH_HOST);
+  return {
+    baseUrl: managedBase && managedOAuth ? MANAGED_KIMI_BASE_URL : null,
+    modelAliases: new Set(
+      [...modelProviders].flatMap(([alias, provider]) => (
+        provider === "managed:kimi-code" ? [alias] : []
+      ))
+    ),
+  };
 }
 
 function findKimiWireFiles(root, limit = KIMI_SESSION_LIMIT) {
@@ -113,7 +209,12 @@ function kimiEventId(row, event) {
   return crypto.createHash("sha1").update(String(source)).digest("hex").slice(0, 16);
 }
 
-function parseKimiRow(row, file, metadata = readKimiSessionMetadata(file)) {
+function parseKimiRow(
+  row,
+  file,
+  metadata = readKimiSessionMetadata(file),
+  managedUsageEligible = false
+) {
   const agentId = agentIdFromWire(file);
   const common = {
     sessionId: metadata.sessionId,
@@ -143,7 +244,8 @@ function parseKimiRow(row, file, metadata = readKimiSessionMetadata(file)) {
       eventId: kimiEventId(row),
       workerLabel: normalizeWorkerLabel(row.modelAlias || row.model),
       reasoningLabel: normalizeReasoningLabel(row.thinkingEffort),
-      managedUsageEligible: !common.isSubagent && row.provider === "kimi",
+      managedUsageEligible:
+        !common.isSubagent && row.provider === "kimi" && managedUsageEligible === true,
     };
   }
 
@@ -223,11 +325,54 @@ class KimiWatcher extends ExternalWatcher {
     this.lastResponses = new Map();
     this.activeSubagents = new Map();
     this.metadataCache = new Map();
-    this.parseRow = (row, file) => parseKimiRow(row, file, this.metadataFor(file));
+    this.homeDir = options.homeDir || process.env.KIMI_CODE_HOME || DEFAULT_KIMI_HOME;
+    this.configFile = path.join(this.homeDir, "config.toml");
+    this.env = options.env || process.env;
+    this.managedConfigCache = null;
+    this.parseRow = (row, file) => parseKimiRow(
+      row,
+      file,
+      this.metadataFor(file),
+      this.isManagedUsageRequest(row)
+    );
   }
 
   contextFor(session, extra = {}) {
     return { ...super.contextFor(session, extra), clientKind: "cli" };
+  }
+
+  files() {
+    const recentFiles = super.files();
+    const activeSessionIds = new Set(
+      [...this.sessions.keys()].flatMap((id) => (
+        id.startsWith("kimi:") ? [id.slice("kimi:".length)] : []
+      ))
+    );
+    const activeFiles = [...this.offsets.keys()].filter((file) => {
+      if (!activeSessionIds.has(path.basename(sessionRootFromWire(file)))) return false;
+      try {
+        return fs.statSync(file).isFile();
+      } catch {
+        return false;
+      }
+    });
+    const files = [...new Set([...recentFiles, ...activeFiles])];
+    this.pruneFileCaches(files);
+    return files;
+  }
+
+  pruneFileCaches(files) {
+    const retainedFiles = new Set(files);
+    for (const file of this.offsets.keys()) {
+      if (!retainedFiles.has(file)) this.offsets.delete(file);
+    }
+    for (const file of this.buffers.keys()) {
+      if (!retainedFiles.has(file)) this.buffers.delete(file);
+    }
+    const retainedSessionRoots = new Set(files.map(sessionRootFromWire));
+    for (const sessionRoot of this.metadataCache.keys()) {
+      if (!retainedSessionRoots.has(sessionRoot)) this.metadataCache.delete(sessionRoot);
+    }
   }
 
   get managedUsageWorking() {
@@ -250,6 +395,32 @@ class KimiWatcher extends ExternalWatcher {
     const metadata = readKimiSessionMetadata(file);
     this.metadataCache.set(sessionRoot, { mtimeMs, metadata });
     return metadata;
+  }
+
+  managedConfig() {
+    let mtimeMs = null;
+    try {
+      mtimeMs = fs.statSync(this.configFile).mtimeMs;
+    } catch {
+      // 설정이 없거나 읽지 못하면 fail-closed 합니다.
+    }
+    const envKey = [
+      this.env.KIMI_CODE_BASE_URL,
+      this.env.KIMI_CODE_OAUTH_HOST,
+      this.env.KIMI_OAUTH_HOST,
+    ].map((value) => value ?? "").join("\u0000");
+    if (this.managedConfigCache?.mtimeMs === mtimeMs && this.managedConfigCache.envKey === envKey) {
+      return this.managedConfigCache.value;
+    }
+    const value = readManagedKimiSettings(this.configFile, this.env);
+    this.managedConfigCache = { mtimeMs, envKey, value };
+    return value;
+  }
+
+  isManagedUsageRequest(row) {
+    if (row?.type !== "llm.request" || typeof row.modelAlias !== "string") return false;
+    const config = this.managedConfig();
+    return config.baseUrl === MANAGED_KIMI_BASE_URL && config.modelAliases.has(row.modelAlias);
   }
 
   activeSet(sessionId) {
@@ -297,6 +468,11 @@ class KimiWatcher extends ExternalWatcher {
     const enriched = { ...event, subagentCount: this.subagentCount(event.sessionId) };
     if (event.type === "assistant" && event.chunk) {
       const key = `${event.sessionId}:${event.turnId}:${event.step}`;
+      for (const bufferedKey of this.responseBuffers.keys()) {
+        if (bufferedKey !== key && bufferedKey.startsWith(`${event.sessionId}:`)) {
+          this.responseBuffers.delete(bufferedKey);
+        }
+      }
       const accumulated = messageText(
         [this.responseBuffers.get(key), event.text].filter(Boolean).join("\n\n")
       );
@@ -337,6 +513,7 @@ class KimiWatcher extends ExternalWatcher {
     this.lastResponses.clear();
     this.activeSubagents.clear();
     this.metadataCache.clear();
+    this.managedConfigCache = null;
     super.stop();
   }
 }
@@ -352,6 +529,7 @@ module.exports = {
   inferKimiSubagentActive,
   normalizeKimiTool,
   parseKimiRow,
+  readManagedKimiSettings,
   readKimiSessionMetadata,
   sessionRootFromWire,
 };

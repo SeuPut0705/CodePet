@@ -52,8 +52,8 @@ test("rate limit 순서와 무관하게 5h·7d 남은 퍼센트를 만든다", (
   };
 
   assert.deepEqual(buildActivityUsageBadges(usage, 1_000), [
-    { key: "5h", remainingPercent: 42, ariaLabel: "5시간 42% 남음" },
-    { key: "7d", remainingPercent: 68, ariaLabel: "7일 68% 남음" },
+    { key: "5h", remainingPercent: 42, ariaLabel: "Codex 5시간 42% 남음" },
+    { key: "7d", remainingPercent: 68, ariaLabel: "Codex 7일 68% 남음" },
   ]);
 });
 
@@ -72,8 +72,8 @@ test("초기화·범위 보정·잘못된 창을 안전하게 처리한다", () 
   };
 
   assert.deepEqual(buildActivityUsageBadges(usage, 2_000), [
-    { key: "5h", remainingPercent: 100, ariaLabel: "5시간 100% 남음" },
-    { key: "7d", remainingPercent: 100, ariaLabel: "7일 100% 남음" },
+    { key: "5h", remainingPercent: 100, ariaLabel: "Codex 5시간 100% 남음" },
+    { key: "7d", remainingPercent: 100, ariaLabel: "Codex 7일 100% 남음" },
   ]);
   assert.deepEqual(buildActivityUsageBadges(null, 2_000), []);
 });
@@ -150,7 +150,7 @@ test("배열 기간은 숨기고 다음 유효 숫자 문자열 창을 사용한
   };
 
   assert.deepEqual(buildActivityUsageBadges(usage, 1_000), [
-    { key: "5h", remainingPercent: 42, ariaLabel: "5시간 42% 남음" },
+    { key: "5h", remainingPercent: 42, ariaLabel: "Codex 5시간 42% 남음" },
   ]);
 });
 

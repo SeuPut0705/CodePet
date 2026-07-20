@@ -375,11 +375,16 @@ test("본문은 줄바꿈하고 제목과 사용량 배지는 한 줄 계약을 
 });
 
 test("활동 아이콘은 SVG 모듈과 접근성 제목으로 렌더링한다", () => {
+  const createTitleSource = bubbleJs.slice(
+    bubbleJs.indexOf("function createTitle("),
+    bubbleJs.indexOf("function fillClassFor(")
+  );
   assert.equal(fs.existsSync(path.join(__dirname, "..", "src", "activity-icons.js")), true);
   assert.match(bubbleHtml, /activity-icons\.js[\s\S]*bubble\.js/);
   assert.match(bubbleJs, /window\.activityIcons\.createActivityIcon\(document, statusIcon\)/);
   assert.match(bubbleJs, /setAttribute\("role", "heading"\)/);
-  assert.match(bubbleJs, /setAttribute\("aria-label", titleLabel\)/);
+  assert.doesNotMatch(createTitleSource, /title\.setAttribute\("aria-label", titleLabel\)/);
+  assert.match(bubbleJs, /appendStatusHeadingContent\(title, titleText, statusIcon, titleLabel\)/);
   assert.match(bubbleCss, /\.status-icon\s*\{/);
   assert.match(bubbleCss, /prefers-reduced-motion:\s*reduce/);
 });
@@ -414,12 +419,14 @@ test("단일·다중 활동 제목을 축소 가능한 span으로 감싸고 배�
   });
   const singleTitle = singleBubble.children[0];
 
-  assert.equal(singleTitle.attributes["aria-label"], "접근성 단일 제목");
+  assert.equal(singleTitle.attributes["aria-label"], undefined);
   assert.deepEqual(
     singleTitle.children.map((child) => child.className),
     ["status-icon", "activity-title-text", "subagent-badge"]
   );
   assert.equal(singleTitle.children[1].textContent, "아주 긴 단일 작업 제목");
+  assert.equal(singleTitle.children[1].attributes["aria-label"], "접근성 단일 제목");
+  assert.equal(singleTitle.children[2].attributes["aria-label"], "활성 서브에이전트 2개");
   assert.equal(childWithClass(singleTitle.children[2], "subagent-count").textContent, "×2");
 
   const multiBubble = renderBubble({
@@ -435,12 +442,14 @@ test("단일·다중 활동 제목을 축소 가능한 span으로 감싸고 배�
   });
   const sectionLabel = multiBubble.children[1].children[0].children[0];
 
-  assert.equal(sectionLabel.attributes["aria-label"], "접근성 다중 제목");
+  assert.equal(sectionLabel.attributes["aria-label"], undefined);
   assert.deepEqual(
     sectionLabel.children.map((child) => child.className),
     ["status-icon", "activity-title-text", "subagent-badge"]
   );
   assert.equal(sectionLabel.children[1].textContent, "아주 긴 다중 작업 제목");
+  assert.equal(sectionLabel.children[1].attributes["aria-label"], "접근성 다중 제목");
+  assert.equal(sectionLabel.children[2].attributes["aria-label"], "활성 서브에이전트 3개");
   assert.equal(childWithClass(sectionLabel.children[2], "subagent-count").textContent, "×3");
 });
 
@@ -526,8 +535,8 @@ test("공급자별 첫 활동 row와 단일 활동 제목에만 유효한 사용
         title: "Codex A",
         text: "",
         usageBadges: [
-          { key: "5h", remainingPercent: 42, ariaLabel: "5시간 42% 남음" },
-          { key: "7d", remainingPercent: 68, ariaLabel: "7일 68% 남음" },
+          { key: "5h", remainingPercent: 42, ariaLabel: "Codex 5시간 42% 남음" },
+          { key: "7d", remainingPercent: 68, ariaLabel: "Codex 7일 68% 남음" },
         ],
       },
       {
@@ -557,8 +566,8 @@ test("공급자별 첫 활동 row와 단일 활동 제목에만 유효한 사용
   );
   assert.deepEqual(codexGroup.children.map((badge) => badge.textContent), ["5h 42%", "7d 68%"]);
   assert.deepEqual(codexGroup.children.map((badge) => badge.attributes["aria-label"]), [
-    "5시간 42% 남음",
-    "7일 68% 남음",
+    "Codex 5시간 42% 남음",
+    "Codex 7일 68% 남음",
   ]);
   assert.deepEqual(kimiGroup.children.map((badge) => badge.textContent), ["5h 70%"]);
   assert.equal(descendantWithClass(sectionLabels[2], "activity-usage-badges"), null);
@@ -702,7 +711,7 @@ test("Codex 세션별 usage controller를 watcher와 활성 집계 헤더 수명
   assert.match(controllerSetup, /onBadgesChanged/);
   assert.match(
     controllerSetup,
-    /codexWatcher\.working && activeActivityBubbles\.size > 0[\s\S]*?showActiveActivityBubble\(\)/
+    /pendingBubbleData\?\.activitySource === "active"[\s\S]*?showActiveActivityBubble\(\)/
   );
   assert.doesNotMatch(mainJs, /activityUsageResetTimer|scheduleActivityUsageReset/);
   assert.doesNotMatch(buildActiveBubble, /decorateActivityBubbleWithProviderUsage/);
@@ -736,7 +745,7 @@ test("provider 사용량은 privacy 적용 뒤 renderer 직전에 eligibility를
   assert.match(watcherBubble, /kimi:\s*kimiUsageController\.buildBadges\(\)/);
 });
 
-test("단일 Codex section은 늦은 사용량과 reset 변경에 다시 그리며 빈 상태는 그리지 않는다", () => {
+test("단일 Codex section 사용량은 현재 보이는 active 말풍선만 다시 그린다", () => {
   const controllerSetup = mainJs.match(
     /const activityUsageController = new ActivityUsageController\([\s\S]*?\n}\);/
   )?.[0] || "";
@@ -745,17 +754,13 @@ test("단일 Codex section은 늦은 사용량과 reset 변경에 다시 그리�
   )?.[1];
   assert.ok(callbackSource);
 
-  let activeSize = 1;
+  let pendingBubbleData = { activitySource: "active" };
   let redrawCount = 0;
   let nowMs = 1_000;
   let resetCallback = null;
   const onBadgesChanged = vm.runInNewContext(`(${callbackSource})`, {
     codexWatcher: { working: true },
-    activeActivityBubbles: {
-      get size() {
-        return activeSize;
-      },
-    },
+    pendingBubbleData,
     showActiveActivityBubble() {
       redrawCount += 1;
     },
@@ -785,8 +790,25 @@ test("단일 Codex section은 늦은 사용량과 reset 변경에 다시 그리�
   runReset();
   assert.equal(redrawCount, 2);
 
-  activeSize = 0;
-  controller.remove("codex:single");
+  pendingBubbleData = null;
+  const hiddenCallback = vm.runInNewContext(`(${callbackSource})`, {
+    codexWatcher: { working: true },
+    pendingBubbleData,
+    showActiveActivityBubble() {
+      redrawCount += 1;
+    },
+  });
+  hiddenCallback();
+  assert.equal(redrawCount, 2);
+
+  const temporaryCallback = vm.runInNewContext(`(${callbackSource})`, {
+    codexWatcher: { working: true },
+    pendingBubbleData: { activitySource: "temporary" },
+    showActiveActivityBubble() {
+      redrawCount += 1;
+    },
+  });
+  temporaryCallback();
   assert.equal(redrawCount, 2);
 });
 const rendererJs = source("src/renderer.js");

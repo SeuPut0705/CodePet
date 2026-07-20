@@ -214,14 +214,15 @@ test("외부 lock을 검사하는 동안 canonical 경로를 비워 제3 contend
 
 test("release 확인 전에 교체된 다른 owner lock은 그대로 둔다", async (t) => {
   const fixture = credentialFixture(t, { access_token: "old", expires_at: 1001 });
-  const originalRmdir = fs.promises.rmdir;
+  const originalRm = fs.promises.rm;
   const originalStat = fs.promises.stat;
   let replacementIdentity = null;
   let interleaved = false;
+  let lockStatCalls = 0;
   fs.promises.stat = async (target, ...args) => {
-    if (target === fixture.lockDir && !interleaved) {
+    if (target === fixture.lockDir && ++lockStatCalls === 2) {
       interleaved = true;
-      await originalRmdir.call(fs.promises, fixture.lockDir);
+      await originalRm.call(fs.promises, fixture.lockDir, { recursive: true, force: true });
       await fs.promises.mkdir(fixture.lockDir);
       replacementIdentity = await originalStat.call(fs.promises, fixture.lockDir);
     }
@@ -350,7 +351,106 @@ test("heartbeat scheduler callback은 열린 lock handle을 갱신하고 release
   assert.equal(intervalActive, false);
 });
 
-test("401 뒤 파일의 access token이 바뀌었을 때만 한 번 재시도한다", async (t) => {
+test("lock mkdir 뒤 directory open 실패는 본인 lock만 정리한다", async (t) => {
+  const fixture = credentialFixture(t, { access_token: "old", expires_at: 1001 });
+  const fsImpl = Object.create(fs.promises);
+  fsImpl.open = async (target, ...args) => {
+    if (target === fixture.lockDir) throw Object.assign(new Error("open failed"), { code: "EIO" });
+    return fs.promises.open(target, ...args);
+  };
+  const client = new KimiUsageClient({
+    homeDir: fixture.home,
+    nowSeconds: () => 1000,
+    fsImpl,
+    fetchImpl: async () => assert.fail("부분 획득 실패 뒤 요청하지 않아야 합니다."),
+  });
+
+  await assert.rejects(client.fetchBadges(), { code: "KIMI_USAGE_LOCK" });
+  assert.equal(fs.existsSync(fixture.lockDir), false);
+});
+
+test("lock 초기화 실패 사이에 교체된 다른 owner lock은 정리하지 않는다", async (t) => {
+  const fixture = credentialFixture(t, { access_token: "old", expires_at: 1001 });
+  const fsImpl = Object.create(fs.promises);
+  let replacementIdentity = null;
+  fsImpl.open = async (target, ...args) => {
+    if (target !== fixture.lockDir) return fs.promises.open(target, ...args);
+    await fs.promises.rm(fixture.lockDir, { recursive: true, force: true });
+    await fs.promises.mkdir(fixture.lockDir);
+    replacementIdentity = await fs.promises.stat(fixture.lockDir);
+    throw Object.assign(new Error("open failed"), { code: "EIO" });
+  };
+  const client = new KimiUsageClient({
+    homeDir: fixture.home,
+    nowSeconds: () => 1000,
+    fsImpl,
+    fetchImpl: async () => assert.fail("교체된 lock 뒤 요청하지 않아야 합니다."),
+  });
+
+  await assert.rejects(client.fetchBadges(), { code: "KIMI_USAGE_LOCK" });
+  const remaining = await fs.promises.stat(fixture.lockDir);
+  assert.equal(remaining.dev, replacementIdentity.dev);
+  assert.equal(remaining.ino, replacementIdentity.ino);
+});
+
+test("lock stat의 일시 실패도 먼저 확보한 inode로 본인 orphan을 정리한다", async (t) => {
+  const fixture = credentialFixture(t, { access_token: "old", expires_at: 1001 });
+  const fsImpl = Object.create(fs.promises);
+  let failed = false;
+  fsImpl.open = async (target, ...args) => {
+    const handle = await fs.promises.open(target, ...args);
+    if (target !== fixture.lockDir) return handle;
+    return {
+      stat: (...methodArgs) => {
+        if (!failed) {
+          failed = true;
+          throw Object.assign(new Error("stat failed"), { code: "EIO" });
+        }
+        return handle.stat(...methodArgs);
+      },
+      utimes: (...methodArgs) => handle.utimes(...methodArgs),
+      close: (...methodArgs) => handle.close(...methodArgs),
+    };
+  };
+  const client = new KimiUsageClient({
+    homeDir: fixture.home,
+    nowSeconds: () => 1000,
+    fsImpl,
+    fetchImpl: async () => assert.fail("부분 획득 실패 뒤 요청하지 않아야 합니다."),
+  });
+
+  await assert.rejects(client.fetchBadges(), { code: "KIMI_USAGE_LOCK" });
+  assert.equal(fs.existsSync(fixture.lockDir), false);
+});
+
+test("release final heartbeat 실패도 소유 lock 정리를 건너뛰지 않는다", async (t) => {
+  const fixture = credentialFixture(t, { access_token: "old", expires_at: 1001 });
+  const fsImpl = Object.create(fs.promises);
+  fsImpl.open = async (target, ...args) => {
+    const handle = await fs.promises.open(target, ...args);
+    if (target !== fixture.lockDir) return handle;
+    return {
+      stat: (...methodArgs) => handle.stat(...methodArgs),
+      utimes: () => { throw Object.assign(new Error("heartbeat failed"), { code: "EIO" }); },
+      close: (...methodArgs) => handle.close(...methodArgs),
+    };
+  };
+  const client = new KimiUsageClient({
+    homeDir: fixture.home,
+    nowSeconds: () => 1000,
+    fsImpl,
+    setIntervalImpl: () => ({ unref() {} }),
+    clearIntervalImpl: () => {},
+    fetchImpl: async (url) => url.includes("/api/oauth/token")
+      ? jsonResponse({ access_token: "new", expires_in: 3600 })
+      : jsonResponse({ usage: { used: 0, limit: 1 } }),
+  });
+
+  await client.fetchBadges();
+  assert.equal(fs.existsSync(fixture.lockDir), false);
+});
+
+test("401 뒤 파일의 access token이 바뀌면 갱신 없이 한 번 재시도한다", async (t) => {
   const fixture = credentialFixture(t);
   const authorizations = [];
   const client = new KimiUsageClient({
@@ -371,6 +471,56 @@ test("401 뒤 파일의 access token이 바뀌었을 때만 한 번 재시도한
     { key: "7d", remainingPercent: 70, ariaLabel: "Kimi 7일 70% 남음" },
   ]);
   assert.deepEqual(authorizations, ["Bearer access-a", "Bearer access-b"]);
+});
+
+test("401·403은 같은 access token이어도 lock 안에서 강제 갱신하고 한 번만 재시도한다", async (t) => {
+  for (const status of [401, 403]) {
+    const fixture = credentialFixture(t);
+    const requests = [];
+    const client = new KimiUsageClient({
+      homeDir: fixture.home,
+      nowSeconds: () => 1000,
+      fetchImpl: async (url, options) => {
+        requests.push({ url, authorization: options.headers.Authorization });
+        if (url.includes("/api/oauth/token")) {
+          return jsonResponse({ access_token: `access-${status}`, expires_in: 3600 });
+        }
+        if (requests.filter((request) => request.url.includes("/usages")).length === 1) {
+          return jsonResponse({ message: "민감한 서버 본문" }, status);
+        }
+        return jsonResponse({ usage: { used: 2, limit: 10 } });
+      },
+    });
+
+    assert.equal((await client.fetchBadges())[0].remainingPercent, 80);
+    assert.deepEqual(
+      requests.map(({ url }) => url.includes("/api/oauth/token") ? "refresh" : "usage"),
+      ["usage", "refresh", "usage"]
+    );
+    assert.equal(fs.existsSync(fixture.lockDir), false);
+  }
+});
+
+test("강제 갱신 뒤에도 403이면 추가 갱신 없이 인증 오류로 끝낸다", async (t) => {
+  const fixture = credentialFixture(t);
+  let usageCalls = 0;
+  let refreshCalls = 0;
+  const client = new KimiUsageClient({
+    homeDir: fixture.home,
+    nowSeconds: () => 1000,
+    fetchImpl: async (url) => {
+      if (url.includes("/api/oauth/token")) {
+        refreshCalls += 1;
+        return jsonResponse({ access_token: "access-refreshed", expires_in: 3600 });
+      }
+      usageCalls += 1;
+      return jsonResponse({ message: "노출 금지" }, 403);
+    },
+  });
+
+  await assert.rejects(client.fetchBadges(), { code: "KIMI_USAGE_AUTH" });
+  assert.equal(refreshCalls, 1);
+  assert.equal(usageCalls, 2);
 });
 
 test("Kimi 인증 실패와 잘못된 자격 파일은 민감값 없는 오류로 격리한다", async (t) => {

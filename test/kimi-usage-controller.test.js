@@ -112,7 +112,7 @@ test("Kimi 일시 오류는 기존 배지를 유지하고 다음 주기에 재�
     client: {
       fetchBadges: async () => {
         calls += 1;
-        if (fail) throw new Error("temporary");
+        if (fail) throw Object.assign(new Error("temporary"), { code: "KIMI_USAGE_NETWORK" });
         return [{ key: "5h", remainingPercent: 55, ariaLabel: "Kimi 5시간 55% 남음" }];
       },
     },
@@ -128,6 +128,55 @@ test("Kimi 일시 오류는 기존 배지를 유지하고 다음 주기에 재�
   assert.equal(controller.buildBadges()[0].remainingPercent, 55);
   await clock.advance(60_000);
   assert.equal(calls, 3);
+});
+
+test("Kimi terminal 오류는 stale 배지를 지우고 transient 오류만 유지한다", async () => {
+  for (const code of ["KIMI_USAGE_AUTH", "KIMI_USAGE_UNAVAILABLE", "KIMI_USAGE_RESPONSE"]) {
+    let errorCode = null;
+    const changes = [];
+    const controller = new KimiUsageController({
+      client: {
+        fetchBadges: async () => {
+          if (errorCode) throw Object.assign(new Error("safe"), { code: errorCode });
+          return [{ key: "7d", remainingPercent: 40, ariaLabel: "Kimi 7일 40% 남음" }];
+        },
+      },
+      onBadgesChanged: (badges) => changes.push(badges),
+    });
+    controller.setWorking(true);
+    await controller.whenIdle();
+    errorCode = code;
+    await controller.refresh();
+    const badges = controller.buildBadges();
+    const lastChange = changes.at(-1);
+    controller.dispose();
+    assert.deepEqual(badges, [], code);
+    assert.deepEqual(lastChange, [], code);
+  }
+
+  for (const code of [
+    "KIMI_USAGE_TIMEOUT",
+    "KIMI_USAGE_NETWORK",
+    "KIMI_USAGE_RATE_LIMIT",
+    "KIMI_USAGE_SERVER",
+  ]) {
+    let errorCode = null;
+    const controller = new KimiUsageController({
+      client: {
+        fetchBadges: async () => {
+          if (errorCode) throw Object.assign(new Error("safe"), { code: errorCode });
+          return [{ key: "5h", remainingPercent: 55, ariaLabel: "Kimi 5시간 55% 남음" }];
+        },
+      },
+    });
+    controller.setWorking(true);
+    await controller.whenIdle();
+    errorCode = code;
+    await controller.refresh();
+    const badges = controller.buildBadges();
+    controller.dispose();
+    assert.equal(badges[0].remainingPercent, 55, code);
+  }
 });
 
 test("동일한 정규화 badge 값은 callback을 다시 호출하지 않는다", async () => {
@@ -195,6 +244,26 @@ test("dispose 뒤 늦게 완료된 조회는 callback이나 timer를 복원하�
   assert.deepEqual(controller.buildBadges(), []);
   assert.deepEqual(changes, []);
   assert.equal(clock.size, 0);
+});
+
+test("dispose는 이미 표시 중인 배지를 renderer callback 없이 내부에서만 비운다", async () => {
+  const changes = [];
+  const controller = new KimiUsageController({
+    client: {
+      fetchBadges: async () => [
+        { key: "5h", remainingPercent: 20, ariaLabel: "Kimi 5시간 20% 남음" },
+      ],
+    },
+    onBadgesChanged: (badges) => changes.push(badges),
+  });
+  controller.setWorking(true);
+  await controller.whenIdle();
+  assert.equal(changes.length, 1);
+
+  controller.dispose();
+
+  assert.deepEqual(controller.buildBadges(), []);
+  assert.equal(changes.length, 1);
 });
 
 test("진행 중인 Kimi 조회에서 직접 refresh는 같은 request를 공유한다", async () => {

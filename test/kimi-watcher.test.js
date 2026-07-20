@@ -34,6 +34,23 @@ function sessionFixture(root, id = "session_one", workDir = "/work/toolflowy") {
   return { session, main, wire };
 }
 
+function managedConfig(root, {
+  baseUrl = "https://api.kimi.com/coding/v1",
+  modelAlias = "kimi-code/k3",
+  providerType = "kimi",
+} = {}) {
+  fs.writeFileSync(path.join(root, "config.toml"), [
+    '[providers."managed:kimi-code"]',
+    `type = ${JSON.stringify(providerType)}`,
+    `base_url = ${JSON.stringify(baseUrl)}`,
+    '',
+    `[models.${JSON.stringify(modelAlias)}]`,
+    'provider = "managed:kimi-code"',
+    'model = "k3"',
+    '',
+  ].join("\n"));
+}
+
 function pick(value, keys) {
   return Object.fromEntries(keys.map((key) => [key, value[key]]));
 }
@@ -184,33 +201,60 @@ test("Kimi 파서는 요청·모델·보이는 응답·도구·완료만 정규�
   assert.deepEqual(pick(done, ["type", "finished"]), { type: "lifecycle", finished: true });
 });
 
-test("Kimi managed 사용량 eligibility는 main llm.request의 명시적 provider만 신뢰한다", () => {
-  const mainFile = "/tmp/session_one/agents/main/wire.jsonl";
-  const subagentFile = "/tmp/session_one/agents/agent-0/wire.jsonl";
-  const metadata = {
-    sessionId: "session_one",
-    sectionLabel: "ToolFlowy",
-    cwd: "/work/toolflowy",
-  };
-  const request = (provider, file = mainFile) => parseKimiRow({
+test("Kimi managed 사용량 eligibility는 model과 endpoint가 모두 관리형으로 명시된 경우만 허용한다", (t) => {
+  const root = tempDir(t);
+  const fixture = sessionFixture(root);
+  managedConfig(root);
+  const watcher = new KimiWatcher({ roots: [path.join(root, "sessions")], homeDir: root });
+  const request = (overrides = {}, file = fixture.wire) => watcher.parseRow({
     type: "llm.request",
-    ...(provider === undefined ? {} : { provider }),
+    provider: "kimi",
     modelAlias: "kimi-code/k3",
     time: 2,
-  }, file, metadata);
+    ...overrides,
+  }, file);
 
-  assert.equal(request("kimi").managedUsageEligible, true);
-  assert.equal(request("custom").managedUsageEligible, false);
-  assert.equal(request("unknown").managedUsageEligible, false);
-  assert.equal(request(undefined).managedUsageEligible, false);
-  assert.equal(request("kimi", subagentFile).managedUsageEligible, false);
+  assert.equal(request().managedUsageEligible, true);
+  assert.equal(request({ provider: "custom" }).managedUsageEligible, false);
+  assert.equal(request({ modelAlias: "custom/k3" }).managedUsageEligible, false);
+
+  managedConfig(root, { providerType: "openai" });
+  fs.utimesSync(path.join(root, "config.toml"), new Date(), new Date(Date.now() + 500));
+  assert.equal(request().managedUsageEligible, false);
+
+  managedConfig(root, { baseUrl: "https://proxy.example.test/coding/v1" });
+  fs.utimesSync(path.join(root, "config.toml"), new Date(), new Date(Date.now() + 1000));
+  assert.equal(request().managedUsageEligible, false);
+
+  const subagentFile = path.join(fixture.session, "agents", "agent-0", "wire.jsonl");
+  assert.equal(request({}, subagentFile).managedUsageEligible, false);
+});
+
+test("Kimi managed endpoint 환경변수가 custom이면 config가 관리형이어도 fail-closed 처리한다", (t) => {
+  const root = tempDir(t);
+  const fixture = sessionFixture(root);
+  managedConfig(root);
+  const watcher = new KimiWatcher({
+    roots: [path.join(root, "sessions")],
+    homeDir: root,
+    env: { KIMI_CODE_BASE_URL: "https://gateway.example.test/coding/v1" },
+  });
+
+  const parsed = watcher.parseRow({
+    type: "llm.request",
+    provider: "kimi",
+    modelAlias: "kimi-code/k3",
+    time: 2,
+  }, fixture.wire);
+  assert.equal(parsed.managedUsageEligible, false);
 });
 
 test("custom과 managed Kimi가 동시에 작업해도 managed controller는 한 번만 조회하고 마지막 managed 종료 때 멈춘다", async (t) => {
   const root = tempDir(t);
   const custom = sessionFixture(root, "session_custom", "/work/custom");
   const managed = sessionFixture(root, "session_managed", "/work/managed");
-  const watcher = new KimiWatcher({ roots: [root], quietMs: 60_000 });
+  managedConfig(root);
+  const watcher = new KimiWatcher({ roots: [root], homeDir: root, quietMs: 60_000 });
   let calls = 0;
   const controller = new KimiUsageController({
     client: {
@@ -496,6 +540,91 @@ test("KimiWatcher는 여러 메인 세션의 메시지와 제목을 분리한다
       ["첫째 응답", "kimi:session_first", "first"],
     ].sort()
   );
+});
+
+test("KimiWatcher는 최근 목록 밖으로 밀린 활성 session 파일을 계속 감시한다", (t) => {
+  const root = tempDir(t);
+  const active = sessionFixture(root, "session_active", "/work/active");
+  fs.utimesSync(active.wire, 1, 1);
+  const watcher = new KimiWatcher({ roots: [root], homeDir: root, sessionLimit: 1, quietMs: 60_000 });
+  const messages = [];
+  watcher.on("agent-message", (message) => messages.push(message));
+  watcher.seed();
+
+  append(active.wire, {
+    type: "turn.prompt",
+    origin: { kind: "user" },
+    input: [{ type: "text", text: "계속 감시" }],
+    time: 1,
+  });
+  watcher.poll();
+  assert.equal(watcher.working, true);
+
+  const recent = sessionFixture(root, "session_recent", "/work/recent");
+  const futureSeconds = Date.now() / 1000 + 10;
+  fs.utimesSync(recent.wire, futureSeconds, futureSeconds);
+  append(active.wire, {
+    type: "context.append_loop_event",
+    event: {
+      type: "content.part",
+      uuid: "active-response",
+      turnId: "0",
+      step: 1,
+      part: { type: "text", text: "활성 응답" },
+    },
+    time: 2,
+  });
+  watcher.poll();
+
+  assert.deepEqual(messages, ["활성 응답"]);
+});
+
+test("KimiWatcher는 사라진 file의 offset·buffer·metadata cache를 다음 poll에서 정리한다", (t) => {
+  const root = tempDir(t);
+  const fixture = sessionFixture(root);
+  const watcher = new KimiWatcher({ roots: [root], homeDir: root, quietMs: 60_000 });
+  watcher.seed();
+  watcher.metadataFor(fixture.wire);
+  watcher.buffers.set(fixture.wire, Buffer.from("partial"));
+  assert.equal(watcher.offsets.size, 1);
+  assert.equal(watcher.metadataCache.size, 1);
+
+  fs.rmSync(fixture.session, { recursive: true, force: true });
+  watcher.poll();
+
+  assert.equal(watcher.offsets.size, 0);
+  assert.equal(watcher.buffers.size, 0);
+  assert.equal(watcher.metadataCache.size, 0);
+});
+
+test("KimiWatcher는 같은 session의 완료 전 응답 buffer를 최신 turn·step 하나로 제한한다", (t) => {
+  const root = tempDir(t);
+  const fixture = sessionFixture(root);
+  const watcher = new KimiWatcher({ roots: [root], homeDir: root, quietMs: 60_000 });
+  watcher.seed();
+  append(fixture.wire, {
+    type: "turn.prompt",
+    origin: { kind: "user" },
+    input: [{ type: "text", text: "진행" }],
+    time: 1,
+  });
+  for (const step of [1, 2]) {
+    append(fixture.wire, {
+      type: "context.append_loop_event",
+      event: {
+        type: "content.part",
+        uuid: `response-${step}`,
+        turnId: "0",
+        step,
+        part: { type: "text", text: `응답 ${step}` },
+      },
+      time: step + 1,
+    });
+  }
+  watcher.poll();
+
+  assert.equal(watcher.responseBuffers.size, 1);
+  assert.equal([...watcher.responseBuffers.values()][0], "응답 2");
 });
 
 test("main은 Kimi watcher를 전체 공급자 수명주기에 연결한다", () => {
