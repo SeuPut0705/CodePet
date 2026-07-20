@@ -45,6 +45,10 @@ const {
   resizeWindowGeometry,
   restoreWindowGeometry,
 } = require("./window-geometry");
+const {
+  normalizeBubbleSize,
+  positionBubbleBounds,
+} = require("./bubble-window-geometry");
 const { normalizeFontFamily } = require("./appearance-settings");
 const { buildAccountSubmenu } = require("./account-submenu");
 const { rateWindowLabel } = require("./codex-usage-label");
@@ -458,9 +462,11 @@ function applyPet(petKey) {
   refreshTrayMenu();
 }
 
-// 말풍선 창 관련 설정입니다. 너비는 고정하고 높이는 내용에 맞춰 renderer가 보고합니다.
+// 말풍선 창 관련 설정입니다. 크기는 콘텐츠에 맞춰 renderer가 보고하고 main에서 화면 범위로 제한합니다.
 const BUBBLE_CONFIG = Object.freeze({
-  width: 270,
+  minWidth: 300,
+  maxWidth: 520,
+  marginPx: 12,
   minHeight: 48,
   maxHeight: 420,
   gapPx: 2,
@@ -496,6 +502,7 @@ let pendingBubbleData = null;
 // 내용 갱신(UPDATE) 후 renderer가 높이를 보고(RESIZE)해야 창을 보여줍니다.
 // 그 사이에 hide 요청이 오면 표시를 취소하기 위한 플래그입니다.
 let bubblePendingShow = false;
+let bubbleWidth = BUBBLE_CONFIG.minWidth;
 let bubbleHeight = 80;
 // 현재 화면에 올린 자동 작업 말풍선 원본입니다. 개인정보 모드 변경 시 같은 내용을 다시 필터링합니다.
 let currentActivityBubbleData = null;
@@ -2231,17 +2238,18 @@ function ensurePetWindowVisibleForBubble() {
 
 function positionBubble() {
   if (!bubbleWindow || bubbleWindow.isDestroyed()) return;
-
-  const area = getCurrentWorkArea();
-  let x = Math.round(runtime.x + runtime.width / 2 - BUBBLE_CONFIG.width / 2);
-  x = Math.min(Math.max(x, area.x), area.x + area.width - BUBBLE_CONFIG.width);
-
-  let y = Math.round(runtime.y - bubbleHeight - BUBBLE_CONFIG.gapPx);
-  if (y < area.y) {
-    y = Math.round(runtime.y + runtime.height + BUBBLE_CONFIG.gapPx);
-  }
-
-  bubbleWindow.setBounds({ x, y, width: BUBBLE_CONFIG.width, height: bubbleHeight });
+  const bounds = positionBubbleBounds({
+    petBounds: {
+      x: runtime.x,
+      y: runtime.y,
+      width: runtime.width,
+      height: runtime.height,
+    },
+    workArea: getCurrentWorkArea(),
+    bubbleSize: { width: bubbleWidth, height: bubbleHeight },
+    gapPx: BUBBLE_CONFIG.gapPx,
+  });
+  bubbleWindow.setBounds(bounds);
 }
 
 // 준비된 말풍선 renderer로 보류 중인 데이터를 보냅니다.
@@ -2995,7 +3003,7 @@ function createBubbleWindow() {
 
   bubbleWindow = new BrowserWindow({
     ...WINDOW_CONFIG,
-    width: BUBBLE_CONFIG.width,
+    width: bubbleWidth,
     height: bubbleHeight,
     show: false,
     focusable: false,
@@ -3239,17 +3247,22 @@ function registerIpcHandlers() {
     void showUsageBubble();
   });
 
-  // 말풍선 renderer가 내용 높이를 보고하면 창 크기와 위치를 맞춘 뒤 표시합니다.
-  ipcMain.on(BUBBLE_CHANNELS.RESIZE, (_event, height) => {
+  // 말풍선 renderer가 콘텐츠 크기를 보고하면 화면 범위에 맞춘 뒤 표시합니다.
+  ipcMain.on(BUBBLE_CHANNELS.RESIZE, (_event, size) => {
     if (!bubbleWindow || bubbleWindow.isDestroyed()) return;
 
-    const nextHeight = Math.round(Number(height));
-    if (Number.isFinite(nextHeight)) {
-      bubbleHeight = Math.min(
-        Math.max(nextHeight, BUBBLE_CONFIG.minHeight),
-        BUBBLE_CONFIG.maxHeight
-      );
-    }
+    const normalized = normalizeBubbleSize(size, {
+      workArea: getCurrentWorkArea(),
+      currentWidth: bubbleWidth,
+      currentHeight: bubbleHeight,
+      minWidth: BUBBLE_CONFIG.minWidth,
+      maxWidth: BUBBLE_CONFIG.maxWidth,
+      minHeight: BUBBLE_CONFIG.minHeight,
+      maxHeight: BUBBLE_CONFIG.maxHeight,
+      marginPx: BUBBLE_CONFIG.marginPx,
+    });
+    bubbleWidth = normalized.width;
+    bubbleHeight = normalized.height;
 
     positionBubble();
     clearTimeout(bubbleRenderFallbackTimer);

@@ -23,6 +23,7 @@ test("README는 Kimi 5h·7d 사용량과 CLI 프로젝트 제목 정책을 설�
   const readme = fs.readFileSync(path.join(__dirname, "..", "README.md"), "utf8");
   assert.match(readme, /Kimi.*5h.*7d/s);
   assert.match(readme, /CLI.*프로젝트 폴더명/s);
+  assert.match(readme, /말풍선.*콘텐츠.*화면.*자동.*폭/s);
 });
 
 class FakeRendererElement {
@@ -183,6 +184,16 @@ function descendantWithClass(element, className) {
 
 test("외부 provider 완료 메시지도 공통 말풍선 정리와 길이 제한을 거친다", () => {
   assert.match(mainJs, /text: truncateForBubble\(result\.message\)/);
+});
+
+test("main은 renderer 크기를 work area에 제한하고 실제 폭으로 배치한다", () => {
+  assert.match(mainJs, /normalizeBubbleSize\(/);
+  assert.match(mainJs, /positionBubbleBounds\(/);
+  assert.match(mainJs, /minWidth:\s*300/);
+  assert.match(mainJs, /maxWidth:\s*520/);
+  assert.match(mainJs, /marginPx:\s*12/);
+  assert.match(mainJs, /let bubbleWidth = BUBBLE_CONFIG\.minWidth/);
+  assert.doesNotMatch(mainJs, /BUBBLE_CONFIG\.width\s*\/\s*2/);
 });
 
 test("말풍선 renderer는 콘텐츠 선호 폭과 현재 높이를 함께 보고한다", () => {
