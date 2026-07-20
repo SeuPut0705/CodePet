@@ -8,6 +8,7 @@ const { CodexWatcher } = require("./codex-watcher");
 const { CodexThreadTitleResolver, readCodexThreadTitle } = require("./codex-thread-title");
 const { AntigravityWatcher } = require("./antigravity-watcher");
 const { ClaudeWatcher } = require("./claude-watcher");
+const { KimiWatcher } = require("./kimi-watcher");
 const { ClaudeAccountSwitcher } = require("./claude-account-switcher");
 const { normalizeClaudeAccountMetadata } = require("./claude-account-metadata");
 const { AntigravityAccountSwitcher } = require("./antigravity-account-switcher");
@@ -673,6 +674,7 @@ const codexThreadTitles = new CodexThreadTitleResolver({
 });
 const antigravityWatcher = new AntigravityWatcher();
 const claudeWatcher = new ClaudeWatcher();
+const kimiWatcher = new KimiWatcher();
 // macOS에서는 Claude Code live 자격 증명이 Keychain에 있으므로 플랫폼 저장소를 주입합니다.
 const claudeLiveStore = createClaudeLiveStore();
 const claudeAccountSwitcher = new ClaudeAccountSwitcher({ liveStore: claudeLiveStore });
@@ -1161,7 +1163,7 @@ function playManualReaction(stateName) {
 }
 
 function isAnyProviderWorking() {
-  return codexWatcher.working || antigravityWatcher.working || claudeWatcher.working;
+  return codexWatcher.working || antigravityWatcher.working || claudeWatcher.working || kimiWatcher.working;
 }
 
 // 수동 Pause/Resume 메뉴 항목에서 자동 이동을 토글합니다.
@@ -2922,14 +2924,23 @@ function registerExternalWatcher(watcher, providerLabel) {
     }
     if (working) show("작업 중", "작업을 시작했어요.", context);
   });
+  watcher.on("context-changed", (context) => {
+    if (activeActivityBubbles.refresh(context.threadId, context)) {
+      showActiveActivityBubble();
+    }
+  });
   watcher.on("user-message", (message, context) => show("요청 확인 중", `요청: ${message}`, context));
   watcher.on("agent-message", (message, context) => show("응답 작성 중", message, context, "running"));
   watcher.on("tool-activity", (activity, context) => {
     const title = activity.kind === "patch"
       ? "파일 수정 중"
-      : ["read", "search"].includes(activity.kind)
-        ? "자료 확인 중"
-        : "명령 실행 중";
+      : activity.kind === "test"
+        ? "테스트 중"
+        : activity.kind === "build"
+          ? "빌드 중"
+          : ["read", "search"].includes(activity.kind)
+            ? "자료 확인 중"
+            : "명령 실행 중";
     const state = activity.success === false
       ? "failed"
       : ["read", "search"].includes(activity.kind)
@@ -2945,7 +2956,7 @@ function registerExternalWatcher(watcher, providerLabel) {
     const completionTitle = `${providerLabel} ${failed ? "작업 실패" : "작업 완료"}`;
     const visible = showWatcherActivityBubble({
       kind: "activity",
-      ...activityHeading(completionTitle),
+      ...activityHeading(completionTitle, result),
       busy: false,
       text: truncateForBubble(result.message) || (failed
         ? `${providerLabel} 작업 중 문제가 발생했어요.`
@@ -3386,6 +3397,7 @@ app.whenReady().then(() => {
   registerCodexWatcher();
   registerExternalWatcher(antigravityWatcher, "AGY");
   registerExternalWatcher(claudeWatcher, "Claude");
+  registerExternalWatcher(kimiWatcher, "Kimi");
   createTray();
   createWindow();
   createBubbleWindow();
@@ -3397,6 +3409,7 @@ app.whenReady().then(() => {
   codexWatcher.start();
   antigravityWatcher.start();
   claudeWatcher.start();
+  kimiWatcher.start();
   codexProxyStartupPromise = restoreCodexProxyMode();
   void codexProxyStartupPromise;
 
@@ -3423,6 +3436,7 @@ app.on("window-all-closed", () => {
   codexWatcher.stop();
   antigravityWatcher.stop();
   claudeWatcher.stop();
+  kimiWatcher.stop();
 
   // 트레이에 남아 있어야 하는 일반 닫힘과, "완전 종료"를 명확히 분리합니다.
   if (isQuitting) {

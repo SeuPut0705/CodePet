@@ -5,7 +5,11 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const { ExternalWatcher, messageText, readBytes, text } = require("./external-watcher");
-const { normalizeReasoningLabel, normalizeWorkerLabel } = require("./activity-labels");
+const {
+  normalizeReasoningLabel,
+  normalizeWorkerLabel,
+  safeSectionLabel,
+} = require("./activity-labels");
 
 const DEFAULT_KIMI_ROOT = path.join(os.homedir(), ".kimi-code", "sessions");
 const KIMI_POLL_MS = 1800;
@@ -39,11 +43,11 @@ function readKimiSessionMetadata(file) {
     const state = JSON.parse(fs.readFileSync(path.join(sessionRoot, "state.json"), "utf8"));
     const cwd = typeof state.workDir === "string" ? state.workDir : null;
     const title = typeof state.title === "string" && state.title.trim()
-      ? state.title.trim()
+      ? state.title
       : cwd
         ? path.basename(cwd)
         : null;
-    return { sessionId, sectionLabel: title, cwd };
+    return { sessionId, sectionLabel: safeSectionLabel(title), cwd };
   } catch {
     return { sessionId, sectionLabel: null, cwd: null };
   }

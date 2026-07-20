@@ -50,6 +50,18 @@ test("Kimi metadata는 제목과 작업 경로를 안전하게 읽는다", (t) =
   });
 });
 
+test("Kimi metadata 제목은 완료 말풍선에서도 한 줄 길이 제한을 지킨다", (t) => {
+  const fixture = sessionFixture(tempDir(t));
+  fs.writeFileSync(
+    path.join(fixture.session, "state.json"),
+    JSON.stringify({ title: `  첫 제목\n${"긴".repeat(100)}  `, workDir: "/work/toolflowy" })
+  );
+
+  const metadata = readKimiSessionMetadata(fixture.wire);
+  assert.equal(metadata.sectionLabel.includes("\n"), false);
+  assert.equal(Array.from(metadata.sectionLabel).length, 80);
+});
+
 test("Kimi 파서는 요청·모델·보이는 응답·도구·완료만 정규화한다", () => {
   const file = "/tmp/session_one/agents/main/wire.jsonl";
   const metadata = {
@@ -397,4 +409,16 @@ test("KimiWatcher는 여러 메인 세션의 메시지와 제목을 분리한다
       ["첫째 응답", "kimi:session_first", "ToolFlowy"],
     ].sort()
   );
+});
+
+test("main은 Kimi watcher를 전체 공급자 수명주기에 연결한다", () => {
+  const main = fs.readFileSync(path.join(__dirname, "..", "src", "main.js"), "utf8");
+  assert.match(main, /const \{ KimiWatcher \} = require\("\.\/kimi-watcher"\)/);
+  assert.match(main, /const kimiWatcher = new KimiWatcher\(\)/);
+  assert.match(main, /registerExternalWatcher\(kimiWatcher, "Kimi"\)/);
+  assert.match(main, /kimiWatcher\.start\(\)/);
+  assert.match(main, /kimiWatcher\.stop\(\)/);
+  assert.match(main, /claudeWatcher\.working \|\| kimiWatcher\.working/);
+  assert.match(main, /watcher\.on\("context-changed"/);
+  assert.match(main, /activityHeading\(completionTitle, result\)/);
 });
