@@ -7,8 +7,10 @@ const {
   KimiWatcher,
   findKimiWireFiles,
   parseKimiRow,
+  readManagedKimiSettings,
   readKimiSessionMetadata,
 } = require("../src/kimi-watcher");
+const { KimiUsageClient } = require("../src/kimi-usage-client");
 const { KimiUsageController } = require("../src/kimi-usage-controller");
 
 function tempDir(t) {
@@ -247,6 +249,59 @@ test("Kimi managed endpoint 환경변수가 custom이면 config가 관리형이�
     time: 2,
   }, fixture.wire);
   assert.equal(parsed.managedUsageEligible, false);
+});
+
+test("기본 Kimi watcher와 usage client는 같은 KIMI_CODE_HOME만 사용한다", (t) => {
+  const customHome = tempDir(t);
+  const previous = process.env.KIMI_CODE_HOME;
+  process.env.KIMI_CODE_HOME = customHome;
+  t.after(() => {
+    if (previous === undefined) delete process.env.KIMI_CODE_HOME;
+    else process.env.KIMI_CODE_HOME = previous;
+  });
+
+  const watcher = new KimiWatcher();
+  const client = new KimiUsageClient();
+
+  assert.deepEqual(watcher.roots, [path.join(customHome, "sessions")]);
+  assert.equal(watcher.configFile, path.join(customHome, "config.toml"));
+  assert.equal(client.credentialFile, path.join(customHome, "credentials", "kimi-code.json"));
+  assert.equal(watcher.roots.includes(path.join(os.homedir(), ".kimi-code", "sessions")), false);
+});
+
+test("Kimi managed TOML은 정상 주석·escape만 허용하고 따옴표 뒤 garbage는 거부한다", (t) => {
+  const root = tempDir(t);
+  const configFile = path.join(root, "config.toml");
+  fs.writeFileSync(configFile, [
+    '[providers."managed:kimi-code"]',
+    'type = "ki\\u006di" # valid TOML basic-string escape',
+    'base_url = "https://api.kimi.com/coding/v1" # official endpoint',
+    '[models."kimi-code/k3"]',
+    'provider = "managed:kimi-code" # official provider',
+  ].join("\n"));
+  const valid = readManagedKimiSettings(configFile, {});
+  assert.equal(valid.baseUrl, "https://api.kimi.com/coding/v1");
+  assert.equal(valid.modelAliases.has("kimi-code/k3"), true);
+
+  fs.writeFileSync(configFile, [
+    '[providers."managed:kimi-code"]',
+    'type = "kimi" trailing-garbage',
+    'base_url = "https://api.kimi.com/coding/v1"',
+    '[models."kimi-code/k3"]',
+    'provider = "managed:kimi-code"',
+  ].join("\n"));
+  assert.equal(readManagedKimiSettings(configFile, {}).baseUrl, null);
+
+  fs.writeFileSync(configFile, [
+    '[providers."managed:kimi-code"]',
+    'type = "kimi"',
+    'base_url = "https://api.kimi.com/coding/v1" trailing-garbage',
+    '[models."kimi-code/k3"]',
+    'provider = "managed:kimi-code" trailing-garbage',
+  ].join("\n"));
+  const malformed = readManagedKimiSettings(configFile, {});
+  assert.equal(malformed.baseUrl, null);
+  assert.equal(malformed.modelAliases.size, 0);
 });
 
 test("custom과 managed Kimi가 동시에 작업해도 managed controller는 한 번만 조회하고 마지막 managed 종료 때 멈춘다", async (t) => {
@@ -579,6 +634,101 @@ test("KimiWatcher는 최근 목록 밖으로 밀린 활성 session 파일을 계
   assert.deepEqual(messages, ["활성 응답"]);
 });
 
+test("recent 제한에서 밀린 비활성 wire가 다시 들어오면 새 append만 읽는다", (t) => {
+  const root = tempDir(t);
+  const old = sessionFixture(root, "session_old", "/work/old");
+  append(old.wire, {
+    type: "turn.prompt",
+    origin: { kind: "user" },
+    input: [{ type: "text", text: "재생되면 안 되는 과거 요청" }],
+    time: 1,
+  });
+  fs.utimesSync(old.wire, 1, 1);
+
+  const watcher = new KimiWatcher({ roots: [root], homeDir: root, sessionLimit: 1, quietMs: 60_000 });
+  const messages = [];
+  watcher.on("user-message", (message) => messages.push(message));
+  watcher.seed();
+
+  const recent = sessionFixture(root, "session_recent", "/work/recent");
+  watcher.poll();
+  assert.equal(watcher.offsets.has(old.wire), false);
+
+  append(old.wire, {
+    type: "turn.prompt",
+    origin: { kind: "user" },
+    input: [{ type: "text", text: "재진입 뒤 새 요청" }],
+    time: 2,
+  });
+  const futureSeconds = Date.now() / 1000 + 10;
+  fs.utimesSync(old.wire, futureSeconds, futureSeconds);
+  watcher.poll();
+
+  assert.deepEqual(messages, ["재진입 뒤 새 요청"]);
+});
+
+test("evicted wire가 삭제·재생성되면 새 identity의 기존 내용은 재생하지 않는다", (t) => {
+  const root = tempDir(t);
+  const old = sessionFixture(root, "session_recreated", "/work/old");
+  append(old.wire, {
+    type: "turn.prompt",
+    origin: { kind: "user" },
+    input: [{ type: "text", text: "옛 inode 기록" }],
+    time: 1,
+  });
+  fs.utimesSync(old.wire, 1, 1);
+  const watcher = new KimiWatcher({ roots: [root], homeDir: root, sessionLimit: 1, quietMs: 60_000 });
+  const messages = [];
+  watcher.on("user-message", (message) => messages.push(message));
+  watcher.seed();
+
+  sessionFixture(root, "session_recent", "/work/recent");
+  watcher.poll();
+  fs.rmSync(old.session, { recursive: true, force: true });
+  const replacement = sessionFixture(root, "session_recreated", "/work/recreated");
+  append(replacement.wire, {
+    type: "turn.prompt",
+    origin: { kind: "user" },
+    input: [{ type: "text", text: "새 inode의 발견 전 기록" }],
+    time: 2,
+  });
+  const futureSeconds = Date.now() / 1000 + 10;
+  fs.utimesSync(replacement.wire, futureSeconds, futureSeconds);
+  watcher.poll();
+  assert.deepEqual(messages, []);
+
+  append(replacement.wire, {
+    type: "turn.prompt",
+    origin: { kind: "user" },
+    input: [{ type: "text", text: "새 inode의 발견 후 append" }],
+    time: 3,
+  });
+  watcher.poll();
+  assert.deepEqual(messages, ["새 inode의 발견 후 append"]);
+});
+
+test("evicted wire checkpoint는 장기 실행에서도 설정된 상한을 넘지 않는다", (t) => {
+  const root = tempDir(t);
+  const first = sessionFixture(root, "session_0", "/work/0");
+  fs.utimesSync(first.wire, 1, 1);
+  const watcher = new KimiWatcher({
+    roots: [root],
+    homeDir: root,
+    sessionLimit: 1,
+    checkpointLimit: 2,
+    quietMs: 60_000,
+  });
+  watcher.seed();
+
+  for (let index = 1; index <= 4; index += 1) {
+    const fixture = sessionFixture(root, `session_${index}`, `/work/${index}`);
+    fs.utimesSync(fixture.wire, index + 1, index + 1);
+    watcher.poll();
+  }
+
+  assert.equal(watcher.evictedCheckpoints.size, 2);
+});
+
 test("KimiWatcher는 사라진 file의 offset·buffer·metadata cache를 다음 poll에서 정리한다", (t) => {
   const root = tempDir(t);
   const fixture = sessionFixture(root);
@@ -627,9 +777,10 @@ test("KimiWatcher는 같은 session의 완료 전 응답 buffer를 최신 turn·
   assert.equal([...watcher.responseBuffers.values()][0], "응답 2");
 });
 
-test("main은 Kimi watcher를 전체 공급자 수명주기에 연결한다", () => {
+test("main은 KIMI_CODE_HOME을 공유하는 기본 생성자로 Kimi watcher와 usage client를 연결한다", () => {
   const main = fs.readFileSync(path.join(__dirname, "..", "src", "main.js"), "utf8");
   assert.match(main, /const \{ KimiWatcher \} = require\("\.\/kimi-watcher"\)/);
+  assert.match(main, /const kimiUsageClient = new KimiUsageClient\(\)/);
   assert.match(main, /const kimiWatcher = new KimiWatcher\(\)/);
   assert.match(main, /registerExternalWatcher\(kimiWatcher, "Kimi"\)/);
   assert.match(main, /kimiWatcher\.start\(\)/);

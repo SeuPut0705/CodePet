@@ -289,13 +289,9 @@ class KimiUsageClient {
           capturedOwner = await directoryHandle.stat();
         } catch {}
       }
-      if (!capturedOwner) {
-        try {
-          capturedOwner = await this.fs.stat(this.lockDir);
-        } catch {
-          return false;
-        }
-      }
+      // mkdir 이후 확보한 path/handle identity가 없으면 현재 경로는 다른 owner가
+      // 교체했을 수 있으므로 cleanup 시점의 stat을 소유 증거로 채택하지 않습니다.
+      if (!capturedOwner) return false;
 
       const before = await this.fs.stat(this.lockDir);
       if (!sameIdentity(capturedOwner, before)) return false;

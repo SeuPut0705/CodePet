@@ -423,6 +423,37 @@ test("lock stat의 일시 실패도 먼저 확보한 inode로 본인 orphan을 �
   assert.equal(fs.existsSync(fixture.lockDir), false);
 });
 
+test("lock 초기 path stat이 두 번 실패하면 현재 inode를 뒤늦게 소유 증거로 채택하지 않는다", async (t) => {
+  const fixture = credentialFixture(t, { access_token: "old", expires_at: 1001 });
+  const fsImpl = Object.create(fs.promises);
+  let lockStatCalls = 0;
+  let lockRmdirCalls = 0;
+  fsImpl.stat = async (target, ...args) => {
+    if (target === fixture.lockDir) {
+      lockStatCalls += 1;
+      if (lockStatCalls <= 2) {
+        throw Object.assign(new Error("initial stat failed"), { code: "EIO" });
+      }
+    }
+    return fs.promises.stat(target, ...args);
+  };
+  fsImpl.rmdir = async (target, ...args) => {
+    if (target === fixture.lockDir) lockRmdirCalls += 1;
+    return fs.promises.rmdir(target, ...args);
+  };
+  const client = new KimiUsageClient({
+    homeDir: fixture.home,
+    nowSeconds: () => 1000,
+    fsImpl,
+    fetchImpl: async () => assert.fail("소유 증거 없는 lock 실패 뒤 요청하지 않아야 합니다."),
+  });
+
+  await assert.rejects(client.fetchBadges(), { code: "KIMI_USAGE_LOCK" });
+  assert.equal(lockStatCalls, 2);
+  assert.equal(lockRmdirCalls, 0);
+  assert.equal(fs.existsSync(fixture.lockDir), true);
+});
+
 test("release final heartbeat 실패도 소유 lock 정리를 건너뛰지 않는다", async (t) => {
   const fixture = credentialFixture(t, { access_token: "old", expires_at: 1001 });
   const fsImpl = Object.create(fs.promises);

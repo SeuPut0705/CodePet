@@ -189,10 +189,7 @@ class ActivityBubbleState {
         provider: entry.provider,
         managedUsageEligible: entry.managedUsageEligible === true,
         subagentCount: entry.subagentCount,
-        titleLabel:
-          entry.subagentCount > 0
-            ? `${heading.titleLabel} · 활성 서브에이전트 ${entry.subagentCount}개`
-            : heading.titleLabel,
+        titleLabel: heading.titleLabel,
       };
     });
 

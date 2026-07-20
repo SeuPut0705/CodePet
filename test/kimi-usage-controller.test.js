@@ -179,6 +179,39 @@ test("Kimi terminal 오류는 stale 배지를 지우고 transient 오류만 유�
   }
 });
 
+test("이전 세대 terminal 실패는 재시작 뒤 새 성공 배지를 지우지 않는다", async () => {
+  const first = deferred();
+  const second = deferred();
+  const requests = [first, second];
+  const changes = [];
+  const clock = fakeTimerClock();
+  const controller = new KimiUsageController({
+    client: { fetchBadges: () => requests.shift().promise },
+    setTimer: clock.setTimer,
+    clearTimer: clock.clearTimer,
+    onBadgesChanged: (badges) => changes.push(badges),
+  });
+
+  controller.setWorking(true);
+  const firstRun = controller.whenIdle();
+  controller.setWorking(false);
+  controller.setWorking(true);
+  const secondRun = controller.whenIdle();
+  second.resolve([{ key: "7d", remainingPercent: 64, ariaLabel: "Kimi 7일 64% 남음" }]);
+  await secondRun;
+
+  first.reject(Object.assign(new Error("old auth"), { code: "KIMI_USAGE_AUTH" }));
+  await firstRun;
+
+  assert.deepEqual(controller.buildBadges(), [
+    { key: "7d", remainingPercent: 64, ariaLabel: "Kimi 7일 64% 남음" },
+  ]);
+  assert.deepEqual(changes, [[
+    { key: "7d", remainingPercent: 64, ariaLabel: "Kimi 7일 64% 남음" },
+  ]]);
+  controller.dispose();
+});
+
 test("동일한 정규화 badge 값은 callback을 다시 호출하지 않는다", async () => {
   const changes = [];
   let remainingPercent = 70;

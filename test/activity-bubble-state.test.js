@@ -187,7 +187,7 @@ test("활성 section은 같은 thread의 provider와 client 종류를 재검증�
   );
 });
 
-test("서브에이전트 수를 작업별 section에만 저장하고 접근성 이름에만 더한다", () => {
+test("서브에이전트 수는 작업별 badge에만 두고 제목 접근성 이름에 중복하지 않는다", () => {
   const state = new ActivityBubbleState();
   state.upsert(THREADS[0], activity("응답 작성 중", "a", "status"), {
     sectionLabel: "CodePet",
@@ -205,13 +205,13 @@ test("서브에이전트 수를 작업별 section에만 저장하고 접근성 �
     "CodePet · Sol · Medium",
     "ShortPut",
   ]);
-  assert.match(sections[0].titleLabel, /활성 서브에이전트 3개/);
-  assert.doesNotMatch(sections[1].titleLabel, /활성 서브에이전트/);
+  assert.equal(sections[0].titleLabel, "응답 작성 중 · CodePet · Sol · Medium");
+  assert.equal(sections[1].titleLabel, "테스트 중 · ShortPut");
 
   state.refresh(THREADS[0], { subagentCount: 0 });
   sections = state.toBubbleData().sections;
   assert.deepEqual(sections.map((section) => section.subagentCount), [0, 0]);
-  assert.doesNotMatch(sections[0].titleLabel, /활성 서브에이전트/);
+  assert.equal(sections[0].titleLabel, "응답 작성 중 · CodePet · Sol · Medium");
 });
 
 test("서브에이전트 수는 upsert에서 안전한 양의 정수만 보존한다", () => {

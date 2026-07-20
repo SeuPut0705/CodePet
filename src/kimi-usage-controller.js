@@ -83,7 +83,12 @@ class KimiUsageController {
     } catch (error) {
       // 네트워크 계열 일시 오류만 마지막 성공값을 유지합니다. 인증·미지원·응답 오류는
       // 이미 무효한 한도를 계속 보여주지 않도록 즉시 비웁니다.
-      if (!TRANSIENT_ERROR_CODES.has(error?.code)) this.setBadges([]);
+      if (
+        !this.disposed &&
+        this.working &&
+        generation === this.generation &&
+        !TRANSIENT_ERROR_CODES.has(error?.code)
+      ) this.setBadges([]);
     } finally {
       if (this.inFlight === inFlight) {
         this.inFlight = null;

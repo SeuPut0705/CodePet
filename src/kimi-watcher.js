@@ -18,6 +18,7 @@ const MANAGED_KIMI_OAUTH_HOST = "https://auth.kimi.com";
 const KIMI_POLL_MS = 1800;
 const KIMI_QUIET_MS = 5 * 60 * 1000;
 const KIMI_SESSION_LIMIT = 20;
+const KIMI_CHECKPOINT_LIMIT = 80;
 
 const READ_TOOLS = new Set(["Read", "ReadMediaFile"]);
 const SEARCH_TOOLS = new Set(["Glob", "Grep"]);
@@ -60,17 +61,17 @@ function readKimiSessionMetadata(file) {
 
 function parseTomlString(value) {
   const source = String(value || "").trim();
-  if (source.startsWith('"')) {
-    const match = source.match(/^"(?:\\.|[^"\\])*"/);
-    if (!match) return null;
+  const match = source.match(/^("(?:\\.|[^"\\])*"|'[^']*')\s*(?:#.*)?$/);
+  if (!match) return null;
+  const quoted = match[1];
+  if (quoted.startsWith('"')) {
     try {
-      return JSON.parse(match[0]);
+      return JSON.parse(quoted);
     } catch {
       return null;
     }
   }
-  const match = source.match(/^'([^']*)'/);
-  return match ? match[1] : null;
+  return quoted.slice(1, -1);
 }
 
 function normalizedEndpoint(value) {
@@ -311,8 +312,11 @@ function inferKimiSubagentActive(file, maxBytes = 256 * 1024) {
 
 class KimiWatcher extends ExternalWatcher {
   constructor(options = {}) {
-    const roots = options.roots || [DEFAULT_KIMI_ROOT];
+    const env = options.env || process.env;
+    const homeDir = options.homeDir || env.KIMI_CODE_HOME || DEFAULT_KIMI_HOME;
     const sessionLimit = options.sessionLimit || KIMI_SESSION_LIMIT;
+    const checkpointLimit = options.checkpointLimit || KIMI_CHECKPOINT_LIMIT;
+    const roots = options.roots || [path.join(homeDir, "sessions")];
     super({
       provider: "kimi",
       roots,
@@ -325,9 +329,11 @@ class KimiWatcher extends ExternalWatcher {
     this.lastResponses = new Map();
     this.activeSubagents = new Map();
     this.metadataCache = new Map();
-    this.homeDir = options.homeDir || process.env.KIMI_CODE_HOME || DEFAULT_KIMI_HOME;
+    this.evictedCheckpoints = new Map();
+    this.checkpointLimit = checkpointLimit;
+    this.homeDir = homeDir;
     this.configFile = path.join(this.homeDir, "config.toml");
-    this.env = options.env || process.env;
+    this.env = env;
     this.managedConfigCache = null;
     this.parseRow = (row, file) => parseKimiRow(
       row,
@@ -343,6 +349,7 @@ class KimiWatcher extends ExternalWatcher {
 
   files() {
     const recentFiles = super.files();
+    this.restoreEvictedCheckpoints(recentFiles);
     const activeSessionIds = new Set(
       [...this.sessions.keys()].flatMap((id) => (
         id.startsWith("kimi:") ? [id.slice("kimi:".length)] : []
@@ -364,7 +371,10 @@ class KimiWatcher extends ExternalWatcher {
   pruneFileCaches(files) {
     const retainedFiles = new Set(files);
     for (const file of this.offsets.keys()) {
-      if (!retainedFiles.has(file)) this.offsets.delete(file);
+      if (!retainedFiles.has(file)) {
+        this.rememberEvictedCheckpoint(file);
+        this.offsets.delete(file);
+      }
     }
     for (const file of this.buffers.keys()) {
       if (!retainedFiles.has(file)) this.buffers.delete(file);
@@ -372,6 +382,41 @@ class KimiWatcher extends ExternalWatcher {
     const retainedSessionRoots = new Set(files.map(sessionRootFromWire));
     for (const sessionRoot of this.metadataCache.keys()) {
       if (!retainedSessionRoots.has(sessionRoot)) this.metadataCache.delete(sessionRoot);
+    }
+  }
+
+  rememberEvictedCheckpoint(file) {
+    try {
+      const stat = fs.statSync(file);
+      this.evictedCheckpoints.delete(file);
+      this.evictedCheckpoints.set(file, {
+        dev: stat.dev,
+        ino: stat.ino,
+        offset: stat.size,
+      });
+      while (this.evictedCheckpoints.size > this.checkpointLimit) {
+        this.evictedCheckpoints.delete(this.evictedCheckpoints.keys().next().value);
+      }
+    } catch {
+      this.evictedCheckpoints.delete(file);
+    }
+  }
+
+  restoreEvictedCheckpoints(files) {
+    for (const file of files) {
+      if (this.offsets.has(file)) continue;
+      const checkpoint = this.evictedCheckpoints.get(file);
+      if (!checkpoint) continue;
+      try {
+        const stat = fs.statSync(file);
+        const sameFile = stat.dev === checkpoint.dev && stat.ino === checkpoint.ino;
+        this.offsets.set(file, sameFile && stat.size >= checkpoint.offset
+          ? checkpoint.offset
+          : stat.size);
+      } catch {
+        // 재발견과 stat 사이에 사라진 파일은 다음 poll에서 처리합니다.
+      }
+      this.evictedCheckpoints.delete(file);
     }
   }
 
@@ -513,6 +558,7 @@ class KimiWatcher extends ExternalWatcher {
     this.lastResponses.clear();
     this.activeSubagents.clear();
     this.metadataCache.clear();
+    this.evictedCheckpoints.clear();
     this.managedConfigCache = null;
     super.stop();
   }

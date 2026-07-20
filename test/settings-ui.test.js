@@ -169,6 +169,14 @@ function createBubbleHarness({ reportSize = () => {} } = {}) {
   };
 }
 
+function accessibleText(element) {
+  if (!element || element.attributes?.["aria-hidden"] === "true") return "";
+  if (element.attributes?.["aria-label"]) return element.attributes["aria-label"];
+  return [element.textContent, ...(element.children || []).map(accessibleText)]
+    .filter(Boolean)
+    .join(" ");
+}
+
 function renderBubble(data) {
   const harness = createBubbleHarness();
   harness.update(data);
@@ -451,6 +459,29 @@ test("단일·다중 활동 제목을 축소 가능한 span으로 감싸고 배�
   assert.equal(sectionLabel.children[1].attributes["aria-label"], "접근성 다중 제목");
   assert.equal(sectionLabel.children[2].attributes["aria-label"], "활성 서브에이전트 3개");
   assert.equal(childWithClass(sectionLabel.children[2], "subagent-count").textContent, "×3");
+});
+
+test("활동 heading의 최종 접근성 이름은 제목·provider quota·서브에이전트 수를 한 번씩 읽는다", () => {
+  const bubble = renderBubble({
+    kind: "activity",
+    title: "CodePet · Sol · Medium",
+    titleLabel: "응답 작성 중 · CodePet · Sol · Medium",
+    statusIcon: "writing",
+    subagentCount: 2,
+    usageBadges: [
+      { key: "5h", remainingPercent: 42, ariaLabel: "Codex 5시간 42% 남음" },
+    ],
+    text: "",
+  });
+  const name = accessibleText(bubble.children[0]);
+
+  assert.equal(name, [
+    "응답 작성 중 · CodePet · Sol · Medium",
+    "활성 서브에이전트 2개",
+    "Codex 5시간 42% 남음",
+  ].join(" "));
+  assert.equal(name.match(/활성 서브에이전트 2개/g)?.length, 1);
+  assert.equal(name.match(/Codex 5시간 42% 남음/g)?.length, 1);
 });
 
 test("긴 제목·서브에이전트·5h·7d 결합 헤더는 제목만 축소하고 배지는 한 줄에 고정한다", () => {
