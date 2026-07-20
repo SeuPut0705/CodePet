@@ -158,32 +158,11 @@ test("fresh lock은 제거하지 않고 제한 시간 뒤 안전한 오류를 �
   assert.equal(fs.existsSync(fixture.lockDir), true);
 });
 
-test("stale 판정 뒤 owner heartbeat가 오면 갱신된 lock을 삭제하지 않는다", async (t) => {
+test("mtime이 오래된 외부 lock도 회수하지 않고 제한 시간 뒤 보존한다", async (t) => {
   const fixture = credentialFixture(t, { access_token: "old", expires_at: 1001 });
   fs.mkdirSync(fixture.lockDir, { recursive: true });
   fs.utimesSync(fixture.lockDir, new Date(0), new Date(0));
-  const originalRmdir = fs.promises.rmdir;
-  const originalRename = fs.promises.rename;
   let nowMilliseconds = 10_000;
-  let heartbeatInterleaved = false;
-  const heartbeatBeforeRemoval = async (target) => {
-    if (target !== fixture.lockDir || heartbeatInterleaved) return;
-    heartbeatInterleaved = true;
-    const now = new Date(nowMilliseconds);
-    await fs.promises.utimes(fixture.lockDir, now, now);
-  };
-  fs.promises.rmdir = async (target, ...args) => {
-    await heartbeatBeforeRemoval(target);
-    return originalRmdir.call(fs.promises, target, ...args);
-  };
-  fs.promises.rename = async (source, destination) => {
-    await heartbeatBeforeRemoval(source);
-    return originalRename.call(fs.promises, source, destination);
-  };
-  t.after(() => {
-    fs.promises.rmdir = originalRmdir;
-    fs.promises.rename = originalRename;
-  });
 
   const client = new KimiUsageClient({
     homeDir: fixture.home,
@@ -191,41 +170,65 @@ test("stale 판정 뒤 owner heartbeat가 오면 갱신된 lock을 삭제하지 
     nowMilliseconds: () => nowMilliseconds,
     sleepImpl: async (milliseconds) => { nowMilliseconds += milliseconds; },
     timeoutMs: 50,
-    fetchImpl: async () => jsonResponse({ access_token: "new", expires_in: 3600 }),
+    fetchImpl: async () => assert.fail("외부 lock은 오래됐어도 요청하지 않아야 합니다."),
   });
 
   await assert.rejects(client.fetchBadges(), (error) => {
     assert.equal(error.code, "KIMI_USAGE_LOCK");
     return true;
   });
-  assert.equal(heartbeatInterleaved, true);
   assert.equal(fs.existsSync(fixture.lockDir), true);
 });
 
-test("release 직전 교체된 다른 owner lock은 tombstone에서 확인해 복원한다", async (t) => {
+test("외부 lock을 검사하는 동안 canonical 경로를 비워 제3 contender를 들이지 않는다", async (t) => {
+  const fixture = credentialFixture(t, { access_token: "old", expires_at: 1001 });
+  fs.mkdirSync(fixture.lockDir, { recursive: true });
+  fs.utimesSync(fixture.lockDir, new Date(0), new Date(0));
+  const originalRename = fs.promises.rename;
+  let thirdContenderAcquired = false;
+  fs.promises.rename = async (source, destination) => {
+    const result = await originalRename.call(fs.promises, source, destination);
+    if (source === fixture.lockDir) {
+      try {
+        await fs.promises.mkdir(fixture.lockDir);
+        thirdContenderAcquired = true;
+      } catch {}
+    }
+    return result;
+  };
+  t.after(() => { fs.promises.rename = originalRename; });
+  let nowMilliseconds = 10_000;
+  const client = new KimiUsageClient({
+    homeDir: fixture.home,
+    nowSeconds: () => 1000,
+    nowMilliseconds: () => nowMilliseconds,
+    sleepImpl: async (milliseconds) => { nowMilliseconds += milliseconds; },
+    timeoutMs: 50,
+    fetchImpl: async () => assert.fail("외부 lock 대기 중 요청하지 않아야 합니다."),
+  });
+
+  await assert.rejects(client.fetchBadges(), { code: "KIMI_USAGE_LOCK" });
+  assert.equal(thirdContenderAcquired, false);
+  assert.equal(fs.existsSync(fixture.lockDir), true);
+});
+
+test("release 확인 전에 교체된 다른 owner lock은 그대로 둔다", async (t) => {
   const fixture = credentialFixture(t, { access_token: "old", expires_at: 1001 });
   const originalRmdir = fs.promises.rmdir;
-  const originalRename = fs.promises.rename;
+  const originalStat = fs.promises.stat;
   let replacementIdentity = null;
   let interleaved = false;
-  const replaceBeforeRemoval = async (target) => {
-    if (target !== fixture.lockDir || interleaved) return;
-    interleaved = true;
-    await originalRmdir.call(fs.promises, fixture.lockDir);
-    await fs.promises.mkdir(fixture.lockDir);
-    replacementIdentity = await fs.promises.stat(fixture.lockDir);
-  };
-  fs.promises.rmdir = async (target, ...args) => {
-    await replaceBeforeRemoval(target);
-    return originalRmdir.call(fs.promises, target, ...args);
-  };
-  fs.promises.rename = async (source, destination) => {
-    await replaceBeforeRemoval(source);
-    return originalRename.call(fs.promises, source, destination);
+  fs.promises.stat = async (target, ...args) => {
+    if (target === fixture.lockDir && !interleaved) {
+      interleaved = true;
+      await originalRmdir.call(fs.promises, fixture.lockDir);
+      await fs.promises.mkdir(fixture.lockDir);
+      replacementIdentity = await originalStat.call(fs.promises, fixture.lockDir);
+    }
+    return originalStat.call(fs.promises, target, ...args);
   };
   t.after(() => {
-    fs.promises.rmdir = originalRmdir;
-    fs.promises.rename = originalRename;
+    fs.promises.stat = originalStat;
   });
   let scheduledDelay = null;
   let cleared = false;
@@ -245,7 +248,7 @@ test("release 직전 교체된 다른 owner lock은 tombstone에서 확인해 �
   });
 
   await client.fetchBadges();
-  const remaining = await fs.promises.stat(fixture.lockDir);
+  const remaining = await originalStat.call(fs.promises, fixture.lockDir);
   assert.equal(interleaved, true);
   assert.equal(remaining.dev, replacementIdentity.dev);
   assert.equal(remaining.ino, replacementIdentity.ino);

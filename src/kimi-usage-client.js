@@ -11,7 +11,6 @@ const KIMI_USAGE_URL = "https://api.kimi.com/coding/v1/usages";
 const KIMI_TOKEN_URL = "https://auth.kimi.com/api/oauth/token";
 const KIMI_CLIENT_ID = "17e5f671-d194-4dfb-9706-5516cb48c098";
 const LOCK_RETRY_MS = 25;
-const LOCK_STALE_MS = 5000;
 const LOCK_UPDATE_MS = 2000;
 
 class KimiUsageError extends Error {
@@ -240,17 +239,6 @@ class KimiUsageClient {
         if (error?.code !== "EEXIST") throw usageError("KIMI_USAGE_LOCK");
       }
 
-      try {
-        const candidate = await this.fs.stat(this.lockDir);
-        if (this.nowMilliseconds() - candidate.mtimeMs > LOCK_STALE_MS) {
-          if (await this.removeExactLock(candidate, { requireStale: true })) continue;
-        }
-      } catch (error) {
-        if (error?.code === "ENOENT") continue;
-        if (error instanceof KimiUsageError) throw error;
-        throw usageError("KIMI_USAGE_LOCK");
-      }
-
       const remaining = deadline - this.nowMilliseconds();
       if (remaining <= 0) throw usageError("KIMI_USAGE_LOCK");
       await this.sleep(Math.min(LOCK_RETRY_MS, remaining));
@@ -275,52 +263,14 @@ class KimiUsageClient {
       try {
         await directoryHandle.close();
       } catch {}
-      await this.removeExactLock(owner);
-    };
-  }
-
-  async removeExactLock(expected, { requireStale = false } = {}) {
-    const tombstone = `${this.lockDir}.codepet-${process.pid}-${crypto.randomUUID()}`;
-    try {
-      await this.fs.rename(this.lockDir, tombstone);
-    } catch (error) {
-      if (error?.code === "ENOENT") return false;
-      throw usageError("KIMI_USAGE_LOCK");
-    }
-
-    try {
-      const isolated = await this.fs.stat(tombstone);
-      const stale = this.nowMilliseconds() - isolated.mtimeMs > LOCK_STALE_MS;
-      if (!sameIdentity(expected, isolated) || (requireStale && !stale)) {
-        await this.restoreIsolatedLock(tombstone);
-        return false;
+      try {
+        const current = await this.fs.stat(this.lockDir);
+        if (!sameIdentity(owner, current)) return;
+        await this.fs.rmdir(this.lockDir);
+      } catch {
+        // 이미 사라졌거나 교체된 lock은 이 프로세스의 소유가 아니므로 건드리지 않습니다.
       }
-      await this.fs.rmdir(tombstone);
-      return true;
-    } catch (error) {
-      await this.restoreIsolatedLock(tombstone);
-      if (error instanceof KimiUsageError) throw error;
-      if (["ENOENT", "ENOTEMPTY"].includes(error?.code)) return false;
-      throw usageError("KIMI_USAGE_LOCK");
-    }
-  }
-
-  async restoreIsolatedLock(tombstone) {
-    let guard;
-    try {
-      await this.fs.mkdir(this.lockDir);
-      guard = await this.fs.stat(this.lockDir);
-    } catch {
-      return false;
-    }
-    try {
-      const current = await this.fs.stat(this.lockDir);
-      if (!sameIdentity(guard, current)) return false;
-      await this.fs.rename(tombstone, this.lockDir);
-      return true;
-    } catch {
-      return false;
-    }
+    };
   }
 
   async writeCredentials(credentials) {
