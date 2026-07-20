@@ -256,6 +256,100 @@ test("release 확인 전에 교체된 다른 owner lock은 그대로 둔다", as
   assert.equal(cleared, true);
 });
 
+test("release final heartbeat 뒤 freshness를 지키는 contender는 lock을 교체하지 못한다", async (t) => {
+  const fixture = credentialFixture(t, { access_token: "old", expires_at: 1001 });
+  const fsImpl = Object.create(fs.promises);
+  const originalRmdir = fs.promises.rmdir;
+  const originalStat = fs.promises.stat;
+  let contenderReplaced = false;
+  const nowMilliseconds = 10_000;
+  fsImpl.rmdir = async (target, ...args) => {
+    if (target === fixture.lockDir) {
+      const before = await originalStat.call(fs.promises, target);
+      if (nowMilliseconds - before.mtimeMs > 5000) {
+        await originalRmdir.call(fs.promises, target);
+        await fs.promises.mkdir(target);
+        contenderReplaced = true;
+      }
+    }
+    return originalRmdir.call(fs.promises, target, ...args);
+  };
+
+  const client = new KimiUsageClient({
+    homeDir: fixture.home,
+    nowSeconds: () => 1000,
+    nowMilliseconds: () => nowMilliseconds,
+    fsImpl,
+    setIntervalImpl: () => ({ unref() {} }),
+    clearIntervalImpl: () => {},
+    fetchImpl: async (url) => {
+      if (url.includes("/api/oauth/token")) {
+        fs.utimesSync(fixture.lockDir, new Date(0), new Date(0));
+        return jsonResponse({ access_token: "new", expires_in: 3600 });
+      }
+      return jsonResponse({ usage: { used: 0, limit: 1 } });
+    },
+  });
+
+  await client.fetchBadges();
+  assert.equal(contenderReplaced, false);
+  assert.equal(fs.existsSync(fixture.lockDir), false);
+});
+
+test("heartbeat scheduler callback은 열린 lock handle을 갱신하고 release 판단까지 유지된다", async (t) => {
+  const fixture = credentialFixture(t, { access_token: "old", expires_at: 1001 });
+  const fsImpl = Object.create(fs.promises);
+  const originalOpen = fs.promises.open;
+  const originalStat = fs.promises.stat;
+  let heartbeatCallback = null;
+  let intervalActive = false;
+  let activeAtReleaseValidation = null;
+  let handleUtimesCalls = 0;
+  fsImpl.open = async (target, ...args) => {
+    const handle = await originalOpen.call(fs.promises, target, ...args);
+    if (target !== fixture.lockDir) return handle;
+    return {
+      stat: (...methodArgs) => handle.stat(...methodArgs),
+      utimes: (...methodArgs) => {
+        handleUtimesCalls += 1;
+        return handle.utimes(...methodArgs);
+      },
+      close: (...methodArgs) => handle.close(...methodArgs),
+    };
+  };
+  fsImpl.stat = async (target, ...args) => {
+    if (target === fixture.lockDir) activeAtReleaseValidation = intervalActive;
+    return originalStat.call(fs.promises, target, ...args);
+  };
+
+  const client = new KimiUsageClient({
+    homeDir: fixture.home,
+    nowSeconds: () => 1000,
+    nowMilliseconds: () => 10_000,
+    fsImpl,
+    setIntervalImpl: (callback, milliseconds) => {
+      assert.equal(milliseconds, 2000);
+      heartbeatCallback = callback;
+      intervalActive = true;
+      return { unref() {} };
+    },
+    clearIntervalImpl: () => { intervalActive = false; },
+    fetchImpl: async (url) => {
+      if (url.includes("/api/oauth/token")) {
+        await heartbeatCallback();
+        assert.equal(handleUtimesCalls, 1);
+        return jsonResponse({ access_token: "new", expires_in: 3600 });
+      }
+      return jsonResponse({ usage: { used: 0, limit: 1 } });
+    },
+  });
+
+  await client.fetchBadges();
+  assert.equal(handleUtimesCalls, 2);
+  assert.equal(activeAtReleaseValidation, true);
+  assert.equal(intervalActive, false);
+});
+
 test("401 뒤 파일의 access token이 바뀌었을 때만 한 번 재시도한다", async (t) => {
   const fixture = credentialFixture(t);
   const authorizations = [];

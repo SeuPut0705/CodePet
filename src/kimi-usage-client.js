@@ -246,9 +246,8 @@ class KimiUsageClient {
   }
 
   maintainLock(owner, directoryHandle) {
-    let released = false;
+    let releaseStarted = false;
     const heartbeat = this.setInterval(async () => {
-      if (released) return;
       const now = new Date(this.nowMilliseconds());
       try {
         await directoryHandle.utimes(now, now);
@@ -257,18 +256,21 @@ class KimiUsageClient {
     heartbeat.unref?.();
 
     return async () => {
-      if (released) return;
-      released = true;
-      this.clearInterval(heartbeat);
+      if (releaseStarted) return;
+      releaseStarted = true;
       try {
-        await directoryHandle.close();
-      } catch {}
-      try {
+        const now = new Date(this.nowMilliseconds());
+        await directoryHandle.utimes(now, now);
         const current = await this.fs.stat(this.lockDir);
         if (!sameIdentity(owner, current)) return;
         await this.fs.rmdir(this.lockDir);
       } catch {
         // 이미 사라졌거나 교체된 lock은 이 프로세스의 소유가 아니므로 건드리지 않습니다.
+      } finally {
+        this.clearInterval(heartbeat);
+        try {
+          await directoryHandle.close();
+        } catch {}
       }
     };
   }
