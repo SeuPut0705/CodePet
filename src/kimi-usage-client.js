@@ -66,6 +66,10 @@ function delay(milliseconds) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
+function sameIdentity(left, right) {
+  return left?.dev === right?.dev && left?.ino === right?.ino;
+}
+
 function mapStatus(status) {
   if (status === 401 || status === 403 || status === 400) return usageError("KIMI_USAGE_AUTH");
   if (status === 404) return usageError("KIMI_USAGE_UNAVAILABLE");
@@ -79,11 +83,21 @@ class KimiUsageClient {
     homeDir = process.env.KIMI_CODE_HOME || DEFAULT_KIMI_HOME,
     fetchImpl = fetch,
     nowSeconds = () => Math.floor(Date.now() / 1000),
+    nowMilliseconds = () => Date.now(),
+    sleepImpl = delay,
+    setIntervalImpl = setInterval,
+    clearIntervalImpl = clearInterval,
+    fsImpl = fs.promises,
     timeoutMs = 8000,
   } = {}) {
     this.homeDir = homeDir;
     this.fetchImpl = fetchImpl;
     this.nowSeconds = nowSeconds;
+    this.nowMilliseconds = nowMilliseconds;
+    this.sleep = sleepImpl;
+    this.setInterval = setIntervalImpl;
+    this.clearInterval = clearIntervalImpl;
+    this.fs = fsImpl;
     this.timeoutMs = timeoutMs;
     this.credentialFile = path.join(homeDir, "credentials", "kimi-code.json");
     this.deviceFile = path.join(homeDir, "device_id");
@@ -118,7 +132,7 @@ class KimiUsageClient {
 
   async readCredentials() {
     try {
-      const parsed = JSON.parse(await fs.promises.readFile(this.credentialFile, "utf8"));
+      const parsed = JSON.parse(await this.fs.readFile(this.credentialFile, "utf8"));
       const credentials = parseCredentials(parsed);
       if (credentials) return credentials;
     } catch {}
@@ -206,7 +220,7 @@ class KimiUsageClient {
 
   async readDeviceId() {
     try {
-      const value = (await fs.promises.readFile(this.deviceFile, "utf8")).trim();
+      const value = (await this.fs.readFile(this.deviceFile, "utf8")).trim();
       return value || null;
     } catch {
       return null;
@@ -214,26 +228,22 @@ class KimiUsageClient {
   }
 
   async acquireLock() {
-    await fs.promises.mkdir(path.dirname(this.lockDir), { recursive: true });
-    const deadline = Date.now() + this.timeoutMs;
+    await this.fs.mkdir(path.dirname(this.lockDir), { recursive: true });
+    const deadline = this.nowMilliseconds() + this.timeoutMs;
     while (true) {
       try {
-        await fs.promises.mkdir(this.lockDir);
-        const owner = await fs.promises.stat(this.lockDir);
-        return this.maintainLock(owner);
+        await this.fs.mkdir(this.lockDir);
+        const directoryHandle = await this.fs.open(this.lockDir, "r");
+        const owner = await directoryHandle.stat();
+        return this.maintainLock(owner, directoryHandle);
       } catch (error) {
         if (error?.code !== "EEXIST") throw usageError("KIMI_USAGE_LOCK");
       }
 
       try {
-        const stat = await fs.promises.stat(this.lockDir);
-        if (Date.now() - stat.mtimeMs > LOCK_STALE_MS) {
-          try {
-            await fs.promises.rmdir(this.lockDir);
-          } catch (error) {
-            if (!["ENOENT", "ENOTEMPTY"].includes(error?.code)) throw error;
-          }
-          continue;
+        const candidate = await this.fs.stat(this.lockDir);
+        if (this.nowMilliseconds() - candidate.mtimeMs > LOCK_STALE_MS) {
+          if (await this.removeExactLock(candidate, { requireStale: true })) continue;
         }
       } catch (error) {
         if (error?.code === "ENOENT") continue;
@@ -241,27 +251,19 @@ class KimiUsageClient {
         throw usageError("KIMI_USAGE_LOCK");
       }
 
-      const remaining = deadline - Date.now();
+      const remaining = deadline - this.nowMilliseconds();
       if (remaining <= 0) throw usageError("KIMI_USAGE_LOCK");
-      await delay(Math.min(LOCK_RETRY_MS, remaining));
+      await this.sleep(Math.min(LOCK_RETRY_MS, remaining));
     }
   }
 
-  maintainLock(owner) {
+  maintainLock(owner, directoryHandle) {
     let released = false;
-    const isOwned = async () => {
+    const heartbeat = this.setInterval(async () => {
+      if (released) return;
+      const now = new Date(this.nowMilliseconds());
       try {
-        const current = await fs.promises.stat(this.lockDir);
-        return current.dev === owner.dev && current.ino === owner.ino;
-      } catch {
-        return false;
-      }
-    };
-    const heartbeat = setInterval(async () => {
-      if (released || !(await isOwned())) return;
-      const now = new Date();
-      try {
-        await fs.promises.utimes(this.lockDir, now, now);
+        await directoryHandle.utimes(now, now);
       } catch {}
     }, LOCK_UPDATE_MS);
     heartbeat.unref?.();
@@ -269,34 +271,78 @@ class KimiUsageClient {
     return async () => {
       if (released) return;
       released = true;
-      clearInterval(heartbeat);
-      if (!(await isOwned())) return;
+      this.clearInterval(heartbeat);
       try {
-        await fs.promises.rmdir(this.lockDir);
+        await directoryHandle.close();
       } catch {}
+      await this.removeExactLock(owner);
     };
   }
 
+  async removeExactLock(expected, { requireStale = false } = {}) {
+    const tombstone = `${this.lockDir}.codepet-${process.pid}-${crypto.randomUUID()}`;
+    try {
+      await this.fs.rename(this.lockDir, tombstone);
+    } catch (error) {
+      if (error?.code === "ENOENT") return false;
+      throw usageError("KIMI_USAGE_LOCK");
+    }
+
+    try {
+      const isolated = await this.fs.stat(tombstone);
+      const stale = this.nowMilliseconds() - isolated.mtimeMs > LOCK_STALE_MS;
+      if (!sameIdentity(expected, isolated) || (requireStale && !stale)) {
+        await this.restoreIsolatedLock(tombstone);
+        return false;
+      }
+      await this.fs.rmdir(tombstone);
+      return true;
+    } catch (error) {
+      await this.restoreIsolatedLock(tombstone);
+      if (error instanceof KimiUsageError) throw error;
+      if (["ENOENT", "ENOTEMPTY"].includes(error?.code)) return false;
+      throw usageError("KIMI_USAGE_LOCK");
+    }
+  }
+
+  async restoreIsolatedLock(tombstone) {
+    let guard;
+    try {
+      await this.fs.mkdir(this.lockDir);
+      guard = await this.fs.stat(this.lockDir);
+    } catch {
+      return false;
+    }
+    try {
+      const current = await this.fs.stat(this.lockDir);
+      if (!sameIdentity(guard, current)) return false;
+      await this.fs.rename(tombstone, this.lockDir);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   async writeCredentials(credentials) {
-    await fs.promises.mkdir(path.dirname(this.credentialFile), { recursive: true });
+    await this.fs.mkdir(path.dirname(this.credentialFile), { recursive: true });
     const temp = path.join(
       path.dirname(this.credentialFile),
       `.${path.basename(this.credentialFile)}.${process.pid}.${crypto.randomUUID()}.tmp`
     );
     let handle;
     try {
-      handle = await fs.promises.open(temp, "wx", 0o600);
+      handle = await this.fs.open(temp, "wx", 0o600);
       await handle.writeFile(`${JSON.stringify(credentials, null, 2)}\n`, "utf8");
       await handle.sync();
       await handle.close();
       handle = null;
-      await fs.promises.rename(temp, this.credentialFile);
+      await this.fs.rename(temp, this.credentialFile);
     } catch (error) {
       try {
         await handle?.close();
       } catch {}
       try {
-        await fs.promises.rm(temp, { force: true });
+        await this.fs.rm(temp, { force: true });
       } catch {}
       if (error instanceof KimiUsageError) throw error;
       throw usageError("KIMI_USAGE_AUTH");

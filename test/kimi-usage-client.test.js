@@ -104,21 +104,26 @@ test("다른 프로세스가 lock 대기 중 갱신한 토큰을 다시 읽어 �
   fs.mkdirSync(fixture.lockDir, { recursive: true });
   let refreshCalls = 0;
   let usageAuthorization;
-  const releaseOther = setTimeout(() => {
-    const rotated = {
-      ...COMPLETE_CREDENTIALS,
-      access_token: "rotated",
-      refresh_token: "refresh-rotated",
-      expires_at: 5000,
-    };
-    fs.writeFileSync(fixture.file, `${JSON.stringify(rotated)}\n`, { mode: 0o600 });
-    fs.rmdirSync(fixture.lockDir);
-  }, 30);
-  t.after(() => clearTimeout(releaseOther));
+  let nowMilliseconds = 10_000;
+  let rotatedByOther = false;
 
   const client = new KimiUsageClient({
     homeDir: fixture.home,
     nowSeconds: () => 1000,
+    nowMilliseconds: () => nowMilliseconds,
+    sleepImpl: async (milliseconds) => {
+      nowMilliseconds += milliseconds;
+      if (rotatedByOther) return;
+      rotatedByOther = true;
+      const rotated = {
+        ...COMPLETE_CREDENTIALS,
+        access_token: "rotated",
+        refresh_token: "refresh-rotated",
+        expires_at: 5000,
+      };
+      fs.writeFileSync(fixture.file, `${JSON.stringify(rotated)}\n`, { mode: 0o600 });
+      fs.rmdirSync(fixture.lockDir);
+    },
     timeoutMs: 500,
     fetchImpl: async (url, options) => {
       if (url.includes("/api/oauth/token")) refreshCalls += 1;
@@ -135,9 +140,12 @@ test("다른 프로세스가 lock 대기 중 갱신한 토큰을 다시 읽어 �
 test("fresh lock은 제거하지 않고 제한 시간 뒤 안전한 오류를 반환한다", async (t) => {
   const fixture = credentialFixture(t, { access_token: "old", expires_at: 1001 });
   fs.mkdirSync(fixture.lockDir, { recursive: true });
+  let nowMilliseconds = 10_000;
   const client = new KimiUsageClient({
     homeDir: fixture.home,
     nowSeconds: () => 1000,
+    nowMilliseconds: () => nowMilliseconds,
+    sleepImpl: async (milliseconds) => { nowMilliseconds += milliseconds; },
     timeoutMs: 40,
     fetchImpl: async () => assert.fail("lock을 얻지 못하면 요청하지 않아야 합니다."),
   });
@@ -148,6 +156,101 @@ test("fresh lock은 제거하지 않고 제한 시간 뒤 안전한 오류를 �
     return true;
   });
   assert.equal(fs.existsSync(fixture.lockDir), true);
+});
+
+test("stale 판정 뒤 owner heartbeat가 오면 갱신된 lock을 삭제하지 않는다", async (t) => {
+  const fixture = credentialFixture(t, { access_token: "old", expires_at: 1001 });
+  fs.mkdirSync(fixture.lockDir, { recursive: true });
+  fs.utimesSync(fixture.lockDir, new Date(0), new Date(0));
+  const originalRmdir = fs.promises.rmdir;
+  const originalRename = fs.promises.rename;
+  let nowMilliseconds = 10_000;
+  let heartbeatInterleaved = false;
+  const heartbeatBeforeRemoval = async (target) => {
+    if (target !== fixture.lockDir || heartbeatInterleaved) return;
+    heartbeatInterleaved = true;
+    const now = new Date(nowMilliseconds);
+    await fs.promises.utimes(fixture.lockDir, now, now);
+  };
+  fs.promises.rmdir = async (target, ...args) => {
+    await heartbeatBeforeRemoval(target);
+    return originalRmdir.call(fs.promises, target, ...args);
+  };
+  fs.promises.rename = async (source, destination) => {
+    await heartbeatBeforeRemoval(source);
+    return originalRename.call(fs.promises, source, destination);
+  };
+  t.after(() => {
+    fs.promises.rmdir = originalRmdir;
+    fs.promises.rename = originalRename;
+  });
+
+  const client = new KimiUsageClient({
+    homeDir: fixture.home,
+    nowSeconds: () => 1000,
+    nowMilliseconds: () => nowMilliseconds,
+    sleepImpl: async (milliseconds) => { nowMilliseconds += milliseconds; },
+    timeoutMs: 50,
+    fetchImpl: async () => jsonResponse({ access_token: "new", expires_in: 3600 }),
+  });
+
+  await assert.rejects(client.fetchBadges(), (error) => {
+    assert.equal(error.code, "KIMI_USAGE_LOCK");
+    return true;
+  });
+  assert.equal(heartbeatInterleaved, true);
+  assert.equal(fs.existsSync(fixture.lockDir), true);
+});
+
+test("release 직전 교체된 다른 owner lock은 tombstone에서 확인해 복원한다", async (t) => {
+  const fixture = credentialFixture(t, { access_token: "old", expires_at: 1001 });
+  const originalRmdir = fs.promises.rmdir;
+  const originalRename = fs.promises.rename;
+  let replacementIdentity = null;
+  let interleaved = false;
+  const replaceBeforeRemoval = async (target) => {
+    if (target !== fixture.lockDir || interleaved) return;
+    interleaved = true;
+    await originalRmdir.call(fs.promises, fixture.lockDir);
+    await fs.promises.mkdir(fixture.lockDir);
+    replacementIdentity = await fs.promises.stat(fixture.lockDir);
+  };
+  fs.promises.rmdir = async (target, ...args) => {
+    await replaceBeforeRemoval(target);
+    return originalRmdir.call(fs.promises, target, ...args);
+  };
+  fs.promises.rename = async (source, destination) => {
+    await replaceBeforeRemoval(source);
+    return originalRename.call(fs.promises, source, destination);
+  };
+  t.after(() => {
+    fs.promises.rmdir = originalRmdir;
+    fs.promises.rename = originalRename;
+  });
+  let scheduledDelay = null;
+  let cleared = false;
+
+  const client = new KimiUsageClient({
+    homeDir: fixture.home,
+    nowSeconds: () => 1000,
+    nowMilliseconds: () => 10_000,
+    setIntervalImpl: (_callback, milliseconds) => {
+      scheduledDelay = milliseconds;
+      return { unref() {} };
+    },
+    clearIntervalImpl: () => { cleared = true; },
+    fetchImpl: async (url) => url.includes("/api/oauth/token")
+      ? jsonResponse({ access_token: "new", expires_in: 3600 })
+      : jsonResponse({ usage: { used: 0, limit: 1 } }),
+  });
+
+  await client.fetchBadges();
+  const remaining = await fs.promises.stat(fixture.lockDir);
+  assert.equal(interleaved, true);
+  assert.equal(remaining.dev, replacementIdentity.dev);
+  assert.equal(remaining.ino, replacementIdentity.ino);
+  assert.equal(scheduledDelay, 2000);
+  assert.equal(cleared, true);
 });
 
 test("401 뒤 파일의 access token이 바뀌었을 때만 한 번 재시도한다", async (t) => {
