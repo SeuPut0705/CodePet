@@ -1,3 +1,10 @@
+<p align="center">
+  <strong>한국어</strong> ·
+  <a href="docs/i18n/README.en.md">English</a> ·
+  <a href="docs/i18n/README.ja.md">日本語</a> ·
+  <a href="docs/i18n/README.zh-CN.md">简体中文</a>
+</p>
+
 <div align="center">
   <img src="docs/assets/codepet-readme-hero.png" alt="여러 AI 코딩 도구의 작업 상태를 말풍선으로 보여 주는 CodePet" width="100%">
 
@@ -69,6 +76,7 @@ npm run dist -- --mac # macOS dmg + zip
 - **Codex**는 `~/.codex/sessions`의 Desktop·CLI 작업을 함께 감지합니다.
 - **Claude Code**는 `~/.claude/projects`에 기록되는 CLI와 데스크톱 앱 세션을 함께 감지합니다.
 - **Kimi Code CLI**는 `~/.kimi-code/sessions` 또는 `KIMI_CODE_HOME` 아래의 작업 기록을 읽습니다. 사용자 지정 provider를 관리형 Kimi로 간주하지 않습니다.
+- CodePet은 Kimi 계정 전환을 지원하지 않으며, Kimi는 계정 전환 대상이 아닙니다.
 - CLI 활동 제목은 자동 생성된 세션 제목 대신 **프로젝트 폴더명**을 사용합니다.
 
 ## 주요 기능

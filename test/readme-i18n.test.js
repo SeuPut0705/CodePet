@@ -1,0 +1,109 @@
+const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const path = require("node:path");
+const test = require("node:test");
+
+const repositoryRoot = path.join(__dirname, "..");
+
+const documents = [
+  {
+    file: "README.md",
+    languageTargets: [
+      "docs/i18n/README.en.md",
+      "docs/i18n/README.ja.md",
+      "docs/i18n/README.zh-CN.md",
+    ],
+  },
+  {
+    file: "docs/i18n/README.en.md",
+    languageTargets: ["../../README.md", "README.ja.md", "README.zh-CN.md"],
+  },
+  {
+    file: "docs/i18n/README.ja.md",
+    languageTargets: ["../../README.md", "README.en.md", "README.zh-CN.md"],
+  },
+  {
+    file: "docs/i18n/README.zh-CN.md",
+    languageTargets: ["../../README.md", "README.en.md", "README.ja.md"],
+  },
+];
+
+const sharedTokens = [
+  "CodePet",
+  "Codex",
+  "Google Antigravity",
+  "Claude Code",
+  "Kimi Code CLI",
+  "KIMI_CODE_HOME",
+  "5h",
+  "7d",
+  "npm install",
+  "npm run start",
+  "npm test",
+  "npm run dist",
+];
+
+function readRepositoryFile(relativePath) {
+  const absolutePath = path.join(repositoryRoot, relativePath);
+  assert.ok(fs.existsSync(absolutePath), `missing ${relativePath}`);
+  return fs.readFileSync(absolutePath, "utf8");
+}
+
+function localTargets(markdown) {
+  const targets = [];
+  const patterns = [/(?:href|src)="([^"]+)"/g, /\[[^\]]*\]\(([^)]+)\)/g];
+
+  for (const pattern of patterns) {
+    for (const match of markdown.matchAll(pattern)) {
+      const target = match[1].split("#", 1)[0];
+      if (!target || /^(?:https?:|mailto:|#)/i.test(target)) continue;
+      targets.push(target);
+    }
+  }
+
+  return targets;
+}
+
+test("네 언어 README는 공통 기능과 언어 전환 링크를 유지한다", () => {
+  for (const document of documents) {
+    const markdown = readRepositoryFile(document.file);
+
+    for (const label of ["한국어", "English", "日本語", "简体中文"]) {
+      assert.match(markdown, new RegExp(label), `${document.file}: ${label}`);
+    }
+
+    for (const token of sharedTokens) {
+      assert.ok(markdown.includes(token), `${document.file}: ${token}`);
+    }
+
+    for (const target of document.languageTargets) {
+      assert.ok(markdown.includes(`href="${target}"`), `${document.file}: ${target}`);
+    }
+  }
+});
+
+test("다국어 README의 로컬 링크와 배너 경로는 실제 파일을 가리킨다", () => {
+  for (const document of documents) {
+    const markdown = readRepositoryFile(document.file);
+    const documentDirectory = path.dirname(path.join(repositoryRoot, document.file));
+
+    for (const target of localTargets(markdown)) {
+      const resolved = path.resolve(documentDirectory, target);
+      assert.ok(fs.existsSync(resolved), `${document.file}: missing ${target}`);
+    }
+  }
+});
+
+test("각 언어는 Kimi·개인정보·배포 제한을 명시한다", () => {
+  const expectations = {
+    "README.md": [/계정 전환 대상이 아/, /내부 추론.*서브에이전트 메시지/s, /공식 설치 파일을 자동 배포하지 않/],
+    "docs/i18n/README.en.md": [/does not support Kimi account switching/i, /internal reasoning.*subagent messages/is, /does not automatically publish signed or notarized installers/i],
+    "docs/i18n/README.ja.md": [/Kimi.*アカウント切り替え.*対応しません/s, /内部推論.*サブエージェント.*表示しません/s, /署名・公証済み.*自動配布していません/s],
+    "docs/i18n/README.zh-CN.md": [/不支持 Kimi 账户切换/, /内部推理.*子代理消息.*不会显示/s, /不会自动发布.*签名或公证/s],
+  };
+
+  for (const [file, patterns] of Object.entries(expectations)) {
+    const markdown = readRepositoryFile(file);
+    for (const pattern of patterns) assert.match(markdown, pattern, `${file}: ${pattern}`);
+  }
+});
