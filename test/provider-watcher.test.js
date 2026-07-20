@@ -4,6 +4,7 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const { ExternalWatcher } = require("../src/external-watcher");
+const { projectLabelFromCwd } = require("../src/activity-labels");
 const { parseAntigravityRow } = require("../src/antigravity-watcher");
 const { parseClaudeRow } = require("../src/claude-watcher");
 
@@ -75,6 +76,21 @@ test("Claude는 tool_result와 thinking-only 행을 숨기고 보이는 end_turn
   assert.equal(thinkingOnly.finished, false);
   assert.equal(complete.type, "assistant");
   assert.equal(complete.finished, true);
+});
+
+test("CLI 프로젝트 라벨은 경로 구분자와 빈 경로를 안전하게 처리한다", () => {
+  assert.equal(projectLabelFromCwd("/work/shortput/", "Claude"), "shortput");
+  assert.equal(projectLabelFromCwd("C:\\work\\CodePet\\", "Claude"), "CodePet");
+  assert.equal(projectLabelFromCwd(" ", "Claude"), "Claude");
+});
+
+test("Claude CLI는 cwd 프로젝트명을 activity context로 전달한다", () => {
+  const event = parseClaudeRow(
+    { type: "user", sessionId: "a", cwd: "/work/mowda-one", message: { content: "진행" } },
+    "/tmp/a.jsonl"
+  );
+  assert.equal(event.sectionLabel, "mowda-one");
+  assert.equal(event.clientKind, "cli");
 });
 
 test("Claude와 AGY 응답은 펫 말풍선에 전달할 문단과 목록을 보존한다", () => {

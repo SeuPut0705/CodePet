@@ -1,5 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
+const crypto = require("node:crypto");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
@@ -10,6 +11,7 @@ const {
   extractThreadIdFromRolloutPath,
   normalizeReasoningLabel,
   normalizeWorkerLabel,
+  readRolloutMetadata,
 } = require("../src/codex-watcher");
 const { createActivityHeading, formatActivityTitleLabel } = require("../src/activity-title");
 
@@ -38,6 +40,38 @@ function writeTestRollout(dayDir, { threadId, threadSource, parentThreadId = nul
   }
   return filePath;
 }
+
+function rolloutFixture(t, metadata) {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "codepet-client-kind-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const filePath = path.join(root, `rollout-test-${crypto.randomUUID()}.jsonl`);
+  fs.writeFileSync(filePath, `${JSON.stringify({
+    type: "session_meta",
+    payload: {
+      id: crypto.randomUUID(),
+      thread_source: "user",
+      ...metadata,
+    },
+  })}\n`, "utf8");
+  return filePath;
+}
+
+test("Codex rollout metadata는 Desktop과 CLI를 분류하고 CLI 프로젝트명을 보존한다", (t) => {
+  const cli = rolloutFixture(t, {
+    originator: "codex-tui",
+    source: "cli",
+    cwd: "/work/codepet",
+  });
+  const desktop = rolloutFixture(t, {
+    originator: "Codex Desktop",
+    source: "vscode",
+    cwd: "/work/codepet",
+  });
+  assert.equal(readRolloutMetadata(cli).clientKind, "cli");
+  assert.equal(readRolloutMetadata(cli).sectionLabel, "codepet");
+  assert.equal(readRolloutMetadata(desktop).clientKind, "desktop");
+  assert.equal(readRolloutMetadata(desktop).sectionLabel, null);
+});
 
 test("rollout 파일명에서 Codex thread id를 추출한다", () => {
   assert.equal(extractThreadIdFromRolloutPath(ROLLOUT_PATH), THREAD_ID);

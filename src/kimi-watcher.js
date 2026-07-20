@@ -8,7 +8,7 @@ const { ExternalWatcher, messageText, readBytes, text } = require("./external-wa
 const {
   normalizeReasoningLabel,
   normalizeWorkerLabel,
-  safeSectionLabel,
+  projectLabelFromCwd,
 } = require("./activity-labels");
 
 const DEFAULT_KIMI_ROOT = path.join(os.homedir(), ".kimi-code", "sessions");
@@ -41,15 +41,17 @@ function readKimiSessionMetadata(file) {
   const sessionId = path.basename(sessionRoot);
   try {
     const state = JSON.parse(fs.readFileSync(path.join(sessionRoot, "state.json"), "utf8"));
-    const cwd = typeof state.workDir === "string" ? state.workDir : null;
-    const title = typeof state.title === "string" && state.title.trim()
-      ? state.title
-      : cwd
-        ? path.basename(cwd)
-        : null;
-    return { sessionId, sectionLabel: safeSectionLabel(title), cwd };
+    const cwd = typeof state.workDir === "string" && state.workDir.trim()
+      ? state.workDir.trim()
+      : null;
+    return {
+      sessionId,
+      sectionLabel: projectLabelFromCwd(cwd, "Kimi"),
+      cwd,
+      clientKind: "cli",
+    };
   } catch {
-    return { sessionId, sectionLabel: null, cwd: null };
+    return { sessionId, sectionLabel: "Kimi", cwd: null, clientKind: "cli" };
   }
 }
 
@@ -117,6 +119,7 @@ function parseKimiRow(row, file, metadata = readKimiSessionMetadata(file)) {
     sessionId: metadata.sessionId,
     cwd: metadata.cwd,
     sectionLabel: metadata.sectionLabel,
+    clientKind: "cli",
     agentId,
     isSubagent: agentId !== "main",
   };
@@ -220,6 +223,10 @@ class KimiWatcher extends ExternalWatcher {
     this.activeSubagents = new Map();
     this.metadataCache = new Map();
     this.parseRow = (row, file) => parseKimiRow(row, file, this.metadataFor(file));
+  }
+
+  contextFor(session, extra = {}) {
+    return { ...super.contextFor(session, extra), clientKind: "cli" };
   }
 
   metadataFor(file) {

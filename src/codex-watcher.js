@@ -2,7 +2,11 @@ const { EventEmitter } = require("node:events");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
-const { normalizeReasoningLabel, normalizeWorkerLabel } = require("./activity-labels");
+const {
+  normalizeReasoningLabel,
+  normalizeWorkerLabel,
+  projectLabelFromCwd,
+} = require("./activity-labels");
 const { SubagentActivityTracker } = require("./subagent-activity-tracker");
 
 // Codex CLI는 모든 세션 이벤트를 CODEX_HOME/sessions/YYYY/MM/DD/rollout-*.jsonl에 실시간으로 append합니다.
@@ -210,6 +214,30 @@ function listRecentRolloutFiles(
 
 // 첫 session_meta 줄이 완전히 기록된 뒤 실제 payload.thread_source만 신뢰합니다.
 // 부분 기록은 다음 poll로 미뤄 subagent 이벤트가 한 번이라도 사용자 화면에 새는 것을 막습니다.
+function rolloutMetadataFromPayload(payload = {}) {
+  if (!payload?.id) return null;
+  const cwd = typeof payload.cwd === "string" && payload.cwd.trim()
+    ? payload.cwd.trim()
+    : null;
+  const originator = typeof payload.originator === "string"
+    ? payload.originator.trim().toLowerCase()
+    : "";
+  const source = typeof payload.source === "string"
+    ? payload.source.trim().toLowerCase()
+    : "";
+  const desktop = originator.includes("codex desktop") ||
+    ["desktop", "vscode", "app-server"].includes(source);
+  const clientKind = desktop ? "desktop" : "cli";
+  return {
+    threadId: payload.id,
+    threadSource: payload.thread_source || "user",
+    parentThreadId: payload.parent_thread_id || null,
+    cwd,
+    clientKind,
+    sectionLabel: clientKind === "cli" ? projectLabelFromCwd(cwd, "Codex") : null,
+  };
+}
+
 function readRolloutMetadata(filePath) {
   let fd;
   try {
@@ -222,12 +250,8 @@ function readRolloutMetadata(filePath) {
     if (newlineIndex < 0) return null;
 
     const entry = JSON.parse(text.slice(0, newlineIndex));
-    if (entry?.type !== "session_meta" || !entry.payload?.id) return null;
-    return {
-      threadId: entry.payload.id,
-      threadSource: entry.payload.thread_source || "user",
-      parentThreadId: entry.payload.parent_thread_id || null,
-    };
+    if (entry?.type !== "session_meta") return null;
+    return rolloutMetadataFromPayload(entry.payload);
   } catch {
     return null;
   } finally {
@@ -856,7 +880,10 @@ class CodexWatcher extends EventEmitter {
     const unchanged =
       previous?.threadId === metadata.threadId &&
       previous.threadSource === metadata.threadSource &&
-      (previous.parentThreadId || null) === (metadata.parentThreadId || null);
+      (previous.parentThreadId || null) === (metadata.parentThreadId || null) &&
+      (previous.cwd || null) === (metadata.cwd || null) &&
+      previous.clientKind === metadata.clientKind &&
+      (previous.sectionLabel || null) === (metadata.sectionLabel || null);
     if (unchanged) {
       // 관계가 같으면 tracker를 삭제·재등록하거나 전체 root count를 다시 계산할 필요가 없습니다.
       // Map 순서만 갱신해 현재 tail 대상이 metadata LRU에서 밀리지 않게 합니다.
@@ -1050,9 +1077,16 @@ class CodexWatcher extends EventEmitter {
 
   contextFor(filePath, labels = this.activityLabels.get(filePath) || {}) {
     const taskStartedAt = this.taskStartedAtByFile.get(filePath) || null;
+    const metadata = this.metadataForRollout(filePath);
     return {
       // rollout 파일명에서만 얻은 검증된 id입니다. 모델명은 세션 식별자로 쓰지 않습니다.
       threadId: extractThreadIdFromRolloutPath(filePath),
+      ...(metadata ? {
+        provider: "codex",
+        clientKind: metadata.clientKind,
+        cwd: metadata.cwd,
+        sectionLabel: metadata.sectionLabel,
+      } : {}),
       workerLabel: labels.workerLabel || null,
       ...(labels.reasoningLabel ? { reasoningLabel: labels.reasoningLabel } : {}),
       activeTaskCount: this.workingFiles.size,
@@ -1168,11 +1202,7 @@ class CodexWatcher extends EventEmitter {
     }
 
     if (entry?.type === "session_meta") {
-      this.registerRolloutMetadata(filePath, {
-        threadId: entry.payload?.id,
-        threadSource: entry.payload?.thread_source || "user",
-        parentThreadId: entry.payload?.parent_thread_id || null,
-      });
+      this.registerRolloutMetadata(filePath, rolloutMetadataFromPayload(entry.payload));
       return;
     }
 
@@ -1337,4 +1367,5 @@ module.exports = {
   extractThreadIdFromRolloutPath,
   normalizeReasoningLabel,
   normalizeWorkerLabel,
+  readRolloutMetadata,
 };

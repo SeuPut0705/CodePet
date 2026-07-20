@@ -2,6 +2,7 @@ const crypto = require("node:crypto");
 const path = require("node:path");
 const os = require("node:os");
 const { ExternalWatcher, messageText, recursiveJsonl, text } = require("./external-watcher");
+const { projectLabelFromCwd } = require("./activity-labels");
 
 function serializeToolInput(input) {
   if (!input || typeof input !== "object") return "";
@@ -61,6 +62,8 @@ function parseClaudeRow(row, file = "") {
     sessionId: row.sessionId || row.session_id || path.basename(file, path.extname(file)),
     eventId: type ? claudeEventId(row) : null,
     cwd: row.cwd || null,
+    sectionLabel: projectLabelFromCwd(row.cwd, "Claude"),
+    clientKind: "cli",
     text: type === "user" || type === "assistant" ? messageText(visible) : text(visible),
     type,
     kind,
@@ -86,6 +89,10 @@ class ClaudeWatcher extends ExternalWatcher {
       quietMs: 12000,
       ...options,
     });
+  }
+
+  contextFor(session, extra = {}) {
+    return { ...super.contextFor(session, extra), clientKind: "cli" };
   }
 }
 

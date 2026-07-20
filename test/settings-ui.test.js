@@ -296,6 +296,7 @@ test("사용량 배지는 좁은 헤더에서도 줄바꿈과 숫자 흔들림�
 
 test("Codex 활동은 사이드바 작업 제목을 비동기로 보강한다", () => {
   const resolverSetup = mainJs.match(/const codexThreadTitles = new CodexThreadTitleResolver\([\s\S]*?\n}\);/)?.[0] || "";
+  const contextTitle = mainJs.match(/function contextWithCodexThreadTitle[\s\S]*?\n}/)?.[0] || "";
   const hydrateTitle = mainJs.match(/function hydrateCodexThreadTitle[\s\S]*?\n}/)?.[0] || "";
   assert.match(mainJs, /new CodexThreadTitleResolver/);
   assert.match(mainJs, /resolve\(threadId\)/);
@@ -303,6 +304,10 @@ test("Codex 활동은 사이드바 작업 제목을 비동기로 보강한다", 
   assert.match(mainJs, /activeActivityBubbles\.refresh\(threadId/);
   assert.doesNotMatch(resolverSetup, /resolveCommand\(/);
   assert.doesNotMatch(hydrateTitle, /if \(!sectionLabel\) return/);
+  assert.match(contextTitle, /context\.clientKind !== "desktop"/);
+  assert.match(hydrateTitle, /context\.clientKind !== "desktop"/);
+  assert.match(hydrateTitle, /codexThreadTitles\.resolve\(threadId\)/);
+  assert.match(mainJs, /hydrateCodexThreadTitle\(threadId, context\)/);
 });
 
 test("Codex watcher만 작업별 서브에이전트 수 변경을 활성 section에 전달한다", () => {

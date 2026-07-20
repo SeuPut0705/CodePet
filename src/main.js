@@ -2541,12 +2541,13 @@ async function showUsageBubble() {
 
 // Codex 세션 이벤트를 펫 애니메이션과 말풍선에 연결합니다.
 function contextWithCodexThreadTitle(context = {}) {
+  if (context.clientKind !== "desktop") return context;
   const sectionLabel = codexThreadTitles.get(context.threadId);
   return sectionLabel ? { ...context, sectionLabel } : context;
 }
 
-function hydrateCodexThreadTitle(threadId) {
-  if (!CODEX_THREAD_ID_PATTERN.test(threadId || "")) return;
+function hydrateCodexThreadTitle(threadId, context = {}) {
+  if (context.clientKind !== "desktop" || !CODEX_THREAD_ID_PATTERN.test(threadId || "")) return;
   void codexThreadTitles.resolve(threadId).then((sectionLabel) => {
     if (activeActivityBubbles.refresh(threadId, { sectionLabel })) showActiveActivityBubble();
   });
@@ -2557,7 +2558,7 @@ function showCodexActivityBubble(data, context) {
   const visibleContext = contextWithCodexThreadTitle(context);
   if (!activeActivityBubbles.upsert(threadId, data, visibleContext)) return false;
   const shown = showActiveActivityBubble();
-  hydrateCodexThreadTitle(threadId);
+  hydrateCodexThreadTitle(threadId, context);
   return shown;
 }
 
@@ -2600,7 +2601,7 @@ function registerCodexWatcher() {
       const threadId = context?.threadId;
       if (activeActivityBubbles.refresh(threadId, contextWithCodexThreadTitle(context))) {
         showActiveActivityBubble();
-        hydrateCodexThreadTitle(threadId);
+        hydrateCodexThreadTitle(threadId, context);
         return;
       }
       showCodexActivityBubble({

@@ -41,20 +41,25 @@ function append(file, row) {
   fs.appendFileSync(file, `${JSON.stringify(row)}\n`);
 }
 
-test("Kimi metadata는 제목과 작업 경로를 안전하게 읽는다", (t) => {
-  const fixture = sessionFixture(tempDir(t));
+test("Kimi metadata는 자동 title 대신 작업 폴더명을 section으로 사용한다", (t) => {
+  const fixture = sessionFixture(tempDir(t), "session_one", "/work/shortput");
+  fs.writeFileSync(
+    path.join(fixture.session, "state.json"),
+    JSON.stringify({ title: "자동 생성 제목", workDir: "/work/shortput" })
+  );
   assert.deepEqual(readKimiSessionMetadata(fixture.wire), {
     sessionId: "session_one",
-    sectionLabel: "ToolFlowy",
-    cwd: "/work/toolflowy",
+    sectionLabel: "shortput",
+    cwd: "/work/shortput",
+    clientKind: "cli",
   });
 });
 
-test("Kimi metadata 제목은 완료 말풍선에서도 한 줄 길이 제한을 지킨다", (t) => {
+test("Kimi 프로젝트명은 완료 말풍선에서도 길이 제한을 지킨다", (t) => {
   const fixture = sessionFixture(tempDir(t));
   fs.writeFileSync(
     path.join(fixture.session, "state.json"),
-    JSON.stringify({ title: `  첫 제목\n${"긴".repeat(100)}  `, workDir: "/work/toolflowy" })
+    JSON.stringify({ title: "무시할 제목", workDir: `/work/${"긴".repeat(100)}` })
   );
 
   const metadata = readKimiSessionMetadata(fixture.wire);
@@ -251,7 +256,7 @@ test("KimiWatcher는 text를 누적하고 end_turn에서 마지막 응답으로 
   assert.equal(messages.at(-1).context.workerLabel, "K3");
   assert.equal(messages.at(-1).context.reasoningLabel, "Max");
   assert.equal(finished.at(-1).message, "첫 문장\n\n둘째 문장");
-  assert.equal(finished.at(-1).sectionLabel, "ToolFlowy");
+  assert.equal(finished.at(-1).sectionLabel, "toolflowy");
 });
 
 test("KimiWatcher는 서브에이전트 메시지를 숨기고 활성 개수만 갱신한다", (t) => {
@@ -405,8 +410,8 @@ test("KimiWatcher는 여러 메인 세션의 메시지와 제목을 분리한다
   assert.deepEqual(
     messages.map(({ message, context }) => [message, context.threadId, context.sectionLabel]).sort(),
     [
-      ["둘째 응답", "kimi:session_second", "Second"],
-      ["첫째 응답", "kimi:session_first", "ToolFlowy"],
+      ["둘째 응답", "kimi:session_second", "second"],
+      ["첫째 응답", "kimi:session_first", "first"],
     ].sort()
   );
 });

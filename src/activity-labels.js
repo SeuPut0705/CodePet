@@ -1,5 +1,7 @@
 "use strict";
 
+const path = require("node:path");
+
 const MODEL_LABELS = new Map([
   ["gpt-5.6-sol", "Sol"],
   ["gpt-5.6-terra", "Terra"],
@@ -45,9 +47,16 @@ function safeSectionLabel(value) {
   return label ? [...label].slice(0, 80).join("") : null;
 }
 
+function projectLabelFromCwd(cwd, fallback = null) {
+  if (typeof cwd !== "string" || !cwd.trim()) return safeSectionLabel(fallback);
+  const normalized = cwd.trim().replace(/[\\/]+$/, "").replace(/\\/g, "/");
+  return safeSectionLabel(path.posix.basename(normalized) || fallback);
+}
+
 module.exports = {
   normalizeReasoningLabel,
   normalizeWorkerLabel,
+  projectLabelFromCwd,
   safeReasoningLabel,
   safeSectionLabel,
   safeWorkerLabel,
