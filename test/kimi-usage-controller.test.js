@@ -163,3 +163,50 @@ test("종료 또는 dispose 뒤 늦게 완료된 조회는 배지를 복원하�
   assert.deepEqual(controller.buildBadges(), []);
   assert.equal(controller.setWorking(true), false);
 });
+
+test("dispose 뒤 늦게 완료된 조회는 callback이나 timer를 복원하지 않는다", async () => {
+  const pending = deferred();
+  const changes = [];
+  const clock = fakeTimerClock();
+  const controller = new KimiUsageController({
+    client: { fetchBadges: () => pending.promise },
+    setTimer: clock.setTimer,
+    clearTimer: clock.clearTimer,
+    onBadgesChanged: (badges) => changes.push(badges),
+  });
+
+  controller.setWorking(true);
+  const inFlight = controller.whenIdle();
+  controller.dispose();
+  pending.resolve([{ key: "5h", remainingPercent: 20, ariaLabel: "Kimi 5시간 20% 남음" }]);
+  await inFlight;
+
+  assert.deepEqual(controller.buildBadges(), []);
+  assert.deepEqual(changes, []);
+  assert.equal(clock.size, 0);
+});
+
+test("진행 중인 Kimi 조회에서 직접 refresh는 같은 request를 공유한다", async () => {
+  const pending = deferred();
+  let calls = 0;
+  const clock = fakeTimerClock();
+  const controller = new KimiUsageController({
+    client: { fetchBadges: () => { calls += 1; return pending.promise; } },
+    setTimer: clock.setTimer,
+    clearTimer: clock.clearTimer,
+  });
+
+  controller.setWorking(true);
+  const inFlight = controller.whenIdle();
+  const firstRefresh = controller.refresh();
+  const secondRefresh = controller.refresh();
+
+  assert.strictEqual(firstRefresh, inFlight);
+  assert.strictEqual(secondRefresh, inFlight);
+  assert.equal(calls, 1);
+
+  pending.resolve([{ key: "7d", remainingPercent: 40, ariaLabel: "Kimi 7일 40% 남음" }]);
+  await secondRefresh;
+  assert.equal(controller.buildBadges()[0].remainingPercent, 40);
+  assert.equal(clock.size, 1);
+});
