@@ -45,6 +45,15 @@ const WATCHER_CONFIG = Object.freeze({
 
 const THREAD_ID_PATTERN =
   /([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.jsonl$/i;
+const CLI_CLIENT_SIGNALS = new Set(["cli", "tui", "exec"]);
+
+function hasCliClientSignal(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .split(/[\s_-]+/)
+    .some((part) => CLI_CLIENT_SIGNALS.has(part));
+}
 
 // rollout 파일명 끝의 UUID는 Codex Desktop이 쓰는 로컬 thread id입니다.
 function extractThreadIdFromRolloutPath(filePath) {
@@ -225,8 +234,7 @@ function rolloutMetadataFromPayload(payload = {}) {
   const source = typeof payload.source === "string"
     ? payload.source.trim().toLowerCase()
     : "";
-  const explicitCli = ["cli", "exec"].includes(source) ||
-    /(?:^|[\s_-])(?:cli|tui|exec)(?:$|[\s_-])/.test(originator);
+  const explicitCli = hasCliClientSignal(source) || hasCliClientSignal(originator);
   const desktop = !explicitCli && (originator.includes("codex desktop") ||
     ["desktop", "vscode", "app-server"].includes(source));
   const clientKind = desktop ? "desktop" : "cli";

@@ -71,6 +71,12 @@ test("Codex rollout metadata conflict는 CLI로 닫고 명확한 Desktop만 허�
       sectionLabel: "shortput",
     },
     {
+      name: "Desktop originator와 tui source 충돌",
+      metadata: { originator: "Codex Desktop", source: "tui", cwd: "/work/rng-arena" },
+      clientKind: "cli",
+      sectionLabel: "rng-arena",
+    },
+    {
       name: "exec originator와 app-server source 충돌",
       metadata: { originator: "codex-exec", source: "app-server", cwd: "/work/mowda-one" },
       clientKind: "cli",
