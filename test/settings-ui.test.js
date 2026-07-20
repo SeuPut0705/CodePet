@@ -129,6 +129,7 @@ function createBubbleHarness({ reportSize = () => {} } = {}) {
     },
   };
   let updateHandler = null;
+  let appearanceHandler = null;
   let resizeHandler = null;
   const windowRef = {
     activityIcons,
@@ -136,7 +137,9 @@ function createBubbleHarness({ reportSize = () => {} } = {}) {
       if (eventName === "resize") resizeHandler = handler;
     },
     bubbleApi: {
-      onAppearance() {},
+      onAppearance(handler) {
+        appearanceHandler = handler;
+      },
       onUpdate(handler) {
         updateHandler = handler;
       },
@@ -156,6 +159,9 @@ function createBubbleHarness({ reportSize = () => {} } = {}) {
     measurementEvents,
     update(data) {
       updateHandler(data);
+    },
+    updateAppearance(appearance) {
+      appearanceHandler?.(appearance);
     },
     fireWindowResize() {
       resizeHandler?.();
@@ -210,21 +216,38 @@ test("main은 배치와 생성 전에 저장된 말풍선 크기를 현재 work 
     mainJs.indexOf("function createWindow")
   );
 
-  assert.match(constrainSize, /normalizeBubbleSize\(size,\s*\{/);
+  assert.match(mainJs, /let preferredBubbleWidth = BUBBLE_CONFIG\.minWidth/);
+  assert.match(mainJs, /let preferredBubbleHeight = 80/);
+  assert.match(constrainSize, /normalizeBubbleSize\(\{[\s\S]*preferredBubbleWidth/);
   assert.match(constrainSize, /workArea,/);
   assert.match(constrainSize, /bubbleWidth = normalized\.width/);
   assert.match(constrainSize, /bubbleHeight = normalized\.height/);
+  assert.doesNotMatch(constrainSize, /preferredBubble(?:Width|Height)\s*=/);
   assert.match(
     positionBubble,
-    /const workArea = getCurrentWorkArea\(\);[\s\S]*constrainBubbleSizeToWorkArea\(null, workArea\)/
+    /const workArea = getCurrentWorkArea\(\);[\s\S]*constrainBubbleSizeToWorkArea\(workArea\)/
   );
   assert.match(positionBubble, /bubbleSize,/);
   assert.match(
     createBubbleWindow,
-    /const initialBubbleSize = constrainBubbleSizeToWorkArea\(\);/
+    /const initialBubbleSize = constrainBubbleSizeToWorkArea\(getCurrentWorkArea\(\)\);/
   );
   assert.match(createBubbleWindow, /width: initialBubbleSize\.width/);
   assert.match(createBubbleWindow, /height: initialBubbleSize\.height/);
+});
+
+test("main은 object 보고로 선호 폭·높이를 갱신하고 legacy 숫자는 선호 높이만 갱신한다", () => {
+  const resizeHandler = mainJs.slice(
+    mainJs.indexOf("ipcMain.on(BUBBLE_CHANNELS.RESIZE"),
+    mainJs.indexOf("ipcMain.on(BUBBLE_CHANNELS.DISMISS")
+  );
+
+  assert.match(resizeHandler, /normalizePreferredBubbleSize\(size,\s*\{/);
+  assert.match(resizeHandler, /currentWidth:\s*preferredBubbleWidth/);
+  assert.match(resizeHandler, /currentHeight:\s*preferredBubbleHeight/);
+  assert.match(resizeHandler, /preferredBubbleWidth = preferred\.width/);
+  assert.match(resizeHandler, /preferredBubbleHeight = preferred\.height/);
+  assert.match(resizeHandler, /constrainBubbleSizeToWorkArea\(getCurrentWorkArea\(\)\)/);
 });
 
 test("main은 display 변경 때 보이는 말풍선만 현재 화면에 다시 배치한다", () => {
@@ -278,7 +301,7 @@ test("말풍선 renderer는 콘텐츠 선호 폭과 현재 높이를 함께 보�
   assert.equal(bubble.className.split(/\s+/).includes("measure-width"), false);
 });
 
-test("window resize는 변경된 줄바꿈 높이만 한 번 보고하고 같은 크기에서 안정화한다", () => {
+test("같은 크기 콘텐츠 갱신은 매번 보고하고 unchanged window resize는 보고하지 않는다", () => {
   const reports = [];
   const harness = createBubbleHarness({ reportSize: (size) => reports.push(size) });
   harness.bubble.offsetWidth = 310;
@@ -286,25 +309,56 @@ test("window resize는 변경된 줄바꿈 높이만 한 번 보고하고 같은
   harness.root.offsetHeight = 100;
   harness.update({ kind: "activity", title: "짧은 작업", text: "내용" });
   assert.equal(reports.length, 1);
-  assert.deepEqual(harness.measurementEvents, ["width", "height"]);
+
+  harness.update({ kind: "activity", title: "짧은 작업", text: "새 내용" });
+  assert.equal(reports.length, 2);
+  assert.deepEqual(reports, [
+    { width: 320, height: 100 },
+    { width: 320, height: 100 },
+  ]);
 
   harness.fireWindowResize();
-  assert.equal(reports.length, 1);
+  assert.equal(reports.length, 2);
 
   harness.root.offsetHeight = 84;
   harness.fireWindowResize();
-  assert.equal(reports.length, 2);
+  assert.equal(reports.length, 3);
   assert.deepEqual(reports.at(-1), { width: 320, height: 84 });
 
   harness.fireWindowResize();
-  assert.equal(reports.length, 2);
+  assert.equal(reports.length, 3);
   assert.deepEqual(harness.measurementEvents, [
+    "width", "height",
     "width", "height",
     "width", "height",
     "width", "height",
     "width", "height",
   ]);
   assert.equal(harness.bubble.className.split(/\s+/).includes("measure-width"), false);
+});
+
+test("fontFamily 변경은 콘텐츠가 있을 때만 적용 후 크기를 한 번 강제 보고한다", () => {
+  const reports = [];
+  const harness = createBubbleHarness({ reportSize: (size) => reports.push(size) });
+  harness.bubble.offsetWidth = 350;
+  harness.root.offsetHeight = 110;
+
+  harness.updateAppearance({ fontFamily: "Pretendard" });
+  assert.equal(reports.length, 0);
+
+  harness.update({ kind: "activity", title: "긴 작업 제목", text: "내용" });
+  assert.equal(reports.length, 1);
+
+  harness.updateAppearance({ fontFamily: "Apple SD Gothic Neo" });
+  assert.equal(reports.length, 2);
+  assert.deepEqual(reports.at(-1), { width: 360, height: 110 });
+
+  harness.updateAppearance({ fontFamily: "Apple SD Gothic Neo" });
+  assert.equal(reports.length, 2);
+  assert.deepEqual(harness.measurementEvents, [
+    "width", "height",
+    "width", "height",
+  ]);
 });
 
 test("본문은 줄바꿈하고 제목과 사용량 배지는 한 줄 계약을 유지한다", () => {
@@ -388,6 +442,41 @@ test("단일·다중 활동 제목을 축소 가능한 span으로 감싸고 배�
   );
   assert.equal(sectionLabel.children[1].textContent, "아주 긴 다중 작업 제목");
   assert.equal(childWithClass(sectionLabel.children[2], "subagent-count").textContent, "×3");
+});
+
+test("긴 제목·서브에이전트·5h·7d 결합 헤더는 제목만 축소하고 배지는 한 줄에 고정한다", () => {
+  const bubble = renderBubble({
+    kind: "activity",
+    title: "매우 긴 프로젝트 제목 · K3 · Max · 상세 작업 이름",
+    titleLabel: "전체 활동 제목",
+    statusIcon: "working",
+    subagentCount: 12,
+    usageBadges: [
+      { key: "5h", remainingPercent: 42, ariaLabel: "5시간 42% 남음" },
+      { key: "7d", remainingPercent: 68, ariaLabel: "7일 68% 남음" },
+    ],
+    text: "작업 중",
+  });
+  const title = bubble.children[0];
+  const usageGroup = title.children[3];
+  const titleRule = bubbleCss.match(/\.title\s*\{[^}]*}/s)?.[0] || "";
+  const titleTextRule = bubbleCss.match(/\.activity-title-text\s*\{[^}]*}/s)?.[0] || "";
+  const subagentRule = bubbleCss.match(/\.subagent-badge\s*\{[^}]*}/s)?.[0] || "";
+  const usageRule = bubbleCss.match(/\.activity-usage-badges\s*\{[^}]*}/s)?.[0] || "";
+
+  assert.deepEqual(
+    title.children.map((child) => child.className),
+    ["status-icon", "activity-title-text", "subagent-badge", "activity-usage-badges"]
+  );
+  assert.equal(title.children[1].textContent, "매우 긴 프로젝트 제목 · K3 · Max · 상세 작업 이름");
+  assert.equal(childWithClass(title.children[2], "subagent-count").textContent, "×12");
+  assert.deepEqual(usageGroup.children.map((badge) => badge.textContent), ["5h 42%", "7d 68%"]);
+  assert.match(titleRule, /flex-wrap:\s*nowrap/);
+  assert.match(titleTextRule, /min-width:\s*0/);
+  assert.match(titleTextRule, /text-overflow:\s*ellipsis/);
+  assert.match(subagentRule, /flex:\s*none/);
+  assert.match(usageRule, /flex:\s*none/);
+  assert.match(usageRule, /white-space:\s*nowrap/);
 });
 
 test("0 또는 잘못된 서브에이전트 수는 실제 제목 DOM에 배지를 만들지 않는다", () => {

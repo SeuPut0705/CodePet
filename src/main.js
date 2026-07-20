@@ -46,6 +46,7 @@ const {
   restoreWindowGeometry,
 } = require("./window-geometry");
 const {
+  normalizePreferredBubbleSize,
   normalizeBubbleSize,
   positionBubbleBounds,
 } = require("./bubble-window-geometry");
@@ -502,6 +503,9 @@ let pendingBubbleData = null;
 // 내용 갱신(UPDATE) 후 renderer가 높이를 보고(RESIZE)해야 창을 보여줍니다.
 // 그 사이에 hide 요청이 오면 표시를 취소하기 위한 플래그입니다.
 let bubblePendingShow = false;
+// renderer 선호 크기는 display 제한과 분리해 보존합니다. 실제 창 크기는 현재 work area에서 다시 계산합니다.
+let preferredBubbleWidth = BUBBLE_CONFIG.minWidth;
+let preferredBubbleHeight = 80;
 let bubbleWidth = BUBBLE_CONFIG.minWidth;
 let bubbleHeight = 80;
 // 현재 화면에 올린 자동 작업 말풍선 원본입니다. 개인정보 모드 변경 시 같은 내용을 다시 필터링합니다.
@@ -2236,8 +2240,11 @@ function ensurePetWindowVisibleForBubble() {
   return recoverPetWindowVisuals();
 }
 
-function constrainBubbleSizeToWorkArea(size = null, workArea = getCurrentWorkArea()) {
-  const normalized = normalizeBubbleSize(size, {
+function constrainBubbleSizeToWorkArea(workArea) {
+  const normalized = normalizeBubbleSize({
+    width: preferredBubbleWidth,
+    height: preferredBubbleHeight,
+  }, {
     workArea,
     currentWidth: bubbleWidth,
     currentHeight: bubbleHeight,
@@ -2255,7 +2262,7 @@ function constrainBubbleSizeToWorkArea(size = null, workArea = getCurrentWorkAre
 function positionBubble() {
   if (!bubbleWindow || bubbleWindow.isDestroyed()) return;
   const workArea = getCurrentWorkArea();
-  const bubbleSize = constrainBubbleSizeToWorkArea(null, workArea);
+  const bubbleSize = constrainBubbleSizeToWorkArea(workArea);
   const bounds = positionBubbleBounds({
     petBounds: {
       x: runtime.x,
@@ -2266,6 +2273,7 @@ function positionBubble() {
     workArea,
     bubbleSize,
     gapPx: BUBBLE_CONFIG.gapPx,
+    marginPx: BUBBLE_CONFIG.marginPx,
   });
   bubbleWindow.setBounds(bounds);
 }
@@ -3035,7 +3043,7 @@ function registerExternalWatcher(watcher, providerLabel) {
 // 말풍선용 투명 창을 만듭니다. 포커스를 뺏지 않도록 focusable을 끕니다.
 function createBubbleWindow() {
   bubbleReady = false;
-  const initialBubbleSize = constrainBubbleSizeToWorkArea();
+  const initialBubbleSize = constrainBubbleSizeToWorkArea(getCurrentWorkArea());
 
   bubbleWindow = new BrowserWindow({
     ...WINDOW_CONFIG,
@@ -3287,7 +3295,17 @@ function registerIpcHandlers() {
   ipcMain.on(BUBBLE_CHANNELS.RESIZE, (_event, size) => {
     if (!bubbleWindow || bubbleWindow.isDestroyed()) return;
 
-    constrainBubbleSizeToWorkArea(size);
+    const preferred = normalizePreferredBubbleSize(size, {
+      currentWidth: preferredBubbleWidth,
+      currentHeight: preferredBubbleHeight,
+      minWidth: BUBBLE_CONFIG.minWidth,
+      maxWidth: BUBBLE_CONFIG.maxWidth,
+      minHeight: BUBBLE_CONFIG.minHeight,
+      maxHeight: BUBBLE_CONFIG.maxHeight,
+    });
+    preferredBubbleWidth = preferred.width;
+    preferredBubbleHeight = preferred.height;
+    constrainBubbleSizeToWorkArea(getCurrentWorkArea());
 
     positionBubble();
     clearTimeout(bubbleRenderFallbackTimer);

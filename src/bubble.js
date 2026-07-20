@@ -5,6 +5,7 @@
 const bubbleElement = document.querySelector("#bubble");
 let currentBubbleData = null;
 let lastReportedSize = null;
+let currentFontFamily = "";
 
 function measureBubbleSize() {
   const root = document.querySelector("#root");
@@ -14,9 +15,9 @@ function measureBubbleSize() {
   return { width, height: Math.ceil(root.offsetHeight) };
 }
 
-function reportBubbleSize() {
+function reportBubbleSize({ force = false } = {}) {
   const size = measureBubbleSize();
-  if (
+  if (!force &&
     lastReportedSize?.width === size.width &&
     lastReportedSize?.height === size.height
   ) return;
@@ -26,8 +27,13 @@ function reportBubbleSize() {
 
 window.bubbleApi.onAppearance((appearance) => {
   const root = document.documentElement;
-  if (appearance?.fontFamily) {
-    const fontFamily = String(appearance.fontFamily)
+  const nextFontFamily = appearance?.fontFamily
+    ? String(appearance.fontFamily)
+    : "";
+  const fontFamilyChanged = nextFontFamily !== currentFontFamily;
+  currentFontFamily = nextFontFamily;
+  if (nextFontFamily) {
+    const fontFamily = nextFontFamily
       .replace(/\\/g, "\\\\")
       .replace(/"/g, '\\"');
     root.style.setProperty("--user-font", `"${fontFamily}"`);
@@ -51,6 +57,10 @@ window.bubbleApi.onAppearance((appearance) => {
   } else {
     root.style.removeProperty("--bubble-ink");
     root.style.removeProperty("--bubble-muted");
+  }
+
+  if (fontFamilyChanged && currentBubbleData) {
+    reportBubbleSize({ force: true });
   }
 });
 
@@ -297,7 +307,7 @@ window.bubbleApi.onUpdate((data) => {
   // offsetWidth와 offsetHeight를 읽으면 그 자리에서 동기 layout이 일어나므로 바로 측정해서 보냅니다.
   // 주의: requestAnimationFrame을 쓰면 안 됩니다. 숨겨진 창에서는 rAF 콜백이 실행되지 않아서
   // 크기 보고가 누락되고, main은 보고를 받아야 창을 표시하므로 말풍선이 다시 열리지 않습니다.
-  reportBubbleSize();
+  reportBubbleSize({ force: true });
 });
 
 window.addEventListener("resize", reportBubbleSize);
