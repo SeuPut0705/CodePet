@@ -1,0 +1,74 @@
+const test = require("node:test");
+const assert = require("node:assert/strict");
+const {
+  normalizeBubbleSize,
+  positionBubbleBounds,
+} = require("../src/bubble-window-geometry");
+
+const limits = {
+  currentWidth: 300,
+  currentHeight: 80,
+  minWidth: 300,
+  maxWidth: 520,
+  minHeight: 48,
+  maxHeight: 420,
+  marginPx: 12,
+};
+
+test("말풍선 크기는 300..520 범위에서 콘텐츠 보고값을 사용한다", () => {
+  assert.deepEqual(
+    normalizeBubbleSize({ width: 410, height: 120 }, {
+      ...limits,
+      workArea: { x: 0, y: 0, width: 1440, height: 900 },
+    }),
+    { width: 410, height: 120 }
+  );
+  assert.deepEqual(
+    normalizeBubbleSize({ width: 900, height: 900 }, {
+      ...limits,
+      workArea: { x: 0, y: 0, width: 1440, height: 900 },
+    }),
+    { width: 520, height: 420 }
+  );
+});
+
+test("작은 work area에서는 좌우 12px 여백 상한을 우선한다", () => {
+  assert.deepEqual(
+    normalizeBubbleSize({ width: 520, height: 100 }, {
+      ...limits,
+      workArea: { x: 40, y: 20, width: 320, height: 600 },
+    }),
+    { width: 296, height: 100 }
+  );
+});
+
+test("legacy 숫자 height와 잘못된 width는 현재 폭을 보존한다", () => {
+  assert.deepEqual(
+    normalizeBubbleSize(160, {
+      ...limits,
+      currentWidth: 380,
+      workArea: { x: 0, y: 0, width: 1440, height: 900 },
+    }),
+    { width: 380, height: 160 }
+  );
+  assert.deepEqual(
+    normalizeBubbleSize({ width: "bad", height: 90 }, {
+      ...limits,
+      currentWidth: 360,
+      workArea: { x: 0, y: 0, width: 1440, height: 900 },
+    }),
+    { width: 360, height: 90 }
+  );
+});
+
+test("실제 반응형 폭으로 pet 중심과 화면 좌우 경계를 보정한다", () => {
+  assert.deepEqual(
+    positionBubbleBounds({
+      petBounds: { x: 760, y: 500, width: 120, height: 120 },
+      workArea: { x: 0, y: 0, width: 800, height: 700 },
+      bubbleSize: { width: 500, height: 100 },
+      gapPx: 2,
+    }),
+    { x: 300, y: 398, width: 500, height: 100 }
+  );
+});
