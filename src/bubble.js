@@ -9,7 +9,7 @@ let lastReportedSize = null;
 function measureBubbleSize() {
   const root = document.querySelector("#root");
   bubbleElement.classList.add("measure-width");
-  const width = Math.ceil(bubbleElement.scrollWidth + 10);
+  const width = Math.ceil(bubbleElement.offsetWidth + 10);
   bubbleElement.classList.remove("measure-width");
   return { width, height: Math.ceil(root.offsetHeight) };
 }
@@ -294,7 +294,7 @@ window.bubbleApi.onUpdate((data) => {
     renderActivity(data);
   }
 
-  // scrollWidth와 offsetHeight를 읽으면 그 자리에서 동기 layout이 일어나므로 바로 측정해서 보냅니다.
+  // offsetWidth와 offsetHeight를 읽으면 그 자리에서 동기 layout이 일어나므로 바로 측정해서 보냅니다.
   // 주의: requestAnimationFrame을 쓰면 안 됩니다. 숨겨진 창에서는 rAF 콜백이 실행되지 않아서
   // 크기 보고가 누락되고, main은 보고를 받아야 창을 표시하므로 말풍선이 다시 열리지 않습니다.
   reportBubbleSize();

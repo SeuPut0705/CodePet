@@ -37,7 +37,7 @@ class FakeRendererElement {
       setProperty() {},
       removeProperty() {},
     };
-    this.scrollWidth = 0;
+    this.offsetWidth = 0;
     this.offsetHeight = 100;
     this.classList = {
       add: (...tokens) => this.updateClassList(tokens, true),
@@ -83,6 +83,33 @@ class FakeRendererElement {
 function createBubbleHarness({ reportSize = () => {} } = {}) {
   const bubble = new FakeRendererElement("div");
   const root = new FakeRendererElement("div");
+  const measurementEvents = [];
+  let preferredWidth = bubble.offsetWidth;
+  let currentHeight = root.offsetHeight;
+  Object.defineProperty(bubble, "offsetWidth", {
+    configurable: true,
+    enumerable: false,
+    get() {
+      measurementEvents.push("width");
+      assert.equal(bubble.className.split(/\s+/).includes("measure-width"), true);
+      return preferredWidth;
+    },
+    set(value) {
+      preferredWidth = value;
+    },
+  });
+  Object.defineProperty(root, "offsetHeight", {
+    configurable: true,
+    enumerable: false,
+    get() {
+      measurementEvents.push("height");
+      assert.equal(bubble.className.split(/\s+/).includes("measure-width"), false);
+      return currentHeight;
+    },
+    set(value) {
+      currentHeight = value;
+    },
+  });
   const documentRef = {
     documentElement: new FakeRendererElement("html"),
     querySelector(selector) {
@@ -125,6 +152,7 @@ function createBubbleHarness({ reportSize = () => {} } = {}) {
   return {
     bubble,
     root,
+    measurementEvents,
     update(data) {
       updateHandler(data);
     },
@@ -162,26 +190,43 @@ test("말풍선 renderer는 콘텐츠 선호 폭과 현재 높이를 함께 보�
   const { bubble, root, update } = createBubbleHarness({
     reportSize: (size) => reports.push(size),
   });
-  bubble.scrollWidth = 402;
+  bubble.offsetWidth = 402;
+  bubble.scrollWidth = 399;
   root.offsetHeight = 126;
 
   update({ kind: "activity", title: "CodePet · Sol · Medium", text: "작업 중" });
 
   assert.deepEqual(reports.at(-1), { width: 412, height: 126 });
+  assert.equal(bubble.className.split(/\s+/).includes("measure-width"), false);
 });
 
-test("같은 크기는 중복 보고하지 않고 window resize에서 높이를 다시 측정한다", () => {
+test("window resize는 변경된 줄바꿈 높이만 한 번 보고하고 같은 크기에서 안정화한다", () => {
   const reports = [];
   const harness = createBubbleHarness({ reportSize: (size) => reports.push(size) });
-  harness.bubble.scrollWidth = 310;
+  harness.bubble.offsetWidth = 310;
+  harness.bubble.scrollWidth = 307;
   harness.root.offsetHeight = 100;
   harness.update({ kind: "activity", title: "짧은 작업", text: "내용" });
-  harness.update({ kind: "activity", title: "짧은 작업", text: "내용" });
+  assert.equal(reports.length, 1);
+  assert.deepEqual(harness.measurementEvents, ["width", "height"]);
+
+  harness.fireWindowResize();
   assert.equal(reports.length, 1);
 
   harness.root.offsetHeight = 84;
   harness.fireWindowResize();
+  assert.equal(reports.length, 2);
   assert.deepEqual(reports.at(-1), { width: 320, height: 84 });
+
+  harness.fireWindowResize();
+  assert.equal(reports.length, 2);
+  assert.deepEqual(harness.measurementEvents, [
+    "width", "height",
+    "width", "height",
+    "width", "height",
+    "width", "height",
+  ]);
+  assert.equal(harness.bubble.className.split(/\s+/).includes("measure-width"), false);
 });
 
 test("본문은 줄바꿈하고 제목과 사용량 배지는 한 줄 계약을 유지한다", () => {
