@@ -4,6 +4,12 @@ const MODEL_LABELS = new Map([
   ["gpt-5.6-sol", "Sol"],
   ["gpt-5.6-terra", "Terra"],
   ["gpt-5.6-luna", "Luna"],
+  ["k3", "K3"],
+  ["kimi-code/k3", "K3"],
+  ["kimi-for-coding", "K2.7 Coding"],
+  ["kimi-code/kimi-for-coding", "K2.7 Coding"],
+  ["kimi-for-coding-highspeed", "K2.7 Coding Highspeed"],
+  ["kimi-code/kimi-for-coding-highspeed", "K2.7 Coding Highspeed"],
 ]);
 const REASONING_LABELS = new Map([
   ["low", "Low"],
