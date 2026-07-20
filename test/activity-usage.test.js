@@ -4,7 +4,7 @@ const {
   ActivityUsageController,
   ActivityUsageState,
   buildActivityUsageBadges,
-  decorateActivityBubbleWithUsage,
+  decorateActivityBubbleWithProviderUsage,
 } = require("../src/activity-usage");
 
 function createFakeTimerClock(startMs) {
@@ -154,19 +154,51 @@ test("배열 기간은 숨기고 다음 유효 숫자 문자열 창을 사용한
   ]);
 });
 
-test("Codex가 작업 중인 다중 활동에만 사용량 배지를 붙인다", () => {
-  const badges = [
-    { key: "5h", remainingPercent: 42, ariaLabel: "5시간 42% 남음" },
-  ];
-  const multi = { title: "총 2개 작업 중", sections: [{}, {}] };
-  const single = { title: "작업 중" };
+test("공급자별 첫 visible section에만 사용량 배지를 붙인다", () => {
+  const data = {
+    title: "총 4개 작업 중",
+    sections: [
+      { threadId: "codex:a", provider: "codex" },
+      { threadId: "kimi:a", provider: "kimi" },
+      { threadId: "kimi:b", provider: "kimi" },
+      { threadId: "codex:b", provider: "codex" },
+    ],
+  };
+  const usageByProvider = {
+    codex: [{ key: "7d", remainingPercent: 30, ariaLabel: "7일 30% 남음" }],
+    kimi: [{ key: "5h", remainingPercent: 70, ariaLabel: "Kimi 5시간 70% 남음" }],
+  };
+  const result = decorateActivityBubbleWithProviderUsage(data, usageByProvider);
 
-  const decorated = decorateActivityBubbleWithUsage(multi, badges, { codexWorking: true });
-  assert.notEqual(decorated, multi);
-  assert.deepEqual(decorated.usageBadges, badges);
-  assert.equal(decorateActivityBubbleWithUsage(multi, badges, { codexWorking: false }), multi);
-  assert.equal(decorateActivityBubbleWithUsage(single, badges, { codexWorking: true }), single);
-  assert.equal(decorateActivityBubbleWithUsage(multi, [], { codexWorking: true }), multi);
+  assert.deepEqual(result.sections.map((section) => section.usageBadges || []), [
+    [{ key: "7d", remainingPercent: 30, ariaLabel: "7일 30% 남음" }],
+    [{ key: "5h", remainingPercent: 70, ariaLabel: "Kimi 5시간 70% 남음" }],
+    [],
+    [],
+  ]);
+  assert.notEqual(result, data);
+  assert.notEqual(result.sections[0].usageBadges[0], usageByProvider.codex[0]);
+
+  const reordered = decorateActivityBubbleWithProviderUsage({
+    ...data,
+    sections: [data.sections[2], data.sections[3], data.sections[0]],
+  }, usageByProvider);
+  assert.deepEqual(reordered.sections.map((section) => section.usageBadges || []), [
+    [{ key: "5h", remainingPercent: 70, ariaLabel: "Kimi 5시간 70% 남음" }],
+    [{ key: "7d", remainingPercent: 30, ariaLabel: "7일 30% 남음" }],
+    [],
+  ]);
+});
+
+test("단일 Kimi section에도 사용량 배지를 붙인다", () => {
+  const badges = [
+    { key: "5h", remainingPercent: 70, ariaLabel: "Kimi 5시간 70% 남음" },
+  ];
+  const single = { kind: "activity", provider: "kimi", title: "CodePet · K3 · Max" };
+  const result = decorateActivityBubbleWithProviderUsage(single, { kimi: badges });
+
+  assert.deepEqual(result.usageBadges, badges);
+  assert.notEqual(result.usageBadges, badges);
 });
 
 test("가장 최근 활성 세션 사용량을 표시하고 종료 시 이전 활성 세션 값을 복원한다", () => {

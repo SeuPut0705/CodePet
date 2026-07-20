@@ -97,6 +97,24 @@ test("한 대화만 남으면 기존 단일 말풍선 형태를 유지한다", (
   assert.equal(bubble.text, "terra detail");
 });
 
+test("활동 section에는 허용된 provider만 보존한다", () => {
+  const state = new ActivityBubbleState();
+  ["codex", "kimi", "claude", "agy"].forEach((provider, index) => {
+    state.upsert(THREADS[index], activity(`${provider} 작업`, "detail", "status"), {
+      provider,
+      taskStartedAt: startedAt(index + 1),
+    });
+  });
+
+  assert.deepEqual(
+    state.toBubbleData().sections.map((section) => section.provider),
+    ["codex", "kimi", "claude", "agy"]
+  );
+
+  state.refresh(THREADS[1], { provider: "<script>secret</script>" });
+  assert.equal(state.toBubbleData().sections[1].provider, null);
+});
+
 test("새 턴에 추론 강도가 없으면 이전 턴의 강도를 제목에서 제거한다", () => {
   const state = new ActivityBubbleState();
   state.upsert(THREADS[0], activity("응답 작성 중", "detail", "status"), {

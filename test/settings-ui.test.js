@@ -231,57 +231,87 @@ test("서브에이전트 배지는 좁은 말풍선용 고정 크기이며 애�
   assert.match(titleTextRule, /white-space:\s*nowrap/);
 });
 
-test("다중 활동 헤더 오른쪽에 유효한 5h·7d 배지만 고정 렌더링한다", () => {
+test("공급자별 첫 활동 row와 단일 활동 제목에만 유효한 사용량 배지를 렌더링한다", () => {
   const multiBubble = renderBubble({
     kind: "activity",
-    title: "총 3개 작업 중",
+    title: "총 4개 작업 중",
     usageBadges: [
-      { key: "5h", remainingPercent: 42, ariaLabel: "5시간 42% 남음" },
-      { key: "7d", remainingPercent: 68, ariaLabel: "7일 68% 남음" },
+      { key: "5h", remainingPercent: 1, ariaLabel: "헤더에 표시하면 안 됨" },
     ],
-    sections: [{ title: "A", text: "" }, { title: "B", text: "" }],
+    sections: [
+      {
+        provider: "codex",
+        title: "Codex A",
+        text: "",
+        usageBadges: [
+          { key: "5h", remainingPercent: 42, ariaLabel: "5시간 42% 남음" },
+          { key: "7d", remainingPercent: 68, ariaLabel: "7일 68% 남음" },
+        ],
+      },
+      {
+        provider: "kimi",
+        title: "Kimi A",
+        text: "",
+        usageBadges: [
+          { key: "5h", remainingPercent: 70, ariaLabel: "Kimi 5시간 70% 남음" },
+        ],
+      },
+      { provider: "kimi", title: "Kimi B", text: "", usageBadges: [] },
+      { provider: "codex", title: "Codex B", text: "", usageBadges: [] },
+    ],
   });
   const header = multiBubble.children[0];
-  const group = childWithClass(header, "activity-usage-badges");
+  const sectionLabels = multiBubble.children
+    .slice(1)
+    .map((section) => section.children[0].children[0]);
+  const codexGroup = childWithClass(sectionLabels[0], "activity-usage-badges");
+  const kimiGroup = childWithClass(sectionLabels[1], "activity-usage-badges");
 
-  assert.ok(group);
+  assert.equal(descendantWithClass(header, "activity-usage-badges"), null);
+  assert.ok(codexGroup);
   assert.deepEqual(
-    group.children.map((badge) => badge.className),
+    codexGroup.children.map((badge) => badge.className),
     ["activity-usage-badge", "activity-usage-badge"]
   );
-  assert.deepEqual(group.children.map((badge) => badge.textContent), ["5h 42%", "7d 68%"]);
-  assert.deepEqual(group.children.map((badge) => badge.attributes["aria-label"]), [
+  assert.deepEqual(codexGroup.children.map((badge) => badge.textContent), ["5h 42%", "7d 68%"]);
+  assert.deepEqual(codexGroup.children.map((badge) => badge.attributes["aria-label"]), [
     "5시간 42% 남음",
     "7일 68% 남음",
   ]);
-  for (const section of multiBubble.children.slice(1)) {
-    assert.equal(descendantWithClass(section, "activity-usage-badges"), null);
-    assert.equal(descendantWithClass(section, "activity-usage-badge"), null);
-  }
-
-  const oneSectionBubble = renderBubble({
-    kind: "activity",
-    title: "총 1개 작업 중",
-    usageBadges: [{ key: "5h", remainingPercent: 42, ariaLabel: "5시간 42% 남음" }],
-    sections: [{ title: "A", text: "" }],
-  });
-  assert.equal(childWithClass(oneSectionBubble.children[0], "activity-usage-badges"), null);
+  assert.deepEqual(kimiGroup.children.map((badge) => badge.textContent), ["5h 70%"]);
+  assert.equal(descendantWithClass(sectionLabels[2], "activity-usage-badges"), null);
+  assert.equal(descendantWithClass(sectionLabels[3], "activity-usage-badges"), null);
 
   const singleBubble = renderBubble({
     kind: "activity",
-    title: "작업 중",
-    usageBadges: [{ key: "5h", remainingPercent: 42, ariaLabel: "5시간 42% 남음" }],
+    provider: "kimi",
+    title: "CodePet · K3 · Max",
+    usageBadges: [{ key: "5h", remainingPercent: 70, ariaLabel: "Kimi 5시간 70% 남음" }],
     text: "",
   });
-  assert.equal(childWithClass(singleBubble.children[0], "activity-usage-badges"), null);
+  assert.deepEqual(
+    childWithClass(singleBubble.children[0], "activity-usage-badges").children.map(
+      (badge) => badge.textContent
+    ),
+    ["5h 70%"]
+  );
 
   const invalidBubble = renderBubble({
     kind: "activity",
     title: "총 2개 작업 중",
-    usageBadges: [{ key: "5h", remainingPercent: "42", ariaLabel: "잘못된 값" }],
-    sections: [{ title: "A", text: "" }, { title: "B", text: "" }],
+    sections: [
+      {
+        title: "A",
+        text: "",
+        usageBadges: [
+          { key: "5h", remainingPercent: "42", ariaLabel: "잘못된 값", secret: "raw" },
+        ],
+      },
+      { title: "B", text: "" },
+    ],
   });
-  assert.equal(childWithClass(invalidBubble.children[0], "activity-usage-badges"), null);
+  assert.equal(descendantWithClass(invalidBubble, "activity-usage-badges"), null);
+  assert.equal(JSON.stringify(invalidBubble).includes("raw"), false);
 });
 
 test("사용량 배지는 좁은 헤더에서도 줄바꿈과 숫자 흔들림이 없다", () => {

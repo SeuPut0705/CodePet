@@ -11,6 +11,15 @@ function updatedIdentity(context, key, previous = null) {
   return typeof context[key] === "string" && context[key] ? context[key] : null;
 }
 
+function safeProvider(value) {
+  return ["codex", "kimi", "claude", "agy"].includes(value) ? value : null;
+}
+
+function updatedProvider(context, previous = null) {
+  if (!Object.hasOwn(context, "provider")) return previous;
+  return safeProvider(context.provider);
+}
+
 function safeSubagentCount(value) {
   const count = Number(value);
   return Number.isSafeInteger(count) && count > 0 ? count : 0;
@@ -48,7 +57,7 @@ class ActivityBubbleState {
     this.activities.set(threadId, {
       threadId,
       data: { ...data },
-      provider: updatedIdentity(context, "provider", existing?.provider),
+      provider: updatedProvider(context, existing?.provider),
       clientKind: updatedIdentity(context, "clientKind", existing?.clientKind),
       sectionLabel: updatedLabel(
         context,
@@ -86,7 +95,7 @@ class ActivityBubbleState {
     const existing = this.activities.get(threadId);
     if (!existing) return false;
 
-    existing.provider = updatedIdentity(context, "provider", existing.provider);
+    existing.provider = updatedProvider(context, existing.provider);
     existing.clientKind = updatedIdentity(context, "clientKind", existing.clientKind);
     existing.sectionLabel = updatedLabel(
       context,
@@ -164,6 +173,7 @@ class ActivityBubbleState {
         ...entry.data,
         ...heading,
         threadId: entry.threadId,
+        provider: entry.provider,
         subagentCount: entry.subagentCount,
         titleLabel:
           entry.subagentCount > 0

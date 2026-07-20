@@ -199,6 +199,7 @@ function appendActivityContent(container, data) {
     titleLabel: data.titleLabel,
     statusIcon: data.statusIcon,
     subagentCount: data.subagentCount,
+    usageBadges: data.usageBadges,
   }));
 
   const body = document.createElement("div");
@@ -224,9 +225,7 @@ function renderActivity(data) {
   }
 
   bubbleElement.replaceChildren();
-  bubbleElement.appendChild(createTitle(data.title, true, {
-    usageBadges: data.sections.length >= 2 ? data.usageBadges : [],
-  }));
+  bubbleElement.appendChild(createTitle(data.title, true));
   for (const sectionData of data.sections) {
     const section = document.createElement("div");
     section.className = "activity-section";
@@ -248,6 +247,7 @@ function renderActivity(data) {
     if (sectionData.titleLabel) label.setAttribute("aria-label", sectionData.titleLabel);
     appendStatusHeadingContent(label, sectionData.title, sectionData.statusIcon);
     appendSubagentBadge(label, sectionData.subagentCount);
+    appendUsageBadges(label, sectionData.usageBadges);
     row.appendChild(label);
     const body = document.createElement("div");
     body.className = "body-text activity-section-body";

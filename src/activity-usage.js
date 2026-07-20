@@ -205,22 +205,32 @@ class ActivityUsageController {
   }
 }
 
-function decorateActivityBubbleWithUsage(
-  data,
-  usageBadges,
-  { codexWorking = false } = {}
-) {
-  if (
-    !data ||
-    !codexWorking ||
-    !Array.isArray(data.sections) ||
-    data.sections.length < 2 ||
-    !Array.isArray(usageBadges) ||
-    usageBadges.length === 0
-  ) {
-    return data;
+function decorateActivityBubbleWithProviderUsage(data, usageByProvider = {}) {
+  if (!data) return data;
+  const seen = new Set();
+  const decorate = (section) => {
+    const provider = section?.provider;
+    const badges = Array.isArray(usageByProvider?.[provider])
+      ? usageByProvider[provider]
+      : [];
+    if (!provider || seen.has(provider) || badges.length === 0) {
+      return { ...section, usageBadges: [] };
+    }
+    seen.add(provider);
+    return { ...section, usageBadges: badges.map((badge) => ({ ...badge })) };
+  };
+  if (Array.isArray(data.sections)) {
+    return { ...data, sections: data.sections.map(decorate) };
   }
-  return { ...data, usageBadges: usageBadges.map((badge) => ({ ...badge })) };
+  return decorate(data);
+}
+
+// 기존 Codex watcher lifecycle은 다음 단계에서 provider별 controller로 교체합니다.
+// 그 전까지 현재 Codex 사용량도 새 section-scoped renderer 계약을 따르게 합니다.
+function decorateActivityBubbleWithUsage(data, usageBadges, { codexWorking = false } = {}) {
+  return decorateActivityBubbleWithProviderUsage(data, {
+    codex: codexWorking && Array.isArray(usageBadges) ? usageBadges : [],
+  });
 }
 
 module.exports = {
@@ -228,5 +238,6 @@ module.exports = {
   ActivityUsageController,
   MAX_TIMER_DELAY_MS,
   buildActivityUsageBadges,
+  decorateActivityBubbleWithProviderUsage,
   decorateActivityBubbleWithUsage,
 };
