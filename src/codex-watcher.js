@@ -225,8 +225,10 @@ function rolloutMetadataFromPayload(payload = {}) {
   const source = typeof payload.source === "string"
     ? payload.source.trim().toLowerCase()
     : "";
-  const desktop = originator.includes("codex desktop") ||
-    ["desktop", "vscode", "app-server"].includes(source);
+  const explicitCli = ["cli", "exec"].includes(source) ||
+    /(?:^|[\s_-])(?:cli|tui|exec)(?:$|[\s_-])/.test(originator);
+  const desktop = !explicitCli && (originator.includes("codex desktop") ||
+    ["desktop", "vscode", "app-server"].includes(source));
   const clientKind = desktop ? "desktop" : "cli";
   return {
     threadId: payload.id,

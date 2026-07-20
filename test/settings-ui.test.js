@@ -315,6 +315,7 @@ test("늦게 끝난 Desktop 제목 조회는 같은 thread의 CLI section을 덮
   const threadId = "019f4a30-b0a7-73f1-8080-2ba11b4e5d25";
   const hydrateSource = mainJs.match(/function hydrateCodexThreadTitle[\s\S]*?\n}/)?.[0] || "";
   let resolveTitle;
+  let resolveCount = 0;
   let activeContext = { provider: "codex", clientKind: "desktop" };
   const refreshed = [];
   const titlePromise = new Promise((resolve) => {
@@ -322,7 +323,12 @@ test("늦게 끝난 Desktop 제목 조회는 같은 thread의 CLI section을 덮
   });
   const hydrate = vm.runInNewContext(`(${hydrateSource})`, {
     CODEX_THREAD_ID_PATTERN: /^[0-9a-f-]{36}$/,
-    codexThreadTitles: { resolve: () => titlePromise },
+    codexThreadTitles: {
+      resolve: () => {
+        resolveCount += 1;
+        return titlePromise;
+      },
+    },
     activeActivityBubbles: {
       matchesContext: (_threadId, context) =>
         activeContext.provider === context.provider &&
@@ -335,7 +341,12 @@ test("늦게 끝난 Desktop 제목 조회는 같은 thread의 CLI section을 덮
     showActiveActivityBubble() {},
   });
 
+  hydrate(threadId, { provider: "codex", clientKind: "cli", sectionLabel: "codepet" });
+  assert.equal(resolveCount, 0);
+  assert.deepEqual(refreshed, []);
+
   hydrate(threadId, { provider: "codex", clientKind: "desktop" });
+  assert.equal(resolveCount, 1);
   activeContext = { provider: "codex", clientKind: "cli" };
   resolveTitle("Desktop 자동 제목");
   await titlePromise;

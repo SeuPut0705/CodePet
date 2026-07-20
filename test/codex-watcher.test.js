@@ -56,21 +56,51 @@ function rolloutFixture(t, metadata) {
   return filePath;
 }
 
-test("Codex rollout metadata는 Desktop과 CLI를 분류하고 CLI 프로젝트명을 보존한다", (t) => {
-  const cli = rolloutFixture(t, {
-    originator: "codex-tui",
-    source: "cli",
-    cwd: "/work/codepet",
-  });
-  const desktop = rolloutFixture(t, {
-    originator: "Codex Desktop",
-    source: "vscode",
-    cwd: "/work/codepet",
-  });
-  assert.equal(readRolloutMetadata(cli).clientKind, "cli");
-  assert.equal(readRolloutMetadata(cli).sectionLabel, "codepet");
-  assert.equal(readRolloutMetadata(desktop).clientKind, "desktop");
-  assert.equal(readRolloutMetadata(desktop).sectionLabel, null);
+test("Codex rollout metadata conflict는 CLI로 닫고 명확한 Desktop만 허용한다", (t) => {
+  const cases = [
+    {
+      name: "Desktop originator와 exec source 충돌",
+      metadata: { originator: "Codex Desktop", source: "exec", cwd: "/work/codepet" },
+      clientKind: "cli",
+      sectionLabel: "codepet",
+    },
+    {
+      name: "Desktop originator와 cli source 충돌",
+      metadata: { originator: "Codex Desktop", source: "cli", cwd: "/work/shortput" },
+      clientKind: "cli",
+      sectionLabel: "shortput",
+    },
+    {
+      name: "exec originator와 app-server source 충돌",
+      metadata: { originator: "codex-exec", source: "app-server", cwd: "/work/mowda-one" },
+      clientKind: "cli",
+      sectionLabel: "mowda-one",
+    },
+    {
+      name: "CLI originator와 app-server source 충돌",
+      metadata: { originator: "codex_cli_rs", source: "app-server", cwd: "/work/toolflowy" },
+      clientKind: "cli",
+      sectionLabel: "toolflowy",
+    },
+    {
+      name: "명확한 Desktop",
+      metadata: { originator: "Codex Desktop", source: "vscode", cwd: "/work/codepet" },
+      clientKind: "desktop",
+      sectionLabel: null,
+    },
+    {
+      name: "metadata 신호 누락",
+      metadata: { cwd: null },
+      clientKind: "cli",
+      sectionLabel: "Codex",
+    },
+  ];
+
+  for (const entry of cases) {
+    const metadata = readRolloutMetadata(rolloutFixture(t, entry.metadata));
+    assert.equal(metadata.clientKind, entry.clientKind, entry.name);
+    assert.equal(metadata.sectionLabel, entry.sectionLabel, entry.name);
+  }
 });
 
 test("rollout 파일명에서 Codex thread id를 추출한다", () => {
