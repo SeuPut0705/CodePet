@@ -14,9 +14,9 @@ function windowMinutes(item, fallback) {
   const window = item?.window && typeof item.window === "object" ? item.window : item;
   const duration = finiteNumber(window?.duration);
   const unit = String(window?.timeUnit || "").toUpperCase();
-  if (unit.includes("MINUTE")) return duration;
-  if (unit.includes("HOUR")) return duration === null ? null : duration * 60;
-  if (unit.includes("DAY")) return duration === null ? null : duration * 1440;
+  if (unit === "MINUTE") return duration;
+  if (unit === "HOUR") return duration === null ? null : duration * 60;
+  if (unit === "DAY") return duration === null ? null : duration * 1440;
   return null;
 }
 

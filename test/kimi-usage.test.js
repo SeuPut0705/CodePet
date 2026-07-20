@@ -40,3 +40,16 @@ test("잘못된 Kimi window만 제외하고 퍼센트를 0..100으로 제한한�
     { key: "7d", remainingPercent: 100, ariaLabel: "Kimi 7일 100% 남음" },
   ]);
 });
+
+test("Kimi timeUnit은 정확한 enum 값만 허용한다", () => {
+  assert.deepEqual(parseKimiUsageWindows({
+    usage: { used: 20, limit: 100 },
+    limits: [
+      { duration: 5, timeUnit: "NOT_HOUR", used: 20, limit: 100 },
+      { duration: 300, timeUnit: "MINUTE_SUFFIX", used: 20, limit: 100 },
+      { duration: 7, timeUnit: "prefix_day", used: 20, limit: 100 },
+    ],
+  }), [
+    { minutes: 10080, used: 20, limit: 100 },
+  ]);
+});
