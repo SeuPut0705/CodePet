@@ -20,6 +20,11 @@ function updatedProvider(context, previous = null) {
   return safeProvider(context.provider);
 }
 
+function updatedManagedUsageEligibility(context, previous = false) {
+  if (!Object.hasOwn(context, "managedUsageEligible")) return previous === true;
+  return context.managedUsageEligible === true;
+}
+
 function safeSubagentCount(value) {
   const count = Number(value);
   return Number.isSafeInteger(count) && count > 0 ? count : 0;
@@ -58,6 +63,10 @@ class ActivityBubbleState {
       threadId,
       data: { ...data },
       provider: updatedProvider(context, existing?.provider),
+      managedUsageEligible: updatedManagedUsageEligibility(
+        context,
+        existing?.managedUsageEligible
+      ),
       clientKind: updatedIdentity(context, "clientKind", existing?.clientKind),
       sectionLabel: updatedLabel(
         context,
@@ -96,6 +105,10 @@ class ActivityBubbleState {
     if (!existing) return false;
 
     existing.provider = updatedProvider(context, existing.provider);
+    existing.managedUsageEligible = updatedManagedUsageEligibility(
+      context,
+      existing.managedUsageEligible
+    );
     existing.clientKind = updatedIdentity(context, "clientKind", existing.clientKind);
     existing.sectionLabel = updatedLabel(
       context,
@@ -174,6 +187,7 @@ class ActivityBubbleState {
         ...heading,
         threadId: entry.threadId,
         provider: entry.provider,
+        managedUsageEligible: entry.managedUsageEligible === true,
         subagentCount: entry.subagentCount,
         titleLabel:
           entry.subagentCount > 0

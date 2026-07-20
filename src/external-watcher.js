@@ -9,6 +9,7 @@ const ACTIVITY_CONTEXT_KEYS = [
   "workerLabel",
   "reasoningLabel",
   "subagentCount",
+  "managedUsageEligible",
 ];
 
 function mergeActivityContext(session, event) {

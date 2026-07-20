@@ -213,7 +213,8 @@ function decorateActivityBubbleWithProviderUsage(data, usageByProvider = {}) {
     const badges = Array.isArray(usageByProvider?.[provider])
       ? usageByProvider[provider]
       : [];
-    if (!provider || seen.has(provider) || badges.length === 0) {
+    const usageEligible = provider !== "kimi" || section?.managedUsageEligible === true;
+    if (!provider || !usageEligible || seen.has(provider) || badges.length === 0) {
       return { ...section, usageBadges: [] };
     }
     seen.add(provider);

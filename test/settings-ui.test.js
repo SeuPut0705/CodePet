@@ -430,10 +430,8 @@ test("Codex 세션별 usage controller를 watcher와 활성 집계 헤더 수명
     /codexWatcher\.working && activeActivityBubbles\.size > 0[\s\S]*?showActiveActivityBubble\(\)/
   );
   assert.doesNotMatch(mainJs, /activityUsageResetTimer|scheduleActivityUsageReset/);
-  assert.match(buildActiveBubble, /decorateActivityBubbleWithProviderUsage/);
-  assert.match(buildActiveBubble, /activityUsageController\.buildBadges\(\)/);
-  assert.match(buildActiveBubble, /codex:\s*activityUsageController\.buildBadges\(\)/);
-  assert.match(buildActiveBubble, /kimi:\s*kimiUsageController\.buildBadges\(\)/);
+  assert.doesNotMatch(buildActiveBubble, /decorateActivityBubbleWithProviderUsage/);
+  assert.match(buildActiveBubble, /activeActivityBubbles\.toBubbleData\(\)/);
   assert.match(removeActiveBubble, /activityUsageController\.remove\(threadId\)/);
   assert.match(
     removeActiveBubble,
@@ -446,6 +444,21 @@ test("Codex 세션별 usage controller를 watcher와 활성 집계 헤더 수명
     /activityUsageController\.update\(context\.threadId, usage\)/
   );
   assert.match(mainJs, /activityUsageController\.dispose\(\)/);
+});
+
+test("provider 사용량은 privacy 적용 뒤 renderer 직전에 eligibility를 지켜 장식한다", () => {
+  const watcherBubble = mainJs.match(
+    /function showWatcherActivityBubble\(data,[\s\S]*?\n}/
+  )?.[0] || "";
+  const privacyIndex = watcherBubble.indexOf("createVisibleActivityBubble(activityData)");
+  const decorateIndex = watcherBubble.indexOf("decorateActivityBubbleWithProviderUsage(");
+  const showIndex = watcherBubble.indexOf("showBubble(");
+
+  assert.ok(privacyIndex >= 0);
+  assert.ok(decorateIndex > privacyIndex);
+  assert.ok(showIndex > decorateIndex);
+  assert.match(watcherBubble, /codex:\s*activityUsageController\.buildBadges\(\)/);
+  assert.match(watcherBubble, /kimi:\s*kimiUsageController\.buildBadges\(\)/);
 });
 
 test("단일 Codex section은 늦은 사용량과 reset 변경에 다시 그리며 빈 상태는 그리지 않는다", () => {

@@ -9,6 +9,7 @@ const {
   parseKimiRow,
   readKimiSessionMetadata,
 } = require("../src/kimi-watcher");
+const { KimiUsageController } = require("../src/kimi-usage-controller");
 
 function tempDir(t) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "codepet-kimi-"));
@@ -181,6 +182,87 @@ test("Kimi 파서는 요청·모델·보이는 응답·도구·완료만 정규�
     metadata
   );
   assert.deepEqual(pick(done, ["type", "finished"]), { type: "lifecycle", finished: true });
+});
+
+test("Kimi managed 사용량 eligibility는 main llm.request의 명시적 provider만 신뢰한다", () => {
+  const mainFile = "/tmp/session_one/agents/main/wire.jsonl";
+  const subagentFile = "/tmp/session_one/agents/agent-0/wire.jsonl";
+  const metadata = {
+    sessionId: "session_one",
+    sectionLabel: "ToolFlowy",
+    cwd: "/work/toolflowy",
+  };
+  const request = (provider, file = mainFile) => parseKimiRow({
+    type: "llm.request",
+    ...(provider === undefined ? {} : { provider }),
+    modelAlias: "kimi-code/k3",
+    time: 2,
+  }, file, metadata);
+
+  assert.equal(request("kimi").managedUsageEligible, true);
+  assert.equal(request("custom").managedUsageEligible, false);
+  assert.equal(request("unknown").managedUsageEligible, false);
+  assert.equal(request(undefined).managedUsageEligible, false);
+  assert.equal(request("kimi", subagentFile).managedUsageEligible, false);
+});
+
+test("custom과 managed Kimi가 동시에 작업해도 managed controller는 한 번만 조회하고 마지막 managed 종료 때 멈춘다", async (t) => {
+  const root = tempDir(t);
+  const custom = sessionFixture(root, "session_custom", "/work/custom");
+  const managed = sessionFixture(root, "session_managed", "/work/managed");
+  const watcher = new KimiWatcher({ roots: [root], quietMs: 60_000 });
+  let calls = 0;
+  const controller = new KimiUsageController({
+    client: {
+      fetchBadges: async () => {
+        calls += 1;
+        return [{ key: "5h", remainingPercent: 70, ariaLabel: "Kimi 5시간 70% 남음" }];
+      },
+    },
+  });
+  const syncManagedWorking = () => controller.setWorking(watcher.managedUsageWorking);
+  watcher.on("working-changed", syncManagedWorking);
+  watcher.on("context-changed", syncManagedWorking);
+  watcher.seed();
+
+  append(custom.wire, {
+    type: "llm.request",
+    provider: "custom",
+    modelAlias: "custom/model",
+    time: 1,
+  });
+  append(managed.wire, {
+    type: "llm.request",
+    provider: "kimi",
+    modelAlias: "kimi-code/k3",
+    time: 2,
+  });
+  watcher.poll();
+  await controller.whenIdle();
+
+  assert.equal(watcher.working, true);
+  assert.equal(watcher.managedUsageWorking, true);
+  assert.equal(calls, 1);
+  assert.equal(controller.working, true);
+
+  append(managed.wire, {
+    type: "context.append_loop_event",
+    event: {
+      type: "step.end",
+      uuid: "managed-done",
+      turnId: "0",
+      step: 1,
+      finishReason: "end_turn",
+    },
+    time: 3,
+  });
+  watcher.poll();
+
+  assert.equal(watcher.working, true);
+  assert.equal(watcher.managedUsageWorking, false);
+  assert.equal(controller.working, false);
+  assert.deepEqual(controller.buildBadges(), []);
+  controller.dispose();
 });
 
 test("Kimi 파일 탐색은 최근 20개 세션의 wire만 반환한다", (t) => {

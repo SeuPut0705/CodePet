@@ -159,8 +159,8 @@ test("공급자별 첫 visible section에만 사용량 배지를 붙인다", () 
     title: "총 4개 작업 중",
     sections: [
       { threadId: "codex:a", provider: "codex" },
-      { threadId: "kimi:a", provider: "kimi" },
-      { threadId: "kimi:b", provider: "kimi" },
+      { threadId: "kimi:custom", provider: "kimi", managedUsageEligible: false },
+      { threadId: "kimi:managed", provider: "kimi", managedUsageEligible: true },
       { threadId: "codex:b", provider: "codex" },
     ],
   };
@@ -172,8 +172,8 @@ test("공급자별 첫 visible section에만 사용량 배지를 붙인다", () 
 
   assert.deepEqual(result.sections.map((section) => section.usageBadges || []), [
     [{ key: "7d", remainingPercent: 30, ariaLabel: "7일 30% 남음" }],
-    [{ key: "5h", remainingPercent: 70, ariaLabel: "Kimi 5시간 70% 남음" }],
     [],
+    [{ key: "5h", remainingPercent: 70, ariaLabel: "Kimi 5시간 70% 남음" }],
     [],
   ]);
   assert.notEqual(result, data);
@@ -190,15 +190,34 @@ test("공급자별 첫 visible section에만 사용량 배지를 붙인다", () 
   ]);
 });
 
-test("단일 Kimi section에도 사용량 배지를 붙인다", () => {
+test("단일 Kimi section은 managed eligibility가 명시된 경우에만 사용량 배지를 붙인다", () => {
   const badges = [
     { key: "5h", remainingPercent: 70, ariaLabel: "Kimi 5시간 70% 남음" },
   ];
-  const single = { kind: "activity", provider: "kimi", title: "CodePet · K3 · Max" };
+  const single = {
+    kind: "activity",
+    provider: "kimi",
+    managedUsageEligible: true,
+    title: "CodePet · K3 · Max",
+  };
   const result = decorateActivityBubbleWithProviderUsage(single, { kimi: badges });
 
   assert.deepEqual(result.usageBadges, badges);
   assert.notEqual(result.usageBadges, badges);
+  assert.deepEqual(
+    decorateActivityBubbleWithProviderUsage(
+      { ...single, managedUsageEligible: false },
+      { kimi: badges }
+    ).usageBadges,
+    []
+  );
+  assert.deepEqual(
+    decorateActivityBubbleWithProviderUsage(
+      { kind: "activity", provider: "kimi", title: "unknown" },
+      { kimi: badges }
+    ).usageBadges,
+    []
+  );
 });
 
 test("가장 최근 활성 세션 사용량을 표시하고 종료 시 이전 활성 세션 값을 복원한다", () => {

@@ -8,7 +8,7 @@ test("main은 Kimi 사용량 controller를 watcher와 말풍선 수명주기에 
   const main = fs.readFileSync(path.join(__dirname, "..", "src", "main.js"), "utf8");
   assert.match(main, /new KimiUsageClient\(/);
   assert.match(main, /new KimiUsageController\(/);
-  assert.match(main, /kimiUsageController\.setWorking\(kimiWatcher\.working\)/);
+  assert.match(main, /kimiUsageController\.setWorking\(kimiWatcher\.managedUsageWorking\)/);
   assert.match(main, /kimiUsageController\.dispose\(\)/);
   assert.match(main, /decorateActivityBubbleWithProviderUsage/);
 });

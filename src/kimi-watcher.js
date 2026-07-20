@@ -143,6 +143,7 @@ function parseKimiRow(row, file, metadata = readKimiSessionMetadata(file)) {
       eventId: kimiEventId(row),
       workerLabel: normalizeWorkerLabel(row.modelAlias || row.model),
       reasoningLabel: normalizeReasoningLabel(row.thinkingEffort),
+      managedUsageEligible: !common.isSubagent && row.provider === "kimi",
     };
   }
 
@@ -227,6 +228,12 @@ class KimiWatcher extends ExternalWatcher {
 
   contextFor(session, extra = {}) {
     return { ...super.contextFor(session, extra), clientKind: "cli" };
+  }
+
+  get managedUsageWorking() {
+    return [...this.sessions.values()].some(
+      (session) => session.managedUsageEligible === true
+    );
   }
 
   metadataFor(file) {

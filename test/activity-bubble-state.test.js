@@ -115,6 +115,26 @@ test("활동 section에는 허용된 provider만 보존한다", () => {
   assert.equal(state.toBubbleData().sections[1].provider, null);
 });
 
+test("Kimi section은 main session별 managed 사용량 eligibility를 보존하고 unknown은 닫는다", () => {
+  const state = new ActivityBubbleState();
+  state.upsert("kimi:custom", activity("custom", "detail", "status"), {
+    provider: "kimi",
+    managedUsageEligible: false,
+  });
+  state.upsert("kimi:managed", activity("managed", "detail", "status"), {
+    provider: "kimi",
+    managedUsageEligible: true,
+  });
+  state.upsert("kimi:unknown", activity("unknown", "detail", "status"), {
+    provider: "kimi",
+  });
+
+  assert.deepEqual(
+    state.toBubbleData().sections.map(({ managedUsageEligible }) => managedUsageEligible),
+    [false, true, false]
+  );
+});
+
 test("새 턴에 추론 강도가 없으면 이전 턴의 강도를 제목에서 제거한다", () => {
   const state = new ActivityBubbleState();
   state.upsert(THREADS[0], activity("응답 작성 중", "detail", "status"), {

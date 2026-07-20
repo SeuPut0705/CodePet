@@ -275,7 +275,13 @@ function setActivityBubbleMode(mode) {
       restoreActiveActivityBubble();
     } else {
       const visibleData = createVisibleActivityBubble(currentActivityBubbleData);
-      if (visibleData) showBubble(visibleData);
+      if (visibleData) {
+        const decoratedData = decorateActivityBubbleWithProviderUsage(visibleData, {
+          codex: activityUsageController.buildBadges(),
+          kimi: kimiUsageController.buildBadges(),
+        });
+        showBubble(decoratedData);
+      }
       else hideBubble();
     }
     return;
@@ -2345,13 +2351,7 @@ function createVisibleActivityBubble(data) {
 }
 
 function buildActiveActivityBubble() {
-  return decorateActivityBubbleWithProviderUsage(
-    activeActivityBubbles.toBubbleData(),
-    {
-      codex: activityUsageController.buildBadges(),
-      kimi: kimiUsageController.buildBadges(),
-    }
-  );
+  return activeActivityBubbles.toBubbleData();
 }
 
 function showWatcherActivityBubble(data, { active = false } = {}) {
@@ -2368,7 +2368,11 @@ function showWatcherActivityBubble(data, { active = false } = {}) {
 
   const visibleData = createVisibleActivityBubble(activityData);
   if (visibleData) {
-    showBubble(visibleData);
+    const decoratedData = decorateActivityBubbleWithProviderUsage(visibleData, {
+      codex: activityUsageController.buildBadges(),
+      kimi: kimiUsageController.buildBadges(),
+    });
+    showBubble(decoratedData);
     return true;
   } else if (pendingBubbleData?.activityPrivacy) {
     hideBubble();
@@ -3413,9 +3417,11 @@ app.whenReady().then(() => {
   registerCodexWatcher();
   registerExternalWatcher(antigravityWatcher, "AGY");
   registerExternalWatcher(claudeWatcher, "Claude");
-  kimiWatcher.on("working-changed", () => {
-    kimiUsageController.setWorking(kimiWatcher.working);
-  });
+  const syncKimiUsageWorking = () => {
+    kimiUsageController.setWorking(kimiWatcher.managedUsageWorking);
+  };
+  kimiWatcher.on("working-changed", syncKimiUsageWorking);
+  kimiWatcher.on("context-changed", syncKimiUsageWorking);
   registerExternalWatcher(kimiWatcher, "Kimi");
   createTray();
   createWindow();
