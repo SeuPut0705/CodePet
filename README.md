@@ -1,117 +1,180 @@
-# CodePet
+<div align="center">
+  <img src="docs/assets/codepet-readme-hero.png" alt="여러 AI 코딩 도구의 작업 상태를 말풍선으로 보여 주는 CodePet" width="100%">
 
-Codex, Google Antigravity(AGY), Claude Code, Kimi Code CLI의 작업 상태를 한곳에서 보여 주는 데스크톱 펫입니다. 네 프로그램의 대화를 동시에 감지해 말풍선으로 표시하고, 설정 창에서 Codex·AGY·Claude 계정별 한도와 말풍선 색상·글꼴을 관리합니다.
+  <h1>CodePet</h1>
 
-Windows와 macOS를 지원합니다. CLI 세션(Claude Code, Codex CLI, Kimi Code CLI)뿐 아니라 데스크톱 앱 세션도 감지합니다 — Claude 데스크톱 앱의 Claude Code 세션은 `~/.claude/projects`에, Codex 데스크톱 앱 세션은 `~/.codex/sessions`에 기록되므로 같은 감시 경로로 함께 잡힙니다. Kimi는 `~/.kimi-code/sessions`의 로컬 작업 로그를 읽으며 계정 전환 대상에는 포함하지 않습니다.
+  <p><strong>AI 코딩 도구가 일하는 동안, 화면 위의 작은 펫이 진행 상황을 알려줍니다.</strong></p>
 
-Codex CLI의 펫 에셋(`~/.codex/pets`)을 그대로 가져다 쓰기 때문에, Codex에서 펫을 설치해뒀다면 별도 설정 없이 바로 골라 쓸 수 있습니다.
+  <p>
+    <code>macOS</code>
+    <code>Windows</code>
+    <code>Electron</code>
+    <code>Local-first</code>
+    <code>npm test</code>
+  </p>
 
-## 실행
+  <p>
+    <a href="#빠른-시작">빠른 시작</a> ·
+    <a href="#지원-범위">지원 범위</a> ·
+    <a href="#주요-기능">주요 기능</a> ·
+    <a href="#펫-꾸미기">펫 꾸미기</a> ·
+    <a href="#개발과-빌드">개발과 빌드</a>
+  </p>
+</div>
+
+---
+
+CodePet은 **Codex**, **Google Antigravity(AGY)**, **Claude Code**, **Kimi Code CLI**의 로컬 작업 기록을 함께 감시하는 데스크톱 펫입니다. 여러 작업의 상태와 마지막 메시지를 하나의 반응형 말풍선에 정리하고, 계정별 사용량과 펫 설정도 한곳에서 관리합니다.
+
+작업 내용은 화면에 표시하기 위해 로컬에서 읽습니다. 개인정보 표시 수준은 사용자가 직접 선택할 수 있습니다.
+
+## 한눈에 보기
+
+| 실시간 작업 상태 | 사용량과 계정 | 여러 작업 동시 표시 | 나만의 데스크톱 펫 |
+|---|---|---|---|
+| 응답 작성, 파일 수정, 명령, 테스트, 승인 대기, 완료를 모션과 말풍선으로 표시합니다. | Codex·AGY·Claude의 연결된 모든 계정 한도를 카드로 확인합니다. | 공급자를 합쳐 시작 순서대로 최대 5개 작업을 각각 추적합니다. | Codex 펫과 커스텀 스프라이트를 불러오고 크기·위치·이동 방식을 저장합니다. |
+
+## 빠른 시작
+
+### 소스에서 실행
 
 ```bash
+git clone https://github.com/SeuPut0705/CodePet.git
+cd CodePet
 npm install
 npm run start
 ```
 
-실행 파일로 뽑으려면:
+> CodePet은 감지하려는 AI 도구가 로컬에 설치되어 있고, 해당 도구의 세션 기록이 존재할 때 활동을 표시합니다.
+
+### 실행 파일 만들기
 
 ```bash
-npm run dist          # 현재 OS용 (Windows → 포터블 exe, macOS → dmg/zip)
-npm run dist -- --win # Windows용 명시
-npm run dist -- --mac # macOS용 명시
+npm run dist          # 현재 운영체제용
+npm run dist -- --win # Windows 포터블 exe
+npm run dist -- --mac # macOS dmg + zip
 ```
 
-Windows에서는 `artifacts/CodePet-<버전>.exe` 포터블 실행 파일이, macOS에서는 dmg와 zip이 나옵니다. 설치 과정 없이 실행할 수 있습니다. 빌드는 앱을 끈 상태에서 돌려야 합니다(실행 중이면 파일 잠금 때문에 실패).
+산출물은 `artifacts/`에 생성됩니다. 실행 중인 CodePet이 산출물을 잠글 수 있으므로 빌드 전 앱을 완전히 종료하세요. 현재 저장소는 서명·공증된 공식 설치 파일을 자동 배포하지 않습니다.
 
-DevTools가 필요하면 이렇게 켜세요.
+## 지원 범위
 
-```powershell
-$env:PET_DEVTOOLS="1"
-npm run dev
-```
+| 도구 | 활동 감지 | 사용량 표시 | 계정 저장·전환 |
+|---|:---:|:---:|:---:|
+| Codex Desktop / CLI | ✓ | ✓ | ✓ |
+| Google Antigravity | ✓ | ✓ | ✓ |
+| Claude Code | ✓ | ✓ | ✓ |
+| Kimi Code CLI | ✓ | 관리형 로그인만 | — |
 
-## 뭘 하는 앱인가
+- **Codex**는 `~/.codex/sessions`의 Desktop·CLI 작업을 함께 감지합니다.
+- **Claude Code**는 `~/.claude/projects`에 기록되는 CLI와 데스크톱 앱 세션을 함께 감지합니다.
+- **Kimi Code CLI**는 `~/.kimi-code/sessions` 또는 `KIMI_CODE_HOME` 아래의 작업 기록을 읽습니다. 사용자 지정 provider를 관리형 Kimi로 간주하지 않습니다.
+- CLI 활동 제목은 자동 생성된 세션 제목 대신 **프로젝트 폴더명**을 사용합니다.
 
-### 사용량 확인
+## 주요 기능
 
-펫을 더블클릭하면 설정의 `계정별 한도` 화면이 열립니다. Codex, AGY, Claude에 연결된 모든 계정의 한도를 개별 카드로 함께 표시하며 계정 전환 기능은 카드에 넣지 않습니다. 한 계정의 조회가 실패해도 다른 계정 카드는 계속 표시합니다. Codex는 고정된 5시간 주기로 추정하지 않고 서버가 보내는 실제 기간을 읽어 5시간·주간·월간 한도와 모델별 추가 한도를 동적으로 표시합니다. 사용률이 70%를 넘으면 게이지가 노란색, 90%를 넘으면 빨간색이 됩니다.
+### 작업 상태를 바로 읽는 말풍선
 
-Codex 사용률이 90%를 넘으면 초기화 주기당 한 번 경고 말풍선을 표시합니다.
+CodePet은 공급자별 작업 이벤트를 공통 상태로 정리합니다.
 
-### 계정 추가/전환/삭제
+| 감지한 이벤트 | CodePet 반응 |
+|---|---|
+| 작업 시작·응답 작성 | 살펴보기 모션과 작업 제목·모델·추론 강도 표시 |
+| 파일 수정·명령 실행·테스트·빌드 | 해당 상태 아이콘과 현재 메시지 표시 |
+| 사용자 입력·실행 승인 대기 | 기다리기 모션, 지원되는 Codex 작업은 클릭해 바로 열기 |
+| 작업 완료 | 폴짝 모션과 마지막 응답 표시 |
+| 작업 중단 | 실패 모션 표시 |
+| 서브에이전트 실행 | 메시지 내용 대신 작업별 활성 개수만 표시 |
 
-우클릭 메뉴와 시스템 트레이에서 Codex, AGY, Claude 모두 같은 형태의 저장 계정 목록과 `로그인 / 계정 추가` 항목을 제공합니다. 계정 삭제는 `설정…` → `계정`에서 할 수 있습니다.
+말풍선은 **콘텐츠와 현재 화면 크기에 맞춰 자동으로 폭을 조절**합니다. 긴 메시지는 최대 폭 안에서 줄바꿈하고, 작업 제목·모델·서브에이전트 수·`5h`·`7d` 배지는 한 줄을 유지합니다.
 
-- Codex: 별도 로그인 프로필에서 새 계정을 추가하고 저장된 인증 정보를 원자적으로 전환합니다. "Codex 재시작 없는 전환 (프록시)"는 기본으로 켜지며, 로컬 프록시(127.0.0.1)가 요청 단위로 계정 인증 헤더를 갈아끼워 계정 전환과 한도 소진 시 자동 로테이션을 재시작 없이 적용합니다. 우클릭 메뉴에서 프록시 모드를 명시적으로 끈 경우에만 기존의 Codex Desktop 재시작 방식으로 전환합니다. 프록시 모드를 켜고 끌 때 `~/.codex/config.toml` 루트에 `openai_base_url` 한 줄을 넣고 빼며(마커 주석으로 관리), 최초 활성화 직후 이미 실행 중이던 Codex에는 한 번의 재시작이 필요할 수 있습니다. 정상 종료 시 자동으로 원복되고, 강제 종료 뒤 Codex 연결이 막히면 CodePet을 다시 실행해 stale 마커를 정리하거나 `# codepet-codex-proxy` 블록을 제거하면 됩니다.
-- AGY: 현재 자격 증명(Windows 자격 증명 관리자 / macOS Keychain)을 프로필로 저장하고, 확인 가능한 계정 이메일을 함께 기록한 뒤 선택한 계정으로 바꾸고 AGY를 다시 시작합니다.
-- Claude: 현재 Claude 자격 파일과 `claude auth status`의 이메일을 프로필로 저장하고 전환합니다. OAuth 토큰이 갱신돼도 같은 이메일은 한 계정으로 병합하며, 이미 열린 세션은 유지되고 새 세션부터 선택한 계정을 사용합니다.
+Codex rollout에서 확인된 Sol·Terra·Luna 모델과 추론 강도는 작업 제목 옆에 표시됩니다. 여러 세션을 동시에 실행해도 각 작업의 제목과 메시지를 분리하며, 완료 이벤트가 없는 작업은 공급자별 quiet-time 또는 stale 처리 후 정리합니다.
 
-프로필 저장소는 `~/.codepet/codex-switch`, `~/.codepet/antigravity-switch`, `~/.codepet/claude-switch`입니다. 설정 화면에는 비밀 값이 노출되지 않습니다.
+### 연결된 모든 계정의 사용량
 
-현재 사용 중인 계정은 삭제할 수 없으며, 다른 계정으로 전환한 뒤 저장된 프로필만 삭제할 수 있습니다.
+펫을 더블클릭하면 설정의 `계정별 한도` 화면이 열립니다.
 
-### 작업 실시간 표시
+- Codex·AGY·Claude에 연결된 계정을 각각 별도 카드로 표시
+- 한 계정 조회가 실패해도 나머지 카드 유지
+- Codex 서버가 제공한 실제 기간을 읽어 5시간·주간·월간·모델별 한도 표시
+- 사용률 70% 이상은 노란색, 90% 이상은 빨간색으로 강조
+- Codex 사용률 90% 초과 시 초기화 주기당 한 번 경고
+- 관리형 Kimi Code 작업의 첫 섹션에 **`5h`·`7d` 남은 사용량** 표시
 
-Codex의 `~/.codex/sessions`, AGY의 로컬 transcript, Claude의 프로젝트 JSONL을 tail해 세 프로그램의 작업을 함께 감지합니다.
+Kimi의 컨텍스트 사용량이나 사용자 지정 provider 값은 계정 한도로 표시하지 않습니다.
 
-- 작업 시작/응답 작성 → 펫이 살펴보기 모션으로 바뀜. Codex rollout에 확인된 Sol/Terra/Luna 모델 정보가 있으면 제목에 표시됩니다. 동시 대화는 공급자를 합쳐 시작 순서대로 최대 5개를 보여 주며, 각 제목 바로 아래에 해당 대화 내용이 표시됩니다.
-- 파일 수정, 명령, 테스트, 빌드 → 작업 중 모션과 현재 상태가 말풍선에 표시됨
-- Codex 사용자 입력 또는 실행 승인 대기 → 기다리기 모션으로 바뀜. 말풍선을 클릭하면 해당 Codex 대화를 바로 열 수 있음(세션 로그에 구조화 이벤트가 있을 때)
-- 작업 완료 → 폴짝 뛰고 마지막 메시지를 표시함. 완료 말풍선을 클릭하면 해당 Codex 채팅으로 이동함
-- 작업 중단 → 쓰러짐
-- 말풍선은 콘텐츠와 현재 화면 크기에 맞춰 자동으로 폭을 조절하며, 긴 메시지는 제한된 최대 폭 안에서 줄바꿈합니다.
+### 개인정보 표시 수준
 
-세션 여러 개를 동시에 돌려도 각각 추적하고, 완료 이벤트가 없는 작업은 공급자별 quiet-time 또는 stale 처리 뒤 원래 상태로 돌아옵니다.
+설정의 `일반` 화면에서 활동 말풍선의 정보량을 고를 수 있습니다.
 
-- CLI 활동 제목은 자동 세션 제목 대신 프로젝트 폴더명을 사용합니다.
-- 관리형 Kimi Code 로그인에서는 작업 중 첫 Kimi 섹션에 `5h`·`7d` 남은 사용량을 표시합니다. 사용자 지정 provider와 컨텍스트 사용량은 표시하지 않습니다.
+| 모드 | 표시 내용 |
+|---|---|
+| 전체 내용 | 요청, 보이는 응답, 파일명과 명령 |
+| 상태만 | 작업 중, 테스트 중, 승인 대기 같은 상태 |
+| 끄기 | 자동 작업 말풍선 숨김, 펫 모션은 유지 |
 
-말풍선 개인정보 수준은 설정의 `일반` 화면에서 선택합니다.
+내부 추론 내용과 서브에이전트 메시지는 말풍선에 노출하지 않습니다.
 
-- "전체 내용" — 요청, 중간 메시지, 파일명과 명령을 표시
-- "상태만" — 작업 중, 테스트 중, 승인 대기 같은 상태만 표시
-- "끄기" — 자동 작업 말풍선만 끔. 펫 모션은 그대로 동작
+### 화면과 움직임
 
-### 화면 설정
-
-설정의 `일반` 화면에서 말풍선 배경색과 글자색을 직접 고를 수 있습니다. 글자색은 본문뿐 아니라 모델명과 작업 상태 제목에도 함께 적용됩니다. 설치된 시스템 글꼴(Windows 레지스트리 / macOS 폰트 폴더)을 검색하고 선택하면 설정 창과 말풍선에 함께 적용됩니다.
-
-### 펫 바꾸기
-
-우클릭 → "펫 바꾸기"에서 고르면 즉시 바뀌고, 선택은 다음 실행 때도 유지됩니다. 목록에 나오는 순서는:
-
-1. exe 옆 `pet/spritesheet.webp` — 직접 만든 스프라이트를 쓰고 싶을 때
-2. `~/.codex/pets`에 설치된 펫들 — Codex에서 펫을 추가하면 여기에도 자동으로 나타남
-3. 내장 기본 펫
+- 말풍선 배경색·글자색과 설치된 시스템 글꼴 선택
+- 펫 드래그 이동과 좌상단 핸들을 이용한 크기 조절
+- 화면이 바뀌어도 저장된 위치와 크기를 현재 작업 영역 안으로 복원
+- 마우스 따라가기와 2차원 자동 배회
+- 이동 일시 정지와 마우스 따라가기 설정 영구 저장
+- macOS·Windows 로그인 시 자동 실행
 
 ## 조작법
 
 | 동작 | 반응 |
 |---|---|
 | 클릭 | 인사 |
-| 더블클릭 | 점프 + 설정의 한도 화면 열기 |
-| 드래그 | 창 이동 |
-| 드래그 종료 / 크기 조절 종료 | 현재 위치와 크기를 저장하고, 다음 실행 때 현재 화면 안에서 복원 |
-| 우클릭 | 메뉴 (설정, 계정, 펫 바꾸기, 모션, 일시정지, 마우스 따라가기, 자동 실행, 숨기기 등) |
-| 시스템 트레이 | 설정, 보이기, 숨기기, 계정, 펫 바꾸기, 완전 종료 |
-| 완료·입력 대기·승인 대기 말풍선 클릭 | 해당 Codex 채팅 열기 |
-| 그 외 말풍선 클릭 | 닫기 |
+| 더블클릭 | 점프 후 계정별 한도 열기 |
+| 드래그 | 펫 이동 |
+| 좌상단 크기 핸들 드래그 | 화면 끝에서도 우하단 기준으로 크기 조절 |
+| 우클릭 | 설정, 계정, 펫, 모션, 이동, 자동 실행, 숨기기 메뉴 |
+| 시스템 트레이 | 설정, 보이기·숨기기, 계정, 펫, 완전 종료 |
+| 완료·입력 대기·승인 대기 말풍선 클릭 | 지원되는 Codex 작업 열기 |
+| 그 외 말풍선 클릭 | 말풍선 닫기 |
 
-우클릭 메뉴의 "숨기기"는 창만 감추고 앱은 시스템 트레이에 남깁니다. 완전히 끄려면 시스템 트레이 아이콘을 우클릭해서 "완전 종료"를 누르면 됩니다.
+`숨기기`는 창만 감추고 CodePet을 시스템 트레이에 남깁니다. 앱을 끄려면 트레이 메뉴의 `완전 종료`를 선택하세요.
 
-`이동 일시 정지`와 `마우스 따라가기` 상태는 설정 파일에 저장되므로 앱을 다시 실행하거나 재부팅해도 유지됩니다.
+<details>
+<summary><strong>계정 추가·전환·삭제 자세히 보기</strong></summary>
 
-우클릭 메뉴의 "로그인 시 자동 실행"을 켜면 로그인할 때 같이 뜹니다.
+우클릭 메뉴와 시스템 트레이는 Codex·AGY·Claude에 같은 계정 메뉴 구조를 제공합니다. 계정 삭제는 `설정…`의 `계정` 화면에서 수행하며, 현재 사용 중인 프로필은 다른 계정으로 전환한 뒤 삭제할 수 있습니다.
 
-## 커스텀 스프라이트 만들기
+- **Codex**: 프로필별 인증 정보를 저장합니다. 기본값인 `Codex 재시작 없는 전환 (프록시)`는 `127.0.0.1` 로컬 프록시가 요청마다 인증 헤더를 적용하고, 한도 소진 시 다음 계정으로 자동 로테이션합니다. 설정을 켜거나 끌 때 `~/.codex/config.toml`의 `# codepet-codex-proxy` 블록을 관리합니다. 최초 활성화 직후 이미 실행 중인 Codex는 한 번 재시작해야 할 수 있습니다.
+- **AGY**: Windows 자격 증명 관리자 또는 macOS Keychain의 현재 자격 증명을 프로필로 저장하고, 선택한 계정으로 전환한 뒤 AGY를 다시 시작합니다.
+- **Claude**: 현재 자격 파일과 `claude auth status`의 이메일을 프로필로 저장합니다. 이미 열린 세션은 유지되고 새 세션부터 선택한 계정을 사용합니다.
 
-Codex 펫 스프라이트 규격을 그대로 따르며 v1과 v2를 모두 자동 인식합니다.
+프로필은 `~/.codepet/codex-switch`, `~/.codepet/antigravity-switch`, `~/.codepet/claude-switch`에 저장됩니다. 설정 화면에는 비밀 값이 노출되지 않습니다.
 
-- v1: 전체 크기 1536x1872, 셀 192x208의 8열 x 9행 그리드
-- v2: 전체 크기 1536x2288, 셀 192x208의 8열 x 11행 그리드
-- row가 상태, column이 프레임
+강제 종료 후 Codex 연결이 막히면 CodePet을 다시 실행해 stale 프록시 마커를 정리하세요. 필요하면 `~/.codex/config.toml`에서 `# codepet-codex-proxy` 블록을 제거할 수 있습니다.
 
-| row | 상태 | v1 프레임 수 | v2 프레임 수 |
+</details>
+
+## 펫 꾸미기
+
+우클릭 메뉴의 `펫 바꾸기`에서 다음 순서로 펫을 찾습니다.
+
+1. 실행 파일 옆 `pet/spritesheet.webp`
+2. Codex CLI가 설치한 `~/.codex/pets`의 펫
+3. CodePet 내장 기본 펫
+
+선택한 펫은 다음 실행에도 유지됩니다.
+
+<details>
+<summary><strong>커스텀 스프라이트 규격</strong></summary>
+
+CodePet은 Codex 펫 스프라이트 v1과 v2를 자동 인식합니다.
+
+| 버전 | 전체 크기 | 셀 크기 | 그리드 |
+|---|---:|---:|---:|
+| v1 | 1536×1872 | 192×208 | 8열 × 9행 |
+| v2 | 1536×2288 | 192×208 | 8열 × 11행 |
+
+| row | 상태 | v1 프레임 | v2 프레임 |
 |---:|---|---:|---:|
 | 0 | idle | 6 | 6 |
 | 1 | runningRight | 8 | 8 |
@@ -122,23 +185,59 @@ Codex 펫 스프라이트 규격을 그대로 따르며 v1과 v2를 모두 자�
 | 6 | waiting | 8 | 6 |
 | 7 | running | 8 | 6 |
 | 8 | review | 8 | 6 |
-| 9 | look directions A | - | 8 |
-| 10 | look directions B | - | 8 |
+| 9 | look directions A | — | 8 |
+| 10 | look directions B | — | 8 |
 
-v2의 row 9~10에는 시계 방향의 시선 방향 16개가 들어갑니다. 현재 CodePet은 row 0~8의 기본 애니메이션을 재생하고 row 9~10은 시트를 올바르게 자르기 위한 v2 레이아웃으로 인식합니다.
+v2의 row 9~10은 시계 방향 시선 16개입니다. 현재 CodePet은 row 0~8의 기본 애니메이션을 재생하고, row 9~10은 v2 시트 판별과 올바른 셀 분할에 사용합니다.
 
-이미지 크기가 정상 규격이면 높이로 9행/11행을 자동 판별합니다. 이미지 비율을 판별할 수 없을 때는 같은 폴더의 `pet.json`에 있는 `spriteVersionNumber`를 fallback으로 사용합니다.
+이미지 높이로 9행·11행을 우선 판별하고, 비율을 확인할 수 없으면 같은 폴더의 `pet.json`에 있는 `spriteVersionNumber`를 사용합니다. 완성한 `spritesheet.webp`를 실행 파일 옆 `pet/` 폴더에 넣으면 `커스텀` 항목으로 나타납니다.
 
-이 규격으로 만든 `spritesheet.webp`를 exe 옆 `pet/` 폴더에 넣으면 메뉴에 "커스텀"으로 나타납니다.
+</details>
 
-## 코드 구조
+## 개발과 빌드
 
-- `src/main.js` — 창 관리, 이동 로직, 메뉴, 말풍선 제어. 이동 속도나 말풍선 크기 같은 값은 상단의 `MOVEMENT_CONFIG`, `BUBBLE_CONFIG`에 모여 있음
-- `src/codex-watcher.js`, `antigravity-watcher.js`, `claude-watcher.js`, `kimi-watcher.js` — 네 프로그램의 로컬 작업 로그 감시
-- `src/codex-account-switcher.js`, `antigravity-account-switcher.js`, `claude-account-switcher.js` — 공급자별 계정 저장/전환/삭제
-- `src/account-submenu.js` — Codex·AGY·Claude 공통 계정 메뉴 구성
-- `src/codex-usage-label.js` — Codex 서버 한도 기간과 모델 범위에 맞는 표시 이름 생성
-- `src/provider-usage.js` — AGY·Claude 한도 조회 및 정규화
-- `src/settings.html` / `settings.js` — 설정, 계정, 한도 화면
-- `src/renderer.js` — 스프라이트 애니메이션 재생. 상태 정의는 `PET_STATES`
-- `src/bubble.html` / `bubble.js` — 통합 작업 말풍선
+### 명령
+
+```bash
+npm run dev  # 개발 실행
+npm test     # 전체 로컬 테스트
+npm run dist # 현재 운영체제용 패키지
+```
+
+DevTools가 필요하면 환경변수를 설정한 뒤 개발 모드로 실행합니다.
+
+```bash
+PET_DEVTOOLS=1 npm run dev # macOS / Linux shell
+```
+
+```powershell
+$env:PET_DEVTOOLS="1"
+npm run dev
+```
+
+GitHub Actions는 사용하지 않습니다. 변경 검증 기준은 로컬 `npm test`입니다.
+
+<details>
+<summary><strong>코드 구조</strong></summary>
+
+- `src/main.js` — Electron 창, 메뉴, 이동, 계정·말풍선 수명주기
+- `src/codex-watcher.js` — Codex Desktop·CLI 세션 감시
+- `src/antigravity-watcher.js` — Google Antigravity transcript 감시
+- `src/claude-watcher.js` — Claude Code 프로젝트 로그 감시
+- `src/kimi-watcher.js` — Kimi Code CLI 세션·활동 감시
+- `src/activity-bubble-state.js` — 공급자별 동시 작업과 표시 상태 집계
+- `src/bubble-window-geometry.js` — 콘텐츠·화면 기반 말풍선 크기와 배치
+- `src/codex-account-switcher.js`, `src/antigravity-account-switcher.js`, `src/claude-account-switcher.js` — 계정 프로필 저장·전환
+- `src/kimi-usage-client.js`, `src/provider-usage.js` — 공급자 사용량 조회·정규화
+- `src/settings.html`, `src/settings.js`, `src/settings.css` — 설정과 계정별 한도 UI
+- `src/renderer.js` — 펫 스프라이트 애니메이션
+- `src/bubble.html`, `src/bubble.js`, `src/bubble.css` — 통합 작업 말풍선
+- `test/` — Node 내장 test runner 기반 회귀 테스트
+
+</details>
+
+---
+
+<div align="center">
+  <sub>CodePet은 각 도구의 로컬 파일 형식과 인증 상태에 의존합니다. 공급자 업데이트로 형식이 바뀌면 일부 감지가 일시적으로 제한될 수 있습니다.</sub>
+</div>

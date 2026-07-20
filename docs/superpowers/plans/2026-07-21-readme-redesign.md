@@ -29,11 +29,11 @@
 - Consumes: 기존 CodePet 캐릭터의 검은 머리, 흰 뿔, 데스크톱 펫 인상
 - Produces: README 상단에서 상대 경로로 사용할 16:6 비율 PNG
 
-- [ ] **Step 1: 배너 생성**
+- [x] **Step 1: 배너 생성**
 
 내장 이미지 생성 도구로 어두운 데스크톱 작업 공간, 중앙 CodePet 캐릭터, 주변 상태 말풍선과 청록·파랑·보라 계열 빛을 가진 가로 일러스트를 생성한다. 이미지 내부 텍스트·로고·워터마크는 금지한다.
 
-- [ ] **Step 2: 자산 저장**
+- [x] **Step 2: 자산 저장**
 
 선택한 결과를 다음 경로에 저장한다.
 
@@ -41,7 +41,7 @@
 docs/assets/codepet-readme-hero.png
 ```
 
-- [ ] **Step 3: 시각 검증**
+- [x] **Step 3: 시각 검증**
 
 이미지를 열어 캐릭터 훼손, 잘린 요소, 생성형 텍스트, 워터마크가 없는지 확인한다. 가로 배너로 읽히지 않으면 한 번만 목적에 맞게 재생성한다.
 
@@ -55,7 +55,7 @@ docs/assets/codepet-readme-hero.png
 - Consumes: `package.json`의 `start`, `dev`, `test`, `dist` 명령과 현재 provider별 기능
 - Produces: GitHub 첫 화면에서 렌더링되는 사용자 중심 문서
 
-- [ ] **Step 1: 상단 제품 소개 작성**
+- [x] **Step 1: 상단 제품 소개 작성**
 
 다음 순서로 상단을 만든다.
 
@@ -63,15 +63,15 @@ docs/assets/codepet-readme-hero.png
 배너 → CodePet 제목 → 한 줄 설명 → macOS/Windows/Electron/Local-first 배지 → 빠른 시작
 ```
 
-- [ ] **Step 2: 핵심 기능과 지원 범위 작성**
+- [x] **Step 2: 핵심 기능과 지원 범위 작성**
 
 네 provider 동시 감시, 반응형 상태 말풍선, 계정별 사용량, 펫 커스터마이징을 짧은 섹션으로 설명한다. Kimi 관리형 사용량과 계정 전환 제외 경계를 명시한다.
 
-- [ ] **Step 3: 상세 문서 정리**
+- [x] **Step 3: 상세 문서 정리**
 
 조작법은 표로 유지한다. 계정 전환, 개인정보 모드, 커스텀 스프라이트, 코드 구조는 `<details>` 블록으로 접어 첫 화면 길이를 줄인다.
 
-- [ ] **Step 4: 문서 정확성 검사**
+- [x] **Step 4: 문서 정확성 검사**
 
 ```bash
 node -e "const p=require('./package.json'); for (const name of ['start','dev','test','dist']) { if (!p.scripts[name]) throw new Error(name) }"
@@ -82,7 +82,7 @@ git diff --check
 
 Expected: 모든 명령 종료 코드 `0`, 끊어진 핵심 명령·provider 표기 없음.
 
-- [ ] **Step 5: 전체 회귀 검사**
+- [x] **Step 5: 전체 회귀 검사**
 
 Run:
 
