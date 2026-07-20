@@ -16,7 +16,11 @@ contextBridge.exposeInMainWorld("bubbleApi", {
     ipcRenderer.on(BUBBLE_CHANNELS.UPDATE, listener);
     return () => ipcRenderer.removeListener(BUBBLE_CHANNELS.UPDATE, listener);
   },
-  // 렌더링 후 실제 내용 높이를 main에 알려 창 크기를 맞춥니다.
+  // 렌더링 후 콘텐츠 크기를 main에 알려 창 크기를 맞춥니다.
+  reportSize: (size) => {
+    ipcRenderer.send(BUBBLE_CHANNELS.RESIZE, size);
+  },
+  // 이전 renderer와의 호환성을 위해 높이 전용 API를 유지합니다.
   reportHeight: (height) => {
     ipcRenderer.send(BUBBLE_CHANNELS.RESIZE, height);
   },

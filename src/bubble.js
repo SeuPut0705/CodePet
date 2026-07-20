@@ -4,6 +4,26 @@
 // XSS를 피하려고 innerHTML 대신 DOM API + textContent만 사용합니다.
 const bubbleElement = document.querySelector("#bubble");
 let currentBubbleData = null;
+let lastReportedSize = null;
+
+function measureBubbleSize() {
+  const root = document.querySelector("#root");
+  bubbleElement.classList.add("measure-width");
+  const width = Math.ceil(bubbleElement.scrollWidth + 10);
+  bubbleElement.classList.remove("measure-width");
+  return { width, height: Math.ceil(root.offsetHeight) };
+}
+
+function reportBubbleSize() {
+  const size = measureBubbleSize();
+  if (
+    lastReportedSize?.width === size.width &&
+    lastReportedSize?.height === size.height
+  ) return;
+  lastReportedSize = size;
+  window.bubbleApi.reportSize(size);
+}
+
 window.bubbleApi.onAppearance((appearance) => {
   const root = document.documentElement;
   if (appearance?.fontFamily) {
@@ -274,11 +294,13 @@ window.bubbleApi.onUpdate((data) => {
     renderActivity(data);
   }
 
-  // offsetHeight를 읽으면 그 자리에서 동기 layout이 일어나므로 바로 측정해서 보냅니다.
+  // scrollWidth와 offsetHeight를 읽으면 그 자리에서 동기 layout이 일어나므로 바로 측정해서 보냅니다.
   // 주의: requestAnimationFrame을 쓰면 안 됩니다. 숨겨진 창에서는 rAF 콜백이 실행되지 않아서
-  // 높이 보고가 누락되고, main은 보고를 받아야 창을 표시하므로 말풍선이 다시 열리지 않습니다.
-  window.bubbleApi.reportHeight(document.querySelector("#root").offsetHeight);
+  // 크기 보고가 누락되고, main은 보고를 받아야 창을 표시하므로 말풍선이 다시 열리지 않습니다.
+  reportBubbleSize();
 });
+
+window.addEventListener("resize", reportBubbleSize);
 
 bubbleElement.addEventListener("click", () => {
   if (currentBubbleData?.primaryAction?.id) {

@@ -37,9 +37,11 @@ class FakeRendererElement {
       setProperty() {},
       removeProperty() {},
     };
+    this.scrollWidth = 0;
     this.offsetHeight = 100;
     this.classList = {
       add: (...tokens) => this.updateClassList(tokens, true),
+      remove: (...tokens) => this.updateClassList(tokens, false),
       toggle: (token, force) => this.updateClassList([token], Boolean(force)),
     };
   }
@@ -78,7 +80,7 @@ class FakeRendererElement {
   addEventListener() {}
 }
 
-function renderBubble(data) {
+function createBubbleHarness({ reportSize = () => {} } = {}) {
   const bubble = new FakeRendererElement("div");
   const root = new FakeRendererElement("div");
   const documentRef = {
@@ -99,12 +101,19 @@ function renderBubble(data) {
     },
   };
   let updateHandler = null;
+  let resizeHandler = null;
   const windowRef = {
     activityIcons,
+    addEventListener(eventName, handler) {
+      if (eventName === "resize") resizeHandler = handler;
+    },
     bubbleApi: {
       onAppearance() {},
       onUpdate(handler) {
         updateHandler = handler;
+      },
+      reportSize(size) {
+        reportSize({ width: size.width, height: size.height });
       },
       reportHeight() {},
       sendAction() {},
@@ -113,8 +122,22 @@ function renderBubble(data) {
   };
 
   vm.runInNewContext(bubbleJs, { document: documentRef, window: windowRef });
-  updateHandler(data);
-  return bubble;
+  return {
+    bubble,
+    root,
+    update(data) {
+      updateHandler(data);
+    },
+    fireWindowResize() {
+      resizeHandler?.();
+    },
+  };
+}
+
+function renderBubble(data) {
+  const harness = createBubbleHarness();
+  harness.update(data);
+  return harness.bubble;
 }
 
 function childWithClass(element, className) {
@@ -132,6 +155,46 @@ function descendantWithClass(element, className) {
 
 test("외부 provider 완료 메시지도 공통 말풍선 정리와 길이 제한을 거친다", () => {
   assert.match(mainJs, /text: truncateForBubble\(result\.message\)/);
+});
+
+test("말풍선 renderer는 콘텐츠 선호 폭과 현재 높이를 함께 보고한다", () => {
+  const reports = [];
+  const { bubble, root, update } = createBubbleHarness({
+    reportSize: (size) => reports.push(size),
+  });
+  bubble.scrollWidth = 402;
+  root.offsetHeight = 126;
+
+  update({ kind: "activity", title: "CodePet · Sol · Medium", text: "작업 중" });
+
+  assert.deepEqual(reports.at(-1), { width: 412, height: 126 });
+});
+
+test("같은 크기는 중복 보고하지 않고 window resize에서 높이를 다시 측정한다", () => {
+  const reports = [];
+  const harness = createBubbleHarness({ reportSize: (size) => reports.push(size) });
+  harness.bubble.scrollWidth = 310;
+  harness.root.offsetHeight = 100;
+  harness.update({ kind: "activity", title: "짧은 작업", text: "내용" });
+  harness.update({ kind: "activity", title: "짧은 작업", text: "내용" });
+  assert.equal(reports.length, 1);
+
+  harness.root.offsetHeight = 84;
+  harness.fireWindowResize();
+  assert.deepEqual(reports.at(-1), { width: 320, height: 84 });
+});
+
+test("본문은 줄바꿈하고 제목과 사용량 배지는 한 줄 계약을 유지한다", () => {
+  const measurementRule = bubbleCss.match(/\.bubble\.measure-width\s*\{[^}]*}/s)?.[0] || "";
+  const bodyRule = bubbleCss.match(/\.body-text,[\s\S]*?\}/)?.[0] || "";
+  const titleRule = bubbleCss.match(/\.activity-title-text\s*\{[^}]*}/s)?.[0] || "";
+  const usageRule = bubbleCss.match(/\.activity-usage-badges\s*\{[^}]*}/s)?.[0] || "";
+  assert.match(measurementRule, /width:\s*max-content/);
+  assert.match(measurementRule, /max-width:\s*none/);
+  assert.match(bodyRule, /white-space:\s*pre-wrap/);
+  assert.match(bodyRule, /word-break:\s*break-word/);
+  assert.match(titleRule, /text-overflow:\s*ellipsis/);
+  assert.match(usageRule, /white-space:\s*nowrap/);
 });
 
 test("활동 아이콘은 SVG 모듈과 접근성 제목으로 렌더링한다", () => {

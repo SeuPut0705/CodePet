@@ -53,6 +53,12 @@ body {
   scrollbar-width: none;
 }
 
+.bubble.measure-width {
+  position: absolute;
+  width: max-content;
+  max-width: none;
+}
+
 .bubble::-webkit-scrollbar {
   display: none;
 }
@@ -229,6 +235,10 @@ body {
   color: var(--bubble-ink);
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+.body-text {
+  overflow-wrap: anywhere;
 }
 
 .activity-section + .activity-section {
