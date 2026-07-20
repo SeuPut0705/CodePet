@@ -86,6 +86,7 @@ function appendSubagentBadge(element, count) {
 
   const badge = document.createElement("span");
   badge.className = "subagent-badge";
+  badge.setAttribute("role", "img");
   badge.setAttribute("aria-label", `활성 서브에이전트 ${count}개`);
   const icon = window.activityIcons.createActivityIcon(document, "agents");
   if (icon) badge.appendChild(icon);

@@ -703,6 +703,7 @@ test("evicted wire가 삭제·재생성되면 새 identity의 기존 내용은 �
     input: [{ type: "text", text: "새 inode의 발견 후 append" }],
     time: 3,
   });
+  fs.utimesSync(replacement.wire, Date.now() / 1000 + 15, Date.now() / 1000 + 15);
   watcher.poll();
   assert.deepEqual(messages, ["새 inode의 발견 후 append"]);
 });
@@ -727,6 +728,165 @@ test("evicted wire checkpoint는 장기 실행에서도 설정된 상한을 넘�
   }
 
   assert.equal(watcher.evictedCheckpoints.size, 2);
+});
+
+test("checkpoint 상한에서 축출된 옛 wire는 재진입 시 과거를 재생하지 않고 다음 append부터 읽는다", (t) => {
+  const root = tempDir(t);
+  const old = sessionFixture(root, "session_oldest", "/work/oldest");
+  append(old.wire, {
+    type: "turn.prompt",
+    origin: { kind: "user" },
+    input: [{ type: "text", text: "절대 재생하면 안 되는 과거" }],
+    time: 1,
+  });
+  fs.utimesSync(old.wire, 1, 1);
+  const watcher = new KimiWatcher({
+    roots: [root],
+    homeDir: root,
+    sessionLimit: 1,
+    checkpointLimit: 1,
+    quietMs: 60_000,
+  });
+  const messages = [];
+  watcher.on("user-message", (message) => messages.push(message));
+  watcher.seed();
+
+  for (let index = 1; index <= 2; index += 1) {
+    const fixture = sessionFixture(root, `session_recent_${index}`, `/work/recent-${index}`);
+    fs.utimesSync(fixture.wire, index + 1, index + 1);
+    watcher.poll();
+  }
+  assert.equal(watcher.evictedCheckpoints.has(old.wire), false);
+
+  append(old.wire, {
+    type: "turn.prompt",
+    origin: { kind: "user" },
+    input: [{ type: "text", text: "checkpoint 없이 재진입시킨 append" }],
+    time: 2,
+  });
+  fs.utimesSync(old.wire, Date.now() / 1000 + 10, Date.now() / 1000 + 10);
+  watcher.poll();
+  assert.deepEqual(messages, []);
+
+  append(old.wire, {
+    type: "turn.prompt",
+    origin: { kind: "user" },
+    input: [{ type: "text", text: "fail-safe EOF 뒤 실시간 append" }],
+    time: 3,
+  });
+  watcher.poll();
+  assert.deepEqual(messages, ["fail-safe EOF 뒤 실시간 append"]);
+});
+
+test("watcher 시작 후 처음 발견한 신규 wire는 첫 실시간 이벤트부터 읽는다", (t) => {
+  const root = tempDir(t);
+  const watcher = new KimiWatcher({ roots: [root], homeDir: root, sessionLimit: 1, quietMs: 60_000 });
+  const messages = [];
+  watcher.on("user-message", (message) => messages.push(message));
+  watcher.seed();
+
+  const fresh = sessionFixture(root, "session_fresh_live", "/work/fresh-live");
+  append(fresh.wire, {
+    type: "turn.prompt",
+    origin: { kind: "user" },
+    input: [{ type: "text", text: "watcher 시작 뒤 첫 요청" }],
+    time: 1,
+  });
+  watcher.poll();
+
+  assert.deepEqual(messages, ["watcher 시작 뒤 첫 요청"]);
+});
+
+test("eviction checkpoint는 처리 offset과 partial JSONL을 복원해 완성 append를 한 번 발행한다", (t) => {
+  const root = tempDir(t);
+  const old = sessionFixture(root, "session_partial", "/work/partial");
+  fs.utimesSync(old.wire, 1, 1);
+  const watcher = new KimiWatcher({ roots: [root], homeDir: root, sessionLimit: 1, quietMs: 60_000 });
+  const messages = [];
+  watcher.on("user-message", (message) => messages.push(message));
+  watcher.seed();
+
+  const completeLine = JSON.stringify({
+    type: "turn.prompt",
+    origin: { kind: "user" },
+    input: [{ type: "text", text: "두 조각이 합쳐진 요청" }],
+    time: 1,
+  });
+  const splitAt = Math.floor(completeLine.length / 2);
+  fs.appendFileSync(old.wire, completeLine.slice(0, splitAt));
+  watcher.poll();
+  assert.deepEqual(messages, []);
+  assert.ok(watcher.buffers.get(old.wire)?.length > 0);
+
+  const recent = sessionFixture(root, "session_recent_partial", "/work/recent");
+  fs.utimesSync(recent.wire, Date.now() / 1000 + 5, Date.now() / 1000 + 5);
+  watcher.poll();
+  assert.equal(watcher.offsets.has(old.wire), false);
+
+  fs.appendFileSync(old.wire, `${completeLine.slice(splitAt)}\n`);
+  fs.utimesSync(old.wire, Date.now() / 1000 + 10, Date.now() / 1000 + 10);
+  watcher.poll();
+
+  assert.deepEqual(messages, ["두 조각이 합쳐진 요청"]);
+  watcher.poll();
+  assert.deepEqual(messages, ["두 조각이 합쳐진 요청"]);
+});
+
+test("eviction identity stat 실패 뒤 재진입도 offset 0 과거 replay 없이 fail-safe EOF를 쓴다", (t) => {
+  const root = tempDir(t);
+  const old = sessionFixture(root, "session_stat_failure", "/work/stat-failure");
+  append(old.wire, {
+    type: "turn.prompt",
+    origin: { kind: "user" },
+    input: [{ type: "text", text: "stat 실패 전에 있던 과거" }],
+    time: 1,
+  });
+  fs.utimesSync(old.wire, 1, 1);
+  const watcher = new KimiWatcher({ roots: [root], homeDir: root, sessionLimit: 1, quietMs: 60_000 });
+  const messages = [];
+  watcher.on("user-message", (message) => messages.push(message));
+  watcher.seed();
+
+  const recent = sessionFixture(root, "session_recent_stat", "/work/recent-stat");
+  fs.utimesSync(recent.wire, Date.now() / 1000 + 5, Date.now() / 1000 + 5);
+  const originalStatSync = fs.statSync;
+  let oldStatCalls = 0;
+  fs.statSync = (target, ...args) => {
+    if (target === old.wire) {
+      oldStatCalls += 1;
+      if (oldStatCalls === 2) {
+        throw Object.assign(new Error("eviction stat failed"), { code: "EIO" });
+      }
+    }
+    return originalStatSync(target, ...args);
+  };
+  try {
+    watcher.poll();
+  } finally {
+    fs.statSync = originalStatSync;
+  }
+  assert.equal(watcher.offsets.has(old.wire), false);
+  assert.equal(watcher.evictedCheckpoints.has(old.wire), false);
+
+  append(old.wire, {
+    type: "turn.prompt",
+    origin: { kind: "user" },
+    input: [{ type: "text", text: "stat 실패 뒤 재진입 append" }],
+    time: 2,
+  });
+  fs.utimesSync(old.wire, Date.now() / 1000 + 10, Date.now() / 1000 + 10);
+  watcher.poll();
+  assert.deepEqual(messages, []);
+
+  append(old.wire, {
+    type: "turn.prompt",
+    origin: { kind: "user" },
+    input: [{ type: "text", text: "fail-safe 뒤 새 append" }],
+    time: 3,
+  });
+  fs.utimesSync(old.wire, Date.now() / 1000 + 15, Date.now() / 1000 + 15);
+  watcher.poll();
+  assert.deepEqual(messages, ["fail-safe 뒤 새 append"]);
 });
 
 test("KimiWatcher는 사라진 file의 offset·buffer·metadata cache를 다음 poll에서 정리한다", (t) => {

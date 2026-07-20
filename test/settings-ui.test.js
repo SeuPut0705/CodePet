@@ -406,6 +406,8 @@ test("양의 안전한 정수인 서브에이전트 수만 제목 옆 DOM 배지
   assert.match(badgeRenderer, /count <= 0/);
   assert.match(badgeRenderer, /document\.createElement\("span"\)/);
   assert.match(badgeRenderer, /badge\.className = "subagent-badge"/);
+  assert.match(badgeRenderer, /badge\.setAttribute\("role", "img"\)/);
+  assert.match(badgeRenderer, /badge\.setAttribute\("aria-label", `활성 서브에이전트 \$\{count\}개`\)/);
   assert.match(badgeRenderer, /createActivityIcon\(document, "agents"\)/);
   assert.match(badgeRenderer, /value\.className = "subagent-count"/);
   assert.match(badgeRenderer, /value\.textContent = `×\$\{count\}`/);
@@ -434,6 +436,7 @@ test("단일·다중 활동 제목을 축소 가능한 span으로 감싸고 배�
   );
   assert.equal(singleTitle.children[1].textContent, "아주 긴 단일 작업 제목");
   assert.equal(singleTitle.children[1].attributes["aria-label"], "접근성 단일 제목");
+  assert.equal(singleTitle.children[2].attributes.role, "img");
   assert.equal(singleTitle.children[2].attributes["aria-label"], "활성 서브에이전트 2개");
   assert.equal(childWithClass(singleTitle.children[2], "subagent-count").textContent, "×2");
 
@@ -457,6 +460,7 @@ test("단일·다중 활동 제목을 축소 가능한 span으로 감싸고 배�
   );
   assert.equal(sectionLabel.children[1].textContent, "아주 긴 다중 작업 제목");
   assert.equal(sectionLabel.children[1].attributes["aria-label"], "접근성 다중 제목");
+  assert.equal(sectionLabel.children[2].attributes.role, "img");
   assert.equal(sectionLabel.children[2].attributes["aria-label"], "활성 서브에이전트 3개");
   assert.equal(childWithClass(sectionLabel.children[2], "subagent-count").textContent, "×3");
 });

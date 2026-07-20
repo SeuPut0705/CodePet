@@ -19,6 +19,8 @@ const KIMI_POLL_MS = 1800;
 const KIMI_QUIET_MS = 5 * 60 * 1000;
 const KIMI_SESSION_LIMIT = 20;
 const KIMI_CHECKPOINT_LIMIT = 80;
+const KIMI_SEEN_PATH_FILTER_BYTES = 4096;
+const KIMI_SEEN_PATH_HASHES = 4;
 
 const READ_TOOLS = new Set(["Read", "ReadMediaFile"]);
 const SEARCH_TOOLS = new Set(["Glob", "Grep"]);
@@ -331,6 +333,10 @@ class KimiWatcher extends ExternalWatcher {
     this.metadataCache = new Map();
     this.evictedCheckpoints = new Map();
     this.checkpointLimit = checkpointLimit;
+    // 정확한 checkpoint가 LRU에서 빠진 뒤에도 과거 replay는 막아야 합니다.
+    // 고정 크기 Bloom filter의 false positive는 신규 파일을 EOF로 시작하게 할 수 있지만,
+    // false negative로 이미 본 파일을 offset 0에서 재생하는 일은 만들지 않습니다.
+    this.seenFilePaths = Buffer.alloc(KIMI_SEEN_PATH_FILTER_BYTES);
     this.homeDir = homeDir;
     this.configFile = path.join(this.homeDir, "config.toml");
     this.env = env;
@@ -388,11 +394,15 @@ class KimiWatcher extends ExternalWatcher {
   rememberEvictedCheckpoint(file) {
     try {
       const stat = fs.statSync(file);
+      const offset = this.offsets.get(file);
+      if (!Number.isSafeInteger(offset) || offset < 0) return;
+      const remainder = this.buffers.get(file);
       this.evictedCheckpoints.delete(file);
       this.evictedCheckpoints.set(file, {
         dev: stat.dev,
         ino: stat.ino,
-        offset: stat.size,
+        offset,
+        remainder: remainder?.length ? Buffer.from(remainder) : null,
       });
       while (this.evictedCheckpoints.size > this.checkpointLimit) {
         this.evictedCheckpoints.delete(this.evictedCheckpoints.keys().next().value);
@@ -406,17 +416,48 @@ class KimiWatcher extends ExternalWatcher {
     for (const file of files) {
       if (this.offsets.has(file)) continue;
       const checkpoint = this.evictedCheckpoints.get(file);
-      if (!checkpoint) continue;
-      try {
-        const stat = fs.statSync(file);
-        const sameFile = stat.dev === checkpoint.dev && stat.ino === checkpoint.ino;
-        this.offsets.set(file, sameFile && stat.size >= checkpoint.offset
-          ? checkpoint.offset
-          : stat.size);
-      } catch {
-        // 재발견과 stat 사이에 사라진 파일은 다음 poll에서 처리합니다.
+      const wasSeen = this.hasSeenFilePath(file);
+      if (checkpoint || wasSeen) {
+        try {
+          const stat = fs.statSync(file);
+          const sameFile = checkpoint && stat.dev === checkpoint.dev && stat.ino === checkpoint.ino;
+          if (sameFile && stat.size >= checkpoint.offset) {
+            this.offsets.set(file, checkpoint.offset);
+            if (checkpoint.remainder?.length) {
+              this.buffers.set(file, Buffer.from(checkpoint.remainder));
+            } else {
+              this.buffers.delete(file);
+            }
+          } else {
+            this.offsets.set(file, stat.size);
+            this.buffers.delete(file);
+          }
+        } catch {
+          // 재발견과 stat 사이에 사라진 파일은 다음 poll에서 처리합니다.
+        }
       }
       this.evictedCheckpoints.delete(file);
+      this.rememberSeenFilePath(file);
+    }
+  }
+
+  seenPathIndexes(file) {
+    const digest = crypto.createHash("sha256").update(file).digest();
+    const bitCount = this.seenFilePaths.length * 8;
+    return Array.from({ length: KIMI_SEEN_PATH_HASHES }, (_, index) => (
+      digest.readUInt32BE(index * 4) % bitCount
+    ));
+  }
+
+  hasSeenFilePath(file) {
+    return this.seenPathIndexes(file).every((bit) => (
+      (this.seenFilePaths[bit >> 3] & (1 << (bit & 7))) !== 0
+    ));
+  }
+
+  rememberSeenFilePath(file) {
+    for (const bit of this.seenPathIndexes(file)) {
+      this.seenFilePaths[bit >> 3] |= 1 << (bit & 7);
     }
   }
 
@@ -559,6 +600,7 @@ class KimiWatcher extends ExternalWatcher {
     this.activeSubagents.clear();
     this.metadataCache.clear();
     this.evictedCheckpoints.clear();
+    this.seenFilePaths.fill(0);
     this.managedConfigCache = null;
     super.stop();
   }
