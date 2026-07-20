@@ -20,8 +20,14 @@ function normalizeBubbleSize(payload, options) {
     maxHeight,
     marginPx,
   } = options;
-  const report = typeof payload === "number" ? { height: payload } : (payload || {});
-  const workWidth = Math.max(1, roundedFinite(workArea?.width) || minWidth);
+  const report = typeof payload === "number"
+    ? { height: payload }
+    : (payload && !Array.isArray(payload) ? payload : {});
+  const reportedWorkWidth = roundedFinite(workArea?.width);
+  const workWidth = Math.max(
+    1,
+    reportedWorkWidth === null ? minWidth : reportedWorkWidth
+  );
   const availableWidth = Math.max(1, workWidth - marginPx * 2);
   const effectiveMaxWidth = Math.min(maxWidth, availableWidth);
   const effectiveMinWidth = Math.min(minWidth, effectiveMaxWidth);

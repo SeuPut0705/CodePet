@@ -61,6 +61,35 @@ test("legacy 숫자 height와 잘못된 width는 현재 폭을 보존한다", ()
   );
 });
 
+test("배열 payload는 합성 크기 속성이 있어도 현재 크기를 보존한다", () => {
+  const arrayWithSizeProperties = Object.assign([1], {
+    width: 500,
+    height: 200,
+  });
+
+  for (const payload of [[], [1], arrayWithSizeProperties]) {
+    assert.deepEqual(
+      normalizeBubbleSize(payload, {
+        ...limits,
+        currentWidth: 380,
+        currentHeight: 90,
+        workArea: { x: 0, y: 0, width: 1440, height: 900 },
+      }),
+      { width: 380, height: 90 }
+    );
+  }
+});
+
+test("0px work area 폭은 유효한 초소형 폭으로 처리한다", () => {
+  assert.deepEqual(
+    normalizeBubbleSize({ width: 520, height: 100 }, {
+      ...limits,
+      workArea: { x: 40, y: 20, width: 0, height: 600 },
+    }),
+    { width: 1, height: 100 }
+  );
+});
+
 test("실제 반응형 폭으로 pet 중심과 화면 좌우 경계를 보정한다", () => {
   assert.deepEqual(
     positionBubbleBounds({
