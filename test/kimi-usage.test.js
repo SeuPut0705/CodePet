@@ -53,3 +53,16 @@ test("Kimi timeUnit은 정확한 enum 값만 허용한다", () => {
     { minutes: 10080, used: 20, limit: 100 },
   ]);
 });
+
+test("관리형 Kimi namespaced minute window를 5시간으로 정규화한다", () => {
+  assert.deepEqual(buildKimiUsageBadges({
+    usage: { used: 57, limit: 100 },
+    limits: [{
+      window: { duration: 300, timeUnit: "TIME_UNIT_MINUTE" },
+      detail: { used: 28, limit: 100 },
+    }],
+  }), [
+    { key: "5h", remainingPercent: 72, ariaLabel: "Kimi 5시간 72% 남음" },
+    { key: "7d", remainingPercent: 43, ariaLabel: "Kimi 7일 43% 남음" },
+  ]);
+});
