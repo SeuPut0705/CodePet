@@ -422,3 +422,11 @@ test("main은 Kimi watcher를 전체 공급자 수명주기에 연결한다", ()
   assert.match(main, /watcher\.on\("context-changed"/);
   assert.match(main, /activityHeading\(completionTitle, result\)/);
 });
+
+test("제품 설명과 README가 Kimi CLI 지원을 명시한다", () => {
+  const packageJson = require("../package.json");
+  const readme = fs.readFileSync(path.join(__dirname, "..", "README.md"), "utf8");
+  assert.match(packageJson.description, /Kimi/);
+  assert.match(readme, /Kimi Code CLI/);
+  assert.match(readme, /kimi-watcher\.js/);
+});

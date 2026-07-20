@@ -2,7 +2,7 @@
   "name": "code-pet",
   "version": "0.3.2",
   "private": true,
-  "description": "Multi-provider desktop companion for Codex, Antigravity, and Claude.",
+  "description": "Multi-provider desktop companion for Codex, Antigravity, Claude, and Kimi.",
   "main": "src/main.js",
   "scripts": {
     "start": "electron .",

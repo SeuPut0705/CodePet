@@ -1,8 +1,8 @@
 # CodePet
 
-Codex, Google Antigravity(AGY), Claude Code의 작업 상태와 계정별 한도를 한곳에서 보여 주는 데스크톱 펫입니다. 세 프로그램의 대화를 동시에 감지해 말풍선으로 표시하고, 설정 창에서 계정·말풍선 색상·글꼴을 관리합니다.
+Codex, Google Antigravity(AGY), Claude Code, Kimi Code CLI의 작업 상태를 한곳에서 보여 주는 데스크톱 펫입니다. 네 프로그램의 대화를 동시에 감지해 말풍선으로 표시하고, 설정 창에서 Codex·AGY·Claude 계정별 한도와 말풍선 색상·글꼴을 관리합니다.
 
-Windows와 macOS를 지원합니다. CLI 세션(Claude Code, Codex CLI)뿐 아니라 데스크톱 앱 세션도 감지합니다 — Claude 데스크톱 앱의 Claude Code 세션은 `~/.claude/projects`에, Codex 데스크톱 앱 세션은 `~/.codex/sessions`에 기록되므로 같은 감시 경로로 함께 잡힙니다.
+Windows와 macOS를 지원합니다. CLI 세션(Claude Code, Codex CLI, Kimi Code CLI)뿐 아니라 데스크톱 앱 세션도 감지합니다 — Claude 데스크톱 앱의 Claude Code 세션은 `~/.claude/projects`에, Codex 데스크톱 앱 세션은 `~/.codex/sessions`에 기록되므로 같은 감시 경로로 함께 잡힙니다. Kimi는 `~/.kimi-code/sessions`의 로컬 작업 로그만 읽으며 계정 전환과 사용량 조회 대상에는 포함하지 않습니다.
 
 Codex CLI의 펫 에셋(`~/.codex/pets`)을 그대로 가져다 쓰기 때문에, Codex에서 펫을 설치해뒀다면 별도 설정 없이 바로 골라 쓸 수 있습니다.
 
@@ -130,7 +130,7 @@ v2의 row 9~10에는 시계 방향의 시선 방향 16개가 들어갑니다. �
 ## 코드 구조
 
 - `src/main.js` — 창 관리, 이동 로직, 메뉴, 말풍선 제어. 이동 속도나 말풍선 크기 같은 값은 상단의 `MOVEMENT_CONFIG`, `BUBBLE_CONFIG`에 모여 있음
-- `src/codex-watcher.js`, `antigravity-watcher.js`, `claude-watcher.js` — 세 프로그램의 로컬 작업 로그 감시
+- `src/codex-watcher.js`, `antigravity-watcher.js`, `claude-watcher.js`, `kimi-watcher.js` — 네 프로그램의 로컬 작업 로그 감시
 - `src/codex-account-switcher.js`, `antigravity-account-switcher.js`, `claude-account-switcher.js` — 공급자별 계정 저장/전환/삭제
 - `src/account-submenu.js` — Codex·AGY·Claude 공통 계정 메뉴 구성
 - `src/codex-usage-label.js` — Codex 서버 한도 기간과 모델 범위에 맞는 표시 이름 생성
