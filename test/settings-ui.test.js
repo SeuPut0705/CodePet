@@ -5,6 +5,7 @@ const path = require("node:path");
 const vm = require("node:vm");
 
 const activityIcons = require("../src/activity-icons");
+const { ActivityUsageController } = require("../src/activity-usage");
 
 function source(relativePath) {
   return fs.readFileSync(path.join(__dirname, "..", relativePath), "utf8");
@@ -420,7 +421,7 @@ test("Codex 세션별 usage controller를 watcher와 활성 집계 헤더 수명
   assert.match(controllerSetup, /onBadgesChanged/);
   assert.match(
     controllerSetup,
-    /codexWatcher\.working && activeActivityBubbles\.size > 1[\s\S]*?showActiveActivityBubble\(\)/
+    /codexWatcher\.working && activeActivityBubbles\.size > 0[\s\S]*?showActiveActivityBubble\(\)/
   );
   assert.doesNotMatch(mainJs, /activityUsageResetTimer|scheduleActivityUsageReset/);
   assert.match(buildActiveBubble, /decorateActivityBubbleWithUsage/);
@@ -438,6 +439,60 @@ test("Codex 세션별 usage controller를 watcher와 활성 집계 헤더 수명
     /activityUsageController\.update\(context\.threadId, usage\)/
   );
   assert.match(mainJs, /activityUsageController\.dispose\(\)/);
+});
+
+test("단일 Codex section은 늦은 사용량과 reset 변경에 다시 그리며 빈 상태는 그리지 않는다", () => {
+  const controllerSetup = mainJs.match(
+    /const activityUsageController = new ActivityUsageController\([\s\S]*?\n}\);/
+  )?.[0] || "";
+  const callbackSource = controllerSetup.match(
+    /onBadgesChanged:\s*(\(\) => \{[\s\S]*?\n  \})/
+  )?.[1];
+  assert.ok(callbackSource);
+
+  let activeSize = 1;
+  let redrawCount = 0;
+  let nowMs = 1_000;
+  let resetCallback = null;
+  const onBadgesChanged = vm.runInNewContext(`(${callbackSource})`, {
+    codexWatcher: { working: true },
+    activeActivityBubbles: {
+      get size() {
+        return activeSize;
+      },
+    },
+    showActiveActivityBubble() {
+      redrawCount += 1;
+    },
+  });
+  const controller = new ActivityUsageController({
+    now: () => nowMs,
+    setTimer(callback) {
+      resetCallback = callback;
+      return 1;
+    },
+    clearTimer() {
+      resetCallback = null;
+    },
+    onBadgesChanged,
+  });
+
+  controller.update("codex:single", {
+    rateLimits: {
+      windows: [{ window_minutes: 300, used_percent: 60, resets_at: 2 }],
+    },
+  });
+  assert.equal(redrawCount, 1);
+
+  nowMs = 2_000;
+  const runReset = resetCallback;
+  assert.equal(typeof runReset, "function");
+  runReset();
+  assert.equal(redrawCount, 2);
+
+  activeSize = 0;
+  controller.remove("codex:single");
+  assert.equal(redrawCount, 2);
 });
 const rendererJs = source("src/renderer.js");
 const petHtml = source("src/index.html");

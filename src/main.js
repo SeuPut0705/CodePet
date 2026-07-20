@@ -495,7 +495,7 @@ let currentActivityBubbleData = null;
 const activeActivityBubbles = new ActivityBubbleState();
 const activityUsageController = new ActivityUsageController({
   onBadgesChanged: () => {
-    if (codexWatcher.working && activeActivityBubbles.size > 1) {
+    if (codexWatcher.working && activeActivityBubbles.size > 0) {
       showActiveActivityBubble();
     }
   },
