@@ -4,7 +4,7 @@ const crypto = require("node:crypto");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
-const { messageText, text } = require("./external-watcher");
+const { ExternalWatcher, messageText, readBytes, text } = require("./external-watcher");
 const { normalizeReasoningLabel, normalizeWorkerLabel } = require("./activity-labels");
 
 const DEFAULT_KIMI_ROOT = path.join(os.homedir(), ".kimi-code", "sessions");
@@ -175,13 +175,163 @@ function parseKimiRow(row, file, metadata = readKimiSessionMetadata(file)) {
   return null;
 }
 
+function inferKimiSubagentActive(file, maxBytes = 256 * 1024) {
+  let source;
+  try {
+    const size = fs.statSync(file).size;
+    const offset = Math.max(0, size - maxBytes);
+    source = readBytes(file, offset, size).toString("utf8");
+  } catch {
+    return false;
+  }
+
+  let active = false;
+  for (const line of source.split("\n")) {
+    try {
+      const row = JSON.parse(line);
+      const event = row.type === "context.append_loop_event" ? row.event : null;
+      if (event?.type === "step.begin") active = true;
+      if (event?.type === "step.end") active = event.finishReason !== "end_turn";
+    } catch {
+      // tail 첫 조각과 불완전 마지막 행은 무시합니다.
+    }
+  }
+  return active;
+}
+
+class KimiWatcher extends ExternalWatcher {
+  constructor(options = {}) {
+    const roots = options.roots || [DEFAULT_KIMI_ROOT];
+    const sessionLimit = options.sessionLimit || KIMI_SESSION_LIMIT;
+    super({
+      provider: "kimi",
+      roots,
+      findFiles: (root) => findKimiWireFiles(root, sessionLimit),
+      parseRow: parseKimiRow,
+      pollMs: options.pollMs || KIMI_POLL_MS,
+      quietMs: options.quietMs || KIMI_QUIET_MS,
+    });
+    this.responseBuffers = new Map();
+    this.lastResponses = new Map();
+    this.activeSubagents = new Map();
+    this.metadataCache = new Map();
+    this.parseRow = (row, file) => parseKimiRow(row, file, this.metadataFor(file));
+  }
+
+  metadataFor(file) {
+    const sessionRoot = sessionRootFromWire(file);
+    const stateFile = path.join(sessionRoot, "state.json");
+    let mtimeMs = null;
+    try {
+      mtimeMs = fs.statSync(stateFile).mtimeMs;
+    } catch {
+      // readKimiSessionMetadata가 안전한 fallback을 만듭니다.
+    }
+    const cached = this.metadataCache.get(sessionRoot);
+    if (cached && cached.mtimeMs === mtimeMs) return cached.metadata;
+    const metadata = readKimiSessionMetadata(file);
+    this.metadataCache.set(sessionRoot, { mtimeMs, metadata });
+    return metadata;
+  }
+
+  activeSet(sessionId) {
+    let active = this.activeSubagents.get(sessionId);
+    if (!active) {
+      active = new Set();
+      this.activeSubagents.set(sessionId, active);
+    }
+    return active;
+  }
+
+  subagentCount(sessionId) {
+    return this.activeSubagents.get(sessionId)?.size || 0;
+  }
+
+  updateSubagent(event, now) {
+    if (event.type !== "lifecycle") return;
+    const active = this.activeSet(event.sessionId);
+    const previous = active.size;
+    if (event.active) active.add(event.agentId);
+    else active.delete(event.agentId);
+    const next = active.size;
+    if (next === 0) this.activeSubagents.delete(event.sessionId);
+    if (previous === next || !this.sessions.has(`kimi:${event.sessionId}`)) return;
+    super.accept(
+      {
+        sessionId: event.sessionId,
+        eventId: `subagent:${event.eventId}:${next}`,
+        type: "context",
+        cwd: event.cwd,
+        sectionLabel: event.sectionLabel,
+        subagentCount: next,
+      },
+      now
+    );
+  }
+
+  accept(event, now) {
+    if (!event) return;
+    if (event.isSubagent) {
+      this.updateSubagent(event, now);
+      return;
+    }
+
+    const enriched = { ...event, subagentCount: this.subagentCount(event.sessionId) };
+    if (event.type === "assistant" && event.chunk) {
+      const key = `${event.sessionId}:${event.turnId}:${event.step}`;
+      const accumulated = messageText(
+        [this.responseBuffers.get(key), event.text].filter(Boolean).join("\n\n")
+      );
+      this.responseBuffers.set(key, accumulated);
+      this.lastResponses.set(event.sessionId, accumulated);
+      enriched.text = accumulated;
+    }
+    if (event.finished) enriched.text = this.lastResponses.get(event.sessionId) || event.text || "";
+    super.accept(enriched, now);
+  }
+
+  seed() {
+    this.activeSubagents.clear();
+    for (const file of this.files()) {
+      const agentId = agentIdFromWire(file);
+      if (agentId === "main" || !inferKimiSubagentActive(file)) continue;
+      this.activeSet(readKimiSessionMetadata(file).sessionId).add(agentId);
+    }
+    super.seed();
+  }
+
+  clearSession(sessionId) {
+    this.activeSubagents.delete(sessionId);
+    this.lastResponses.delete(sessionId);
+    for (const key of this.responseBuffers.keys()) {
+      if (key.startsWith(`${sessionId}:`)) this.responseBuffers.delete(key);
+    }
+  }
+
+  finish(id, reason, message = "") {
+    const sessionId = id.startsWith("kimi:") ? id.slice("kimi:".length) : id;
+    this.clearSession(sessionId);
+    super.finish(id, reason, message);
+  }
+
+  stop() {
+    this.responseBuffers.clear();
+    this.lastResponses.clear();
+    this.activeSubagents.clear();
+    this.metadataCache.clear();
+    super.stop();
+  }
+}
+
 module.exports = {
   DEFAULT_KIMI_ROOT,
+  KimiWatcher,
   KIMI_POLL_MS,
   KIMI_QUIET_MS,
   KIMI_SESSION_LIMIT,
   agentIdFromWire,
   findKimiWireFiles,
+  inferKimiSubagentActive,
   normalizeKimiTool,
   parseKimiRow,
   readKimiSessionMetadata,

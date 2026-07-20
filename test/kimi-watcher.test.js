@@ -4,6 +4,7 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const {
+  KimiWatcher,
   findKimiWireFiles,
   parseKimiRow,
   readKimiSessionMetadata,
@@ -34,6 +35,10 @@ function sessionFixture(root, id = "session_one", workDir = "/work/toolflowy") {
 
 function pick(value, keys) {
   return Object.fromEntries(keys.map((key) => [key, value[key]]));
+}
+
+function append(file, row) {
+  fs.appendFileSync(file, `${JSON.stringify(row)}\n`);
 }
 
 test("Kimi metadata는 제목과 작업 경로를 안전하게 읽는다", (t) => {
@@ -171,4 +176,225 @@ test("Kimi 파일 탐색은 최근 20개 세션의 wire만 반환한다", (t) =>
   const files = findKimiWireFiles(root, 20);
   assert.equal(new Set(files.map((file) => readKimiSessionMetadata(file).sessionId)).size, 20);
   assert.equal(files.some((file) => file.includes(`${path.sep}session_0${path.sep}`)), false);
+});
+
+test("KimiWatcher는 text를 누적하고 end_turn에서 마지막 응답으로 완료한다", (t) => {
+  const root = tempDir(t);
+  const fixture = sessionFixture(root);
+  const watcher = new KimiWatcher({ roots: [root], quietMs: 60_000 });
+  const messages = [];
+  const finished = [];
+  watcher.on("agent-message", (message, context) => messages.push({ message, context }));
+  watcher.on("task-finished", (result) => finished.push(result));
+  watcher.seed();
+
+  append(fixture.wire, {
+    type: "turn.prompt",
+    origin: { kind: "user" },
+    input: [{ type: "text", text: "진행" }],
+    time: 1,
+  });
+  append(fixture.wire, {
+    type: "llm.request",
+    modelAlias: "kimi-code/k3",
+    thinkingEffort: "max",
+    time: 2,
+  });
+  append(fixture.wire, {
+    type: "context.append_loop_event",
+    event: {
+      type: "content.part",
+      uuid: "a",
+      turnId: "0",
+      step: 1,
+      part: { type: "text", text: "첫 문장" },
+    },
+    time: 3,
+  });
+  append(fixture.wire, {
+    type: "context.append_loop_event",
+    event: {
+      type: "content.part",
+      uuid: "b",
+      turnId: "0",
+      step: 1,
+      part: { type: "text", text: "둘째 문장" },
+    },
+    time: 4,
+  });
+  append(fixture.wire, {
+    type: "context.append_loop_event",
+    event: {
+      type: "step.end",
+      uuid: "c",
+      turnId: "0",
+      step: 1,
+      finishReason: "end_turn",
+    },
+    time: 5,
+  });
+  watcher.poll();
+
+  assert.equal(messages.at(-1).message, "첫 문장\n\n둘째 문장");
+  assert.equal(messages.at(-1).context.workerLabel, "K3");
+  assert.equal(messages.at(-1).context.reasoningLabel, "Max");
+  assert.equal(finished.at(-1).message, "첫 문장\n\n둘째 문장");
+  assert.equal(finished.at(-1).sectionLabel, "ToolFlowy");
+});
+
+test("KimiWatcher는 서브에이전트 메시지를 숨기고 활성 개수만 갱신한다", (t) => {
+  const root = tempDir(t);
+  const fixture = sessionFixture(root);
+  const sub = path.join(fixture.session, "agents", "agent-0");
+  fs.mkdirSync(sub, { recursive: true });
+  const subWire = path.join(sub, "wire.jsonl");
+  fs.writeFileSync(subWire, "");
+  const watcher = new KimiWatcher({ roots: [root], quietMs: 60_000 });
+  const contexts = [];
+  const leaked = [];
+  watcher.on("context-changed", (context) => contexts.push(context));
+  watcher.on("working-changed", (working, _result, context) => {
+    if (working) contexts.push(context);
+  });
+  watcher.on("agent-message", (message) => leaked.push(message));
+  watcher.seed();
+
+  append(fixture.wire, {
+    type: "turn.prompt",
+    origin: { kind: "user" },
+    input: [{ type: "text", text: "메인" }],
+    time: 1,
+  });
+  append(subWire, {
+    type: "context.append_loop_event",
+    event: { type: "step.begin", uuid: "sub-start", turnId: "0", step: 1 },
+    time: 2,
+  });
+  append(subWire, {
+    type: "context.append_loop_event",
+    event: {
+      type: "content.part",
+      uuid: "sub-secret",
+      turnId: "0",
+      step: 1,
+      part: { type: "text", text: "노출 금지" },
+    },
+    time: 3,
+  });
+  watcher.poll();
+  assert.equal(contexts.at(-1).subagentCount, 1);
+  assert.equal(leaked.includes("노출 금지"), false);
+
+  append(subWire, {
+    type: "context.append_loop_event",
+    event: {
+      type: "step.end",
+      uuid: "sub-tool",
+      turnId: "0",
+      step: 1,
+      finishReason: "tool_use",
+    },
+    time: 4,
+  });
+  watcher.poll();
+  assert.equal(contexts.at(-1).subagentCount, 1);
+
+  append(subWire, {
+    type: "context.append_loop_event",
+    event: {
+      type: "step.end",
+      uuid: "sub-done",
+      turnId: "0",
+      step: 2,
+      finishReason: "end_turn",
+    },
+    time: 5,
+  });
+  watcher.poll();
+  assert.equal(contexts.at(-1).subagentCount, 0);
+});
+
+test("KimiWatcher는 시작 전 활성 서브에이전트 수만 복원하고 메시지는 재생하지 않는다", (t) => {
+  const root = tempDir(t);
+  const fixture = sessionFixture(root);
+  const sub = path.join(fixture.session, "agents", "agent-0");
+  fs.mkdirSync(sub, { recursive: true });
+  const subWire = path.join(sub, "wire.jsonl");
+  fs.writeFileSync(subWire, "");
+  append(subWire, {
+    type: "context.append_loop_event",
+    event: { type: "step.begin", uuid: "old-start", turnId: "0", step: 1 },
+    time: 1,
+  });
+  append(subWire, {
+    type: "context.append_loop_event",
+    event: {
+      type: "content.part",
+      uuid: "old-message",
+      turnId: "0",
+      step: 1,
+      part: { type: "text", text: "과거 메시지" },
+    },
+    time: 2,
+  });
+
+  const watcher = new KimiWatcher({ roots: [root], quietMs: 60_000 });
+  const started = [];
+  const leaked = [];
+  watcher.on("working-changed", (working, _result, context) => {
+    if (working) started.push(context);
+  });
+  watcher.on("agent-message", (message) => leaked.push(message));
+  watcher.seed();
+  append(fixture.wire, {
+    type: "turn.prompt",
+    origin: { kind: "user" },
+    input: [{ type: "text", text: "새 요청" }],
+    time: 3,
+  });
+  watcher.poll();
+
+  assert.equal(started.at(-1).subagentCount, 1);
+  assert.deepEqual(leaked, []);
+});
+
+test("KimiWatcher는 여러 메인 세션의 메시지와 제목을 분리한다", (t) => {
+  const root = tempDir(t);
+  const first = sessionFixture(root, "session_first", "/work/first");
+  const second = sessionFixture(root, "session_second", "/work/second");
+  const secondState = path.join(second.session, "state.json");
+  fs.writeFileSync(secondState, JSON.stringify({ title: "Second", workDir: "/work/second" }));
+  const watcher = new KimiWatcher({ roots: [root], quietMs: 60_000 });
+  const messages = [];
+  watcher.on("agent-message", (message, context) => messages.push({ message, context }));
+  watcher.seed();
+
+  for (const [wire, word, time] of [[first.wire, "첫째", 1], [second.wire, "둘째", 2]]) {
+    append(wire, {
+      type: "turn.prompt",
+      origin: { kind: "user" },
+      input: [{ type: "text", text: word }],
+      time,
+    });
+    append(wire, {
+      type: "context.append_loop_event",
+      event: {
+        type: "content.part",
+        uuid: `answer-${time}`,
+        turnId: "0",
+        step: 1,
+        part: { type: "text", text: `${word} 응답` },
+      },
+      time: time + 10,
+    });
+  }
+  watcher.poll();
+
+  assert.deepEqual(
+    messages.map(({ message, context }) => [message, context.threadId, context.sectionLabel]).sort(),
+    [
+      ["둘째 응답", "kimi:session_second", "Second"],
+      ["첫째 응답", "kimi:session_first", "ToolFlowy"],
+    ].sort()
+  );
 });
