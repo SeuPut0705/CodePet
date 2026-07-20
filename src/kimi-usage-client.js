@@ -4,7 +4,7 @@ const crypto = require("node:crypto");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
-const { buildKimiUsageBadges } = require("./kimi-usage");
+const { buildKimiUsageBadges, parseKimiUsageWindows } = require("./kimi-usage");
 
 const DEFAULT_KIMI_HOME = path.join(os.homedir(), ".kimi-code");
 const KIMI_USAGE_URL = "https://api.kimi.com/coding/v1/usages";
@@ -103,7 +103,7 @@ class KimiUsageClient {
     this.lockDir = path.join(homeDir, "oauth", "kimi-code.lock");
   }
 
-  async fetchBadges() {
+  async fetchPayload() {
     let credentials = await this.readCredentials();
     credentials = await this.ensureFresh(credentials);
 
@@ -124,7 +124,15 @@ class KimiUsageClient {
       }, { allowAuthStatus: true });
       if (result.status === 401 || result.status === 403) throw usageError("KIMI_USAGE_AUTH");
     }
-    return buildKimiUsageBadges(result.payload);
+    return result.payload;
+  }
+
+  async fetchBadges() {
+    return buildKimiUsageBadges(await this.fetchPayload());
+  }
+
+  async fetchUsageWindows() {
+    return parseKimiUsageWindows(await this.fetchPayload());
   }
 
   async readCredentials() {

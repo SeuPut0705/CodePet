@@ -9,7 +9,7 @@
   <body>
     <div class="titlebar">
       <div class="titlebar-drag">
-        <span class="titlebar-logo"><i></i><i></i></span>
+        <span class="titlebar-logo"><img src="./codepet-icon.png" alt="" /></span>
         <span class="titlebar-title">CodePet 설정</span>
       </div>
       <div class="titlebar-controls">
@@ -28,7 +28,7 @@
     <div class="app-shell">
       <aside class="sidebar">
         <div class="brand-lockup" aria-label="CodePet">
-          <span class="brand-mark" aria-hidden="true"><i></i><i></i></span>
+          <span class="brand-mark" aria-hidden="true"><img src="./codepet-icon.png" alt="" /></span>
           <strong>CodePet</strong>
         </div>
 
@@ -42,7 +42,21 @@
             aria-controls="general"
             data-section="general"
           >
+            <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h9M17 7h3M4 12h3M11 12h9M4 17h11M19 17h1" /><circle cx="15" cy="7" r="2" /><circle cx="9" cy="12" r="2" /><circle cx="17" cy="17" r="2" /></svg>
             <span>일반 및 모양</span>
+          </button>
+          <button
+            class="nav-item"
+            id="nav-bubble"
+            type="button"
+            role="tab"
+            aria-selected="false"
+            aria-controls="bubble"
+            data-section="bubble"
+            tabindex="-1"
+          >
+            <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h16v11H9l-5 5V4z" /></svg>
+            <span>말풍선</span>
           </button>
           <button
             class="nav-item"
@@ -54,6 +68,7 @@
             data-section="accounts"
             tabindex="-1"
           >
+            <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="3.5" /><path d="M5 19.5c1.4-3.2 4-4.8 7-4.8s5.6 1.6 7 4.8" /></svg>
             <span>계정</span>
           </button>
           <button
@@ -66,6 +81,7 @@
             data-section="usage"
             tabindex="-1"
           >
+            <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 20v-7M11 20V5M17 20v-4M3 20h18" /></svg>
             <span>사용량</span>
           </button>
         </nav>
@@ -81,27 +97,6 @@
           aria-labelledby="nav-general"
           tabindex="0"
         >
-          <fieldset class="setting-section color-section">
-            <legend>말풍선 색상</legend>
-            <p class="section-help">말풍선의 배경 색상과 글자 색상을 직접 지정합니다.</p>
-            <div class="color-grid">
-              <div class="color-field">
-                <span class="color-label">배경 색상</span>
-                <div class="color-input-wrapper">
-                  <input type="color" id="bubble-bg-picker" />
-                  <input type="text" id="bubble-bg-color" placeholder="#ffffff" maxlength="9" />
-                </div>
-              </div>
-              <div class="color-field">
-                <span class="color-label">글자 색상</span>
-                <div class="color-input-wrapper">
-                  <input type="color" id="bubble-text-picker" />
-                  <input type="text" id="bubble-text-color" placeholder="#09090b" maxlength="7" />
-                </div>
-              </div>
-            </div>
-          </fieldset>
-
           <section class="setting-section font-section" aria-labelledby="font-title">
             <div class="section-title-row">
               <div>
@@ -148,14 +143,6 @@
                 <span>사용할 펫</span>
                 <select id="pet"></select>
               </label>
-              <label class="control-field" for="bubble-mode">
-                <span>활동 말풍선</span>
-                <select id="bubble-mode">
-                  <option value="full">전체 내용</option>
-                  <option value="status">상태만</option>
-                  <option value="off">끄기</option>
-                </select>
-              </label>
               <label class="switch-row" for="follow">
                 <span><strong>마우스 따라가기</strong></span>
                 <input id="follow" type="checkbox" />
@@ -174,6 +161,72 @@
 
           <footer class="panel-actions panel-actions-end">
             <button class="button button-primary" id="save" type="button">변경 사항 적용</button>
+          </footer>
+        </section>
+
+        <section
+          class="panel"
+          id="bubble"
+          role="tabpanel"
+          aria-labelledby="nav-bubble"
+          tabindex="0"
+          hidden
+        >
+          <fieldset class="setting-section color-section">
+            <legend>말풍선 색상</legend>
+            <p class="section-help">말풍선의 배경 색상과 글자 색상을 직접 지정합니다.</p>
+            <div class="color-grid">
+              <div class="color-field">
+                <span class="color-label">배경 색상</span>
+                <div class="color-input-wrapper">
+                  <input type="color" id="bubble-bg-picker" />
+                  <input type="text" id="bubble-bg-color" placeholder="#ffffff" maxlength="9" />
+                </div>
+              </div>
+              <div class="color-field">
+                <span class="color-label">글자 색상</span>
+                <div class="color-input-wrapper">
+                  <input type="color" id="bubble-text-picker" />
+                  <input type="text" id="bubble-text-color" placeholder="#09090b" maxlength="7" />
+                </div>
+              </div>
+            </div>
+          </fieldset>
+
+          <section class="setting-section" aria-labelledby="bubble-display-title">
+            <div class="section-title-row">
+              <h2 id="bubble-display-title">표시 기능</h2>
+            </div>
+            <div class="control-grid">
+              <label class="control-field" for="bubble-mode">
+                <span>활동 말풍선</span>
+                <select id="bubble-mode">
+                  <option value="full">전체 내용</option>
+                  <option value="status">상태만</option>
+                  <option value="off">끄기</option>
+                </select>
+              </label>
+              <label class="switch-row" for="usage-badges">
+                <span>
+                  <strong>사용량 배지</strong>
+                  <small>작업 제목 옆 5h·7d 남은 사용량 표시</small>
+                </span>
+                <input id="usage-badges" type="checkbox" />
+                <i aria-hidden="true"></i>
+              </label>
+              <label class="switch-row" for="subagent-badge">
+                <span>
+                  <strong>서브에이전트 개수</strong>
+                  <small>실행 중인 서브에이전트 수 표시</small>
+                </span>
+                <input id="subagent-badge" type="checkbox" />
+                <i aria-hidden="true"></i>
+              </label>
+            </div>
+          </section>
+
+          <footer class="panel-actions panel-actions-end">
+            <button class="button button-primary" id="save-bubble" type="button">변경 사항 적용</button>
           </footer>
         </section>
 

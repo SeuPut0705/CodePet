@@ -10,6 +10,7 @@ const { AntigravityWatcher } = require("./antigravity-watcher");
 const { ClaudeWatcher } = require("./claude-watcher");
 const { KimiWatcher } = require("./kimi-watcher");
 const { KimiUsageClient } = require("./kimi-usage-client");
+const { buildKimiUsageGauges } = require("./kimi-usage");
 const { KimiUsageController } = require("./kimi-usage-controller");
 const { ClaudeAccountSwitcher } = require("./claude-account-switcher");
 const { normalizeClaudeAccountMetadata } = require("./claude-account-metadata");
@@ -466,10 +467,10 @@ function applyPet(petKey) {
 // 말풍선 창 관련 설정입니다. 크기는 콘텐츠에 맞춰 renderer가 보고하고 main에서 화면 범위로 제한합니다.
 const BUBBLE_CONFIG = Object.freeze({
   minWidth: 300,
-  maxWidth: 520,
+  maxWidth: 440,
   marginPx: 12,
   minHeight: 48,
-  maxHeight: 420,
+  maxHeight: 340,
   gapPx: 2,
   renderFallbackMs: 350,
   loadTimeoutMs: 2500,
@@ -3350,10 +3351,11 @@ function registerIpcHandlers() {
     console.warn("[desktop-pet] Unknown bubble action ignored.", actionId);
   });
 
-  ipcMain.handle("settings:get", async () => ({
-    ok: true,
-    data: await getSettingsData(),
-  }));
+  ipcMain.handle("settings:get", async () => {
+    const data = await getSettingsData({ usageMode: "cache" });
+    scheduleUsageSnapshotRefresh();
+    return { ok: true, data };
+  });
   ipcMain.handle("settings:usage", async () => ({
     ok: true,
     data: await getSettingsData({ forceUsage: true }),
@@ -3375,6 +3377,12 @@ function registerIpcHandlers() {
     }
     if (Object.hasOwn(next, "bubbleTextColor")) {
       patch.bubbleTextColor = typeof next.bubbleTextColor === "string" ? next.bubbleTextColor.trim() : "";
+    }
+    if (typeof next.showUsageBadges === "boolean") {
+      patch.showUsageBadges = next.showUsageBadges;
+    }
+    if (typeof next.showSubagentBadge === "boolean") {
+      patch.showSubagentBadge = next.showSubagentBadge;
     }
     if (
       typeof next.petKey === "string" &&
@@ -3401,6 +3409,18 @@ function registerIpcHandlers() {
     refreshTrayMenu();
     return { ok: true, data: await getSettingsData() };
   });
+  ipcMain.on("settings:preview-appearance", (_event, value) => {
+    const preview = value && typeof value === "object" ? value : {};
+    const payload = {
+      ...getAppearancePayload(),
+      bubbleBgColor: typeof preview.bubbleBgColor === "string" ? preview.bubbleBgColor.trim() : "",
+      bubbleTextColor: typeof preview.bubbleTextColor === "string" ? preview.bubbleTextColor.trim() : "",
+    };
+    if (bubbleWindow && !bubbleWindow.isDestroyed()) {
+      bubbleWindow.webContents.send("appearance:update", payload);
+    }
+  });
+
   ipcMain.handle("settings:account", async (_event, input) => {
     try {
       const action = input?.action;
@@ -3534,6 +3554,8 @@ function getAppearancePayload() {
     fontFamily: settings.fontFamily || "",
     bubbleBgColor: settings.bubbleBgColor || "",
     bubbleTextColor: settings.bubbleTextColor || "",
+    showUsageBadges: settings.showUsageBadges !== false,
+    showSubagentBadge: settings.showSubagentBadge !== false,
   };
 }
 
@@ -3660,16 +3682,36 @@ async function loadClaudeProvider(forceUsage) {
   return { accounts: claudeAccountSwitcher.listProfiles(), usage };
 }
 
-async function getSettingsData({ forceUsage = false } = {}) {
+async function loadKimiUsage() {
+  let profiles = [];
+  try {
+    await kimiUsageClient.readCredentials();
+    profiles = [{ key: "managed", label: "관리형 로그인", active: true }];
+  } catch {
+    // 관리형 Kimi 로그인이 없으면 빈 카드로 표시합니다.
+  }
+  return loadAccountUsageCards({
+    providerId: "kimi",
+    providerLabel: "Kimi",
+    profiles,
+    loadUsage: async () => {
+      try {
+        return { gauges: buildKimiUsageGauges(await kimiUsageClient.fetchUsageWindows()) };
+      } catch (error) {
+        // KimiUsageError의 한국어 메시지를 카드 오류로 그대로 노출합니다.
+        error.displayMessage = error.message || "조회 불가";
+        throw error;
+      }
+    },
+  });
+}
+
+let lastUsageSnapshot = null;
+let usageRefreshInFlight = null;
+
+function buildSettingsBaseData() {
   const settings = readSettings();
   const pets = listAvailablePets();
-  const [codexUsage, agy, claude] = await Promise.all([
-    loadCodexUsage(),
-    loadAntigravityProvider(forceUsage),
-    loadClaudeProvider(forceUsage),
-  ]);
-  const codexAccounts = codexAccountRows();
-
   return {
     appearance: {
       fontFamily: settings.fontFamily || "",
@@ -3679,20 +3721,64 @@ async function getSettingsData({ forceUsage = false } = {}) {
     pets: pets.map((pet) => ({ key: pet.key, label: pet.label })),
     petKey: resolveSelectedPet()?.key || "",
     activityBubbleMode: settings.activityBubbleMode || "full",
+    showUsageBadges: settings.showUsageBadges !== false,
+    showSubagentBadge: settings.showSubagentBadge !== false,
     followMouse: runtime.followMouse,
     autoStart: isAutoLaunchEnabled(),
     autoStartSupported: isAutoLaunchSupported(),
-    providers: [
-      { id: "codex", label: "Codex", accounts: codexAccounts },
-      { id: "agy", label: "AGY", accounts: agy.accounts },
-      { id: "claude", label: "Claude", accounts: claude.accounts },
-    ],
-    usage: [...codexUsage, ...agy.usage, ...claude.usage],
   };
 }
 
+async function getSettingsData({ forceUsage = false, usageMode = "full" } = {}) {
+  const base = buildSettingsBaseData();
+  if (usageMode === "cache") {
+    // 창을 바로 열기 위해 마지막 조회 결과를 즉시 반환하고, 최신값은 백그라운드에서 밀어 넣습니다.
+    return {
+      ...base,
+      providers: lastUsageSnapshot?.providers ?? [
+        { id: "codex", label: "Codex", accounts: codexAccountRows() },
+        { id: "agy", label: "AGY", accounts: antigravityAccountSwitcher.listProfiles() },
+        { id: "claude", label: "Claude", accounts: claudeAccountSwitcher.listProfiles() },
+      ],
+      usage: lastUsageSnapshot?.usage ?? [],
+    };
+  }
+
+  const [codexUsage, agy, claude, kimiUsage] = await Promise.all([
+    loadCodexUsage(),
+    loadAntigravityProvider(forceUsage),
+    loadClaudeProvider(forceUsage),
+    loadKimiUsage(),
+  ]);
+  const providers = [
+    { id: "codex", label: "Codex", accounts: codexAccountRows() },
+    { id: "agy", label: "AGY", accounts: agy.accounts },
+    { id: "claude", label: "Claude", accounts: claude.accounts },
+  ];
+  const usage = [...codexUsage, ...agy.usage, ...claude.usage, ...kimiUsage];
+  lastUsageSnapshot = { providers, usage };
+  return { ...base, providers, usage };
+}
+
+function scheduleUsageSnapshotRefresh() {
+  if (usageRefreshInFlight) return;
+  usageRefreshInFlight = getSettingsData()
+    .then((data) => {
+      if (settingsWindow && !settingsWindow.isDestroyed()) {
+        settingsWindow.webContents.send("settings:usage-refreshed", {
+          providers: data.providers,
+          usage: data.usage,
+        });
+      }
+    })
+    .catch(() => {})
+    .finally(() => {
+      usageRefreshInFlight = null;
+    });
+}
+
 function openSettingsWindow(section = "general") {
-  const requestedSection = ["general", "accounts", "usage"].includes(section)
+  const requestedSection = ["general", "bubble", "accounts", "usage"].includes(section)
     ? section
     : "general";
   if (settingsWindow && !settingsWindow.isDestroyed()) {
@@ -3705,12 +3791,13 @@ function openSettingsWindow(section = "general") {
   settingsWindow = new BrowserWindow({
     width: 980,
     height: 720,
-    minWidth: 620,
-    minHeight: 500,
+    resizable: false,
+    maximizable: false,
+    fullscreenable: false,
     show: false,
     frame: false,
     title: "CodePet 설정",
-    backgroundColor: "#fafafa",
+    backgroundColor: "#0a0c11",
     autoHideMenuBar: true,
     webPreferences: {
       preload: path.join(__dirname, "settings-preload.js"),
@@ -3736,6 +3823,8 @@ function openSettingsWindow(section = "general") {
   });
   settingsWindow.on("closed", () => {
     settingsWindow = null;
+    // 저장하지 않은 라이브 미리보기 색상은 창이 닫히면 저장값으로 되돌립니다.
+    sendAppearanceToWindows();
   });
   settingsWindow.loadFile(path.join(__dirname, "settings.html"));
 }

@@ -156,6 +156,8 @@ function renderGeneral({ resetAppearance = false } = {}) {
     state.petKey
   );
   $("#bubble-mode").value = state.activityBubbleMode;
+  $("#usage-badges").checked = state.showUsageBadges !== false;
+  $("#subagent-badge").checked = state.showSubagentBadge !== false;
   $("#follow").checked = state.followMouse;
   const autostart = $("#autostart");
   autostart.checked = state.autoStart;
@@ -419,7 +421,7 @@ function registerAppearanceControls() {
     selectedFont = fontSelect.value;
     updateFontPreview();
   });
-  $("#save").addEventListener("click", async (event) => {
+  async function handleSave(event) {
     const button = event.currentTarget;
     setButtonBusy(button, true, "적용 중…");
     try {
@@ -431,6 +433,8 @@ function registerAppearanceControls() {
         autoStart: $("#autostart").checked,
         bubbleBgColor: $("#bubble-bg-color").value.trim() || null,
         bubbleTextColor: $("#bubble-text-color").value.trim() || null,
+        showUsageBadges: $("#usage-badges").checked,
+        showSubagentBadge: $("#subagent-badge").checked,
       });
       if (!response?.ok) throw new Error(responseError(response, "설정을 적용하지 못했습니다."));
       state = response.data;
@@ -441,7 +445,9 @@ function registerAppearanceControls() {
     } finally {
       setButtonBusy(button, false);
     }
-  });
+  }
+  $("#save").addEventListener("click", handleSave);
+  $("#save-bubble").addEventListener("click", handleSave);
 }
 
 function registerProviderControls() {
@@ -545,19 +551,34 @@ function registerColorPickerControls() {
   function updateLiveColors() {
     const bgVal = bgInput.value.trim();
     const textVal = textInput.value.trim();
+    const previewBg = bgVal && isValidColor(bgVal) ? bgVal : "";
+    const previewText = textVal && isValidColor(textVal) ? textVal : "";
 
-    if (bgVal && isValidColor(bgVal)) {
-      rootElement.style.setProperty("--bubble-bg", bgVal);
+    if (previewBg) {
+      rootElement.style.setProperty("--bubble-bg", previewBg);
     } else {
       rootElement.style.removeProperty("--bubble-bg");
     }
 
-    if (textVal && isValidColor(textVal)) {
-      rootElement.style.setProperty("--bubble-ink", textVal);
+    if (previewText) {
+      rootElement.style.setProperty("--bubble-ink", previewText);
     } else {
       rootElement.style.removeProperty("--bubble-ink");
     }
+
+    // 실제 말풍선에도 즉시 미리보기를 본냅니다. 저장은 적용 버튼, 창을 닫으면 저장값으로 복원됩니다.
+    api.previewAppearance({ bubbleBgColor: previewBg, bubbleTextColor: previewText });
   }
+}
+
+function registerUsageUpdates() {
+  api.onUsageRefreshed((payload) => {
+    if (!state || !payload || typeof payload !== "object") return;
+    if (Array.isArray(payload.providers)) state.providers = payload.providers;
+    if (Array.isArray(payload.usage)) state.usage = payload.usage;
+    renderAccounts();
+    renderUsage();
+  });
 }
 
 async function initialize() {
@@ -567,6 +588,7 @@ async function initialize() {
   registerAppearanceControls();
   registerProviderControls();
   registerAppearanceUpdates();
+  registerUsageUpdates();
 
   try {
     const [fontResponse, settingsResponse] = await Promise.all([api.fonts(), api.get()]);

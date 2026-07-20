@@ -14,6 +14,7 @@ function source(relativePath) {
 const settingsHtml = source("src/settings.html");
 const settingsJs = source("src/settings.js");
 const settingsCss = source("src/settings.css");
+const settingsPreloadJs = source("src/settings-preload.js");
 const bubbleCss = source("src/bubble.css");
 const bubbleJs = source("src/bubble.js");
 const bubbleHtml = source("src/bubble.html");
@@ -204,7 +205,7 @@ test("main은 renderer 크기를 work area에 제한하고 실제 폭으로 배�
   assert.match(mainJs, /normalizeBubbleSize\(/);
   assert.match(mainJs, /positionBubbleBounds\(/);
   assert.match(mainJs, /minWidth:\s*300/);
-  assert.match(mainJs, /maxWidth:\s*520/);
+  assert.match(mainJs, /maxWidth:\s*440/);
   assert.match(mainJs, /marginPx:\s*12/);
   assert.match(mainJs, /let bubbleWidth = BUBBLE_CONFIG\.minWidth/);
   assert.doesNotMatch(mainJs, /BUBBLE_CONFIG\.width\s*\/\s*2/);
@@ -451,7 +452,7 @@ test("단일·다중 활동 제목을 축소 가능한 span으로 감싸고 배�
       text: "",
     }],
   });
-  const sectionLabel = multiBubble.children[1].children[0].children[0];
+  const sectionLabel = multiBubble.children[0].children[0].children[0];
 
   assert.equal(sectionLabel.attributes["aria-label"], undefined);
   assert.deepEqual(
@@ -586,14 +587,12 @@ test("공급자별 첫 활동 row와 단일 활동 제목에만 유효한 사용
       { provider: "codex", title: "Codex B", text: "", usageBadges: [] },
     ],
   });
-  const header = multiBubble.children[0];
   const sectionLabels = multiBubble.children
-    .slice(1)
     .map((section) => section.children[0].children[0]);
   const codexGroup = childWithClass(sectionLabels[0], "activity-usage-badges");
   const kimiGroup = childWithClass(sectionLabels[1], "activity-usage-badges");
 
-  assert.equal(descendantWithClass(header, "activity-usage-badges"), null);
+  assert.equal(JSON.stringify(multiBubble).includes("헤더에 표시하면 안 됨"), false);
   assert.ok(codexGroup);
   assert.deepEqual(
     codexGroup.children.map((badge) => badge.className),
@@ -648,6 +647,66 @@ test("사용량 배지는 좁은 헤더에서도 줄바꿈과 숫자 흔들림�
   assert.match(groupRule, /white-space:\s*nowrap/);
   assert.match(groupRule, /font-variant-numeric:\s*tabular-nums/);
   assert.match(groupRule, /color:\s*color-mix/);
+});
+
+test("표시 기능 토글이 꺼지면 현재 말풍선의 배지를 즉시 숨기고 다시 켜면 복원한다", () => {
+  const harness = createBubbleHarness();
+  harness.update({
+    kind: "activity",
+    title: "CodePet",
+    statusIcon: "working",
+    subagentCount: 2,
+    usageBadges: [
+      { key: "5h", remainingPercent: 42, ariaLabel: "Codex 5시간 42% 남음" },
+    ],
+    text: "작업 중",
+  });
+  assert.ok(descendantWithClass(harness.bubble, "subagent-badge"));
+  assert.ok(descendantWithClass(harness.bubble, "activity-usage-badges"));
+
+  harness.updateAppearance({ showUsageBadges: false, showSubagentBadge: false });
+  assert.equal(descendantWithClass(harness.bubble, "subagent-badge"), null);
+  assert.equal(descendantWithClass(harness.bubble, "activity-usage-badges"), null);
+
+  harness.updateAppearance({ showUsageBadges: true, showSubagentBadge: true });
+  assert.ok(descendantWithClass(harness.bubble, "subagent-badge"));
+  assert.ok(descendantWithClass(harness.bubble, "activity-usage-badges"));
+});
+
+test("말풍선 표시 기능 토글은 설정 저장부터 appearance 전파까지 연결된다", () => {
+  assert.match(settingsHtml, /id="nav-bubble"/);
+  assert.match(settingsHtml, /id="usage-badges"/);
+  assert.match(settingsHtml, /id="subagent-badge"/);
+  assert.match(settingsHtml, /id="save-bubble"/);
+  assert.match(settingsJs, /showUsageBadges: \$\("#usage-badges"\)\.checked/);
+  assert.match(settingsJs, /showSubagentBadge: \$\("#subagent-badge"\)\.checked/);
+  assert.match(mainJs, /patch\.showUsageBadges = next\.showUsageBadges/);
+  assert.match(mainJs, /patch\.showSubagentBadge = next\.showSubagentBadge/);
+  assert.match(mainJs, /showUsageBadges: settings\.showUsageBadges !== false/);
+  assert.match(mainJs, /showSubagentBadge: settings\.showSubagentBadge !== false/);
+  assert.match(bubbleJs, /appearance\?\.showUsageBadges !== false/);
+  assert.match(bubbleJs, /appearance\?\.showSubagentBadge !== false/);
+});
+
+test("말풍선 색상 라이브 프리뷰는 bubble 창에 즉시 반영되고 닫으면 저장값으로 복원된다", () => {
+  assert.match(settingsPreloadJs, /PREVIEW_APPEARANCE: "settings:preview-appearance"/);
+  assert.match(settingsPreloadJs, /previewAppearance: \(value\) => ipcRenderer\.send/);
+  assert.match(settingsJs, /api\.previewAppearance\(\{ bubbleBgColor: previewBg, bubbleTextColor: previewText \}\)/);
+  assert.match(mainJs, /ipcMain\.on\("settings:preview-appearance"/);
+  assert.match(mainJs, /bubbleWindow\.webContents\.send\("appearance:update", payload\)/);
+  const closedHandler = mainJs.match(/settingsWindow\.on\("closed", \(\) => \{[\s\S]*?\}\);/)?.[0] || "";
+  assert.match(closedHandler, /sendAppearanceToWindows\(\)/);
+});
+
+test("설정 창은 캐시된 사용량으로 즉시 열리고 최신값은 백그라운드에서 갱신된다", () => {
+  assert.match(mainJs, /getSettingsData\(\{ usageMode: "cache" \}\)/);
+  assert.match(mainJs, /scheduleUsageSnapshotRefresh\(\)/);
+  assert.match(mainJs, /settingsWindow\.webContents\.send\("settings:usage-refreshed"/);
+  assert.match(mainJs, /lastUsageSnapshot = \{ providers, usage \}/);
+  assert.match(settingsPreloadJs, /USAGE_REFRESHED: "settings:usage-refreshed"/);
+  assert.match(settingsPreloadJs, /onUsageRefreshed: \(handler\) =>/);
+  assert.match(settingsJs, /api\.onUsageRefreshed\(\(payload\) =>/);
+  assert.match(settingsJs, /registerUsageUpdates\(\)/);
 });
 
 test("Codex 활동은 사이드바 작업 제목을 비동기로 보강한다", () => {
@@ -974,7 +1033,7 @@ test("사용량 카드는 한도만 렌더링하고 계정 action을 넣지 않�
 
 test("사용량 화면은 provider별 모든 계정을 개별 카드로 표시한다", () => {
   assert.match(mainJs, /loadAccountUsageCards/);
-  assert.match(mainJs, /usage:\s*\[\.\.\.codexUsage, \.\.\.agy\.usage, \.\.\.claude\.usage\]/);
+  assert.match(mainJs, /usage = \[\.\.\.codexUsage, \.\.\.agy\.usage, \.\.\.claude\.usage, \.\.\.kimiUsage\]/);
   assert.match(settingsJs, /item\.accountLabel/);
   assert.match(settingsJs, /item\.active/);
   assert.match(settingsHtml, />계정별 한도</);

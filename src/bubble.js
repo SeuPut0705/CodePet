@@ -6,6 +6,8 @@ const bubbleElement = document.querySelector("#bubble");
 let currentBubbleData = null;
 let lastReportedSize = null;
 let currentFontFamily = "";
+let showUsageBadges = true;
+let showSubagentBadge = true;
 
 function measureBubbleSize() {
   const root = document.querySelector("#root");
@@ -59,8 +61,21 @@ window.bubbleApi.onAppearance((appearance) => {
     root.style.removeProperty("--bubble-muted");
   }
 
-  if (fontFamilyChanged && currentBubbleData) {
-    reportBubbleSize({ force: true });
+  const nextShowUsageBadges = appearance?.showUsageBadges !== false;
+  const nextShowSubagentBadge = appearance?.showSubagentBadge !== false;
+  const badgesChanged =
+    nextShowUsageBadges !== showUsageBadges ||
+    nextShowSubagentBadge !== showSubagentBadge;
+  showUsageBadges = nextShowUsageBadges;
+  showSubagentBadge = nextShowSubagentBadge;
+
+  if (currentBubbleData) {
+    if (badgesChanged) {
+      // 표시 기능 토글은 현재 말풍선을 즉시 다시 그립니다.
+      renderCurrentBubble(currentBubbleData);
+    } else if (fontFamilyChanged) {
+      reportBubbleSize({ force: true });
+    }
   }
 });
 
@@ -82,6 +97,7 @@ function appendStatusHeadingContent(element, titleText, statusIcon, titleLabel =
 }
 
 function appendSubagentBadge(element, count) {
+  if (!showSubagentBadge) return;
   if (!Number.isSafeInteger(count) || count <= 0) return;
 
   const badge = document.createElement("span");
@@ -99,6 +115,7 @@ function appendSubagentBadge(element, count) {
 }
 
 function appendUsageBadges(element, badges) {
+  if (!showUsageBadges) return;
   if (!Array.isArray(badges)) return;
   const validBadges = badges.filter((badge) =>
     ["5h", "7d"].includes(badge?.key) &&
@@ -257,7 +274,7 @@ function renderActivity(data) {
   }
 
   bubbleElement.replaceChildren();
-  bubbleElement.appendChild(createTitle(data.title, true));
+  // 집계 제목("총 N개 작업 중")은 표시하지 않고 작업별 section만 보여줍니다.
   for (const sectionData of data.sections) {
     const section = document.createElement("div");
     section.className = "activity-section";
@@ -299,8 +316,7 @@ function renderActivity(data) {
   }
 }
 
-window.bubbleApi.onUpdate((data) => {
-  currentBubbleData = data;
+function renderCurrentBubble(data) {
   // 다중 항목은 각 section이 자신의 클릭 가능 상태를 표시합니다.
   bubbleElement.classList.toggle("clickable", Boolean(data.primaryAction?.id));
 
@@ -314,6 +330,11 @@ window.bubbleApi.onUpdate((data) => {
   // 주의: requestAnimationFrame을 쓰면 안 됩니다. 숨겨진 창에서는 rAF 콜백이 실행되지 않아서
   // 크기 보고가 누락되고, main은 보고를 받아야 창을 표시하므로 말풍선이 다시 열리지 않습니다.
   reportBubbleSize({ force: true });
+}
+
+window.bubbleApi.onUpdate((data) => {
+  currentBubbleData = data;
+  renderCurrentBubble(data);
 });
 
 window.addEventListener("resize", reportBubbleSize);

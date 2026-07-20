@@ -39,7 +39,7 @@ Work data is read locally for on-screen display. You decide how much detail the 
 
 | Live task status | Quotas and accounts | Concurrent tasks | Your desktop pet |
 |---|---|---|---|
-| Shows responding, editing, commands, tests, approval waits, and completion through motion and bubbles. | Shows every connected Codex, AGY, and Claude account in its own quota card. | Tracks up to five tasks across providers in start order. | Loads Codex pets and custom sprite sheets, then remembers size, position, and movement preferences. |
+| Shows responding, editing, commands, tests, approval waits, and completion through motion and bubbles. | Shows quota cards for every connected Codex, AGY, and Claude account, plus the managed Kimi login. | Tracks up to five tasks across providers in start order. | Loads Codex pets and custom sprite sheets, then remembers size, position, and movement preferences. |
 
 ## Quick start
 
@@ -102,7 +102,7 @@ When Codex rollout metadata includes a Sol, Terra, or Luna model and reasoning e
 
 Double-click the pet to open **Usage by Account (계정별 한도)** in Settings.
 
-- One card for every connected Codex, AGY, and Claude account
+- One card for every connected Codex, AGY, and Claude account, plus the managed Kimi login
 - A failed account lookup never hides the other cards
 - Codex windows use the actual server duration for five-hour, weekly, monthly, and model-specific limits
 - Usage over 70% turns yellow; usage over 90% turns red

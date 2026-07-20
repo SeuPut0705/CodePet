@@ -8,6 +8,8 @@ const CHANNELS = Object.freeze({
   USAGE: "settings:usage",
   APPEARANCE: "appearance:update",
   NAVIGATE: "settings:navigate",
+  PREVIEW_APPEARANCE: "settings:preview-appearance",
+  USAGE_REFRESHED: "settings:usage-refreshed",
 });
 
 contextBridge.exposeInMainWorld("settingsApi", {
@@ -16,6 +18,13 @@ contextBridge.exposeInMainWorld("settingsApi", {
   fonts: () => ipcRenderer.invoke(CHANNELS.FONTS),
   account: (value) => ipcRenderer.invoke(CHANNELS.ACCOUNT, value),
   usage: () => ipcRenderer.invoke(CHANNELS.USAGE),
+  previewAppearance: (value) => ipcRenderer.send(CHANNELS.PREVIEW_APPEARANCE, value),
+  onUsageRefreshed: (handler) => {
+    if (typeof handler !== "function") return () => {};
+    const listener = (_event, value) => handler(value);
+    ipcRenderer.on(CHANNELS.USAGE_REFRESHED, listener);
+    return () => ipcRenderer.removeListener(CHANNELS.USAGE_REFRESHED, listener);
+  },
   onAppearance: (handler) => {
     if (typeof handler !== "function") return () => {};
     const listener = (_event, value) => handler(value);

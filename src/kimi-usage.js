@@ -51,4 +51,17 @@ function buildKimiUsageBadges(payload) {
   });
 }
 
-module.exports = { buildKimiUsageBadges, parseKimiUsageWindows };
+function buildKimiUsageGauges(windows) {
+  if (!Array.isArray(windows)) return [];
+  return windows.flatMap((window) => {
+    const meta = TARGETS.get(window?.minutes);
+    const used = finiteNumber(window?.used);
+    const limit = finiteNumber(window?.limit);
+    if (!meta || used === null || limit === null || limit <= 0) return [];
+    const [, name] = meta;
+    const usedPercent = Math.round(Math.min(100, Math.max(0, (used / limit) * 100)));
+    return [{ label: `${name} 한도`, usedPercent, resetText: `${name} 주기` }];
+  });
+}
+
+module.exports = { buildKimiUsageBadges, buildKimiUsageGauges, parseKimiUsageWindows };

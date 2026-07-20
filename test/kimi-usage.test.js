@@ -1,6 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { buildKimiUsageBadges, parseKimiUsageWindows } = require("../src/kimi-usage");
+const { buildKimiUsageBadges, buildKimiUsageGauges, parseKimiUsageWindows } = require("../src/kimi-usage");
 
 test("Kimi weekly summary와 5시간 window를 남은 퍼센트로 만든다", () => {
   const payload = {
@@ -65,4 +65,29 @@ test("관리형 Kimi namespaced minute window를 5시간으로 정규화한다",
     { key: "5h", remainingPercent: 72, ariaLabel: "Kimi 5시간 72% 남음" },
     { key: "7d", remainingPercent: 43, ariaLabel: "Kimi 7일 43% 남음" },
   ]);
+});
+
+test("Kimi 사용량 window를 설정 카드용 게이지로 변환한다", () => {
+  assert.deepEqual(buildKimiUsageGauges([
+    { minutes: 300, used: 28, limit: 100 },
+    { minutes: 10080, used: 57, limit: 100 },
+  ]), [
+    { label: "5시간 한도", usedPercent: 28, resetText: "5시간 주기" },
+    { label: "7일 한도", usedPercent: 57, resetText: "7일 주기" },
+  ]);
+});
+
+test("Kimi 게이지는 잘못된 window를 제외하고 퍼센트를 0..100으로 제한한다", () => {
+  assert.deepEqual(buildKimiUsageGauges([
+    { minutes: 300, used: 140, limit: 100 },
+    { minutes: 60, used: 10, limit: 100 },
+    { minutes: 10080, used: "bad", limit: 100 },
+    { minutes: 10080, used: -10, limit: 100 },
+    { minutes: 10080, used: 10, limit: 0 },
+    null,
+  ]), [
+    { label: "5시간 한도", usedPercent: 100, resetText: "5시간 주기" },
+    { label: "7일 한도", usedPercent: 0, resetText: "7일 주기" },
+  ]);
+  assert.deepEqual(buildKimiUsageGauges(null), []);
 });
