@@ -172,3 +172,52 @@ test("같은 provider 이벤트 id가 반복 기록돼도 한 번만 발행한�
   watcher.poll();
   assert.equal(count, 1);
 });
+
+test("외부 watcher는 작업별 표시 context를 누적하고 0개 서브에이전트도 갱신한다", () => {
+  const watcher = new ExternalWatcher({
+    provider: "test",
+    roots: [],
+    findFiles: () => [],
+    parseRow: (row) => row,
+    quietMs: 60_000,
+  });
+  const changed = [];
+  const messages = [];
+  watcher.on("context-changed", (context) => changed.push(context));
+  watcher.on("agent-message", (_message, context) => messages.push(context));
+
+  watcher.accept({
+    sessionId: "one",
+    eventId: "one",
+    type: "user",
+    text: "시작",
+    cwd: "/work/app",
+    sectionLabel: "App",
+    subagentCount: 2,
+  }, 1);
+  watcher.accept({
+    sessionId: "one",
+    eventId: "two",
+    type: "context",
+    workerLabel: "K3",
+    reasoningLabel: "Max",
+    subagentCount: 0,
+  }, 2);
+  watcher.accept({
+    sessionId: "one",
+    eventId: "three",
+    type: "assistant",
+    text: "완료",
+  }, 3);
+
+  assert.deepEqual(changed.at(-1), {
+    threadId: "test:one",
+    cwd: "/work/app",
+    provider: "test",
+    sectionLabel: "App",
+    workerLabel: "K3",
+    reasoningLabel: "Max",
+    subagentCount: 0,
+  });
+  assert.deepEqual(messages.at(-1), changed.at(-1));
+});

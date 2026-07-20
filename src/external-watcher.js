@@ -4,6 +4,22 @@ const { EventEmitter } = require("node:events");
 const { takeGraphemes } = require("./activity-message");
 
 const MAX_RECENT_EVENTS = 1200;
+const ACTIVITY_CONTEXT_KEYS = [
+  "sectionLabel",
+  "workerLabel",
+  "reasoningLabel",
+  "subagentCount",
+];
+
+function mergeActivityContext(session, event) {
+  let changed = false;
+  for (const key of ACTIVITY_CONTEXT_KEYS) {
+    if (!Object.hasOwn(event, key) || session[key] === event[key]) continue;
+    session[key] = event[key];
+    changed = true;
+  }
+  return changed;
+}
 
 function text(value, limit = 280) {
   if (value === null || value === undefined) return "";
@@ -102,6 +118,19 @@ class ExternalWatcher extends EventEmitter {
     return [...new Set(this.roots.flatMap((root) => this.findFiles(root)))];
   }
 
+  contextFor(session, extra = {}) {
+    const context = {
+      threadId: session.id,
+      cwd: session.cwd,
+      provider: this.provider,
+      ...extra,
+    };
+    for (const key of ACTIVITY_CONTEXT_KEYS) {
+      if (Object.hasOwn(session, key)) context[key] = session[key];
+    }
+    return context;
+  }
+
   rememberEvent(key) {
     if (!key || this.recentEvents.has(key)) return false;
     this.recentEvents.add(key);
@@ -184,17 +213,20 @@ class ExternalWatcher extends EventEmitter {
     let session = this.sessions.get(id);
     if (!session) {
       session = { id, lastAt: now, cwd: event.cwd || null, lastMessage: "" };
+      mergeActivityContext(session, event);
       this.sessions.set(id, session);
-      this.emit("working-changed", true, null, {
-        threadId: id,
-        cwd: session.cwd,
-        provider: this.provider,
-      });
+      this.emit("working-changed", true, null, this.contextFor(session));
     }
 
     session.lastAt = now;
-    session.cwd ||= event.cwd || null;
-    const context = { threadId: id, cwd: session.cwd, provider: this.provider };
+    let contextChanged = false;
+    if (!session.cwd && event.cwd) {
+      session.cwd = event.cwd;
+      contextChanged = true;
+    }
+    contextChanged = mergeActivityContext(session, event) || contextChanged;
+    const context = this.contextFor(session);
+    if (contextChanged) this.emit("context-changed", context);
     if (event.type === "user") this.emit("user-message", messageText(event.text), context);
     if (event.type === "assistant") {
       session.lastMessage = messageText(event.text);
@@ -215,18 +247,18 @@ class ExternalWatcher extends EventEmitter {
     if (!session) return;
     this.sessions.delete(id);
     const result = {
-      threadId: id,
+      ...this.contextFor(session),
       reason,
       message: messageText(message) || session.lastMessage,
-      provider: this.provider,
       otherTasksWorking: this.sessions.size > 0,
     };
     this.emit("task-finished", result);
-    this.emit("working-changed", this.sessions.size > 0, result, {
-      threadId: id,
-      activityChange: "removed",
-      provider: this.provider,
-    });
+    this.emit(
+      "working-changed",
+      this.sessions.size > 0,
+      result,
+      this.contextFor(session, { activityChange: "removed" })
+    );
   }
 
   get working() {
