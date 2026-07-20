@@ -19,6 +19,12 @@ const bubbleJs = source("src/bubble.js");
 const bubbleHtml = source("src/bubble.html");
 const mainJs = source("src/main.js");
 
+test("README는 Kimi 5h·7d 사용량과 CLI 프로젝트 제목 정책을 설명한다", () => {
+  const readme = fs.readFileSync(path.join(__dirname, "..", "README.md"), "utf8");
+  assert.match(readme, /Kimi.*5h.*7d/s);
+  assert.match(readme, /CLI.*프로젝트 폴더명/s);
+});
+
 class FakeRendererElement {
   constructor(tagName, namespace = null) {
     this.tagName = tagName;
@@ -424,9 +430,10 @@ test("Codex 세션별 usage controller를 watcher와 활성 집계 헤더 수명
     /codexWatcher\.working && activeActivityBubbles\.size > 0[\s\S]*?showActiveActivityBubble\(\)/
   );
   assert.doesNotMatch(mainJs, /activityUsageResetTimer|scheduleActivityUsageReset/);
-  assert.match(buildActiveBubble, /decorateActivityBubbleWithUsage/);
+  assert.match(buildActiveBubble, /decorateActivityBubbleWithProviderUsage/);
   assert.match(buildActiveBubble, /activityUsageController\.buildBadges\(\)/);
-  assert.match(buildActiveBubble, /codexWorking: codexWatcher\.working/);
+  assert.match(buildActiveBubble, /codex:\s*activityUsageController\.buildBadges\(\)/);
+  assert.match(buildActiveBubble, /kimi:\s*kimiUsageController\.buildBadges\(\)/);
   assert.match(removeActiveBubble, /activityUsageController\.remove\(threadId\)/);
   assert.match(
     removeActiveBubble,

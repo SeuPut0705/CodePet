@@ -2,7 +2,7 @@
 
 Codex, Google Antigravity(AGY), Claude Code, Kimi Code CLI의 작업 상태를 한곳에서 보여 주는 데스크톱 펫입니다. 네 프로그램의 대화를 동시에 감지해 말풍선으로 표시하고, 설정 창에서 Codex·AGY·Claude 계정별 한도와 말풍선 색상·글꼴을 관리합니다.
 
-Windows와 macOS를 지원합니다. CLI 세션(Claude Code, Codex CLI, Kimi Code CLI)뿐 아니라 데스크톱 앱 세션도 감지합니다 — Claude 데스크톱 앱의 Claude Code 세션은 `~/.claude/projects`에, Codex 데스크톱 앱 세션은 `~/.codex/sessions`에 기록되므로 같은 감시 경로로 함께 잡힙니다. Kimi는 `~/.kimi-code/sessions`의 로컬 작업 로그만 읽으며 계정 전환과 사용량 조회 대상에는 포함하지 않습니다.
+Windows와 macOS를 지원합니다. CLI 세션(Claude Code, Codex CLI, Kimi Code CLI)뿐 아니라 데스크톱 앱 세션도 감지합니다 — Claude 데스크톱 앱의 Claude Code 세션은 `~/.claude/projects`에, Codex 데스크톱 앱 세션은 `~/.codex/sessions`에 기록되므로 같은 감시 경로로 함께 잡힙니다. Kimi는 `~/.kimi-code/sessions`의 로컬 작업 로그를 읽으며 계정 전환 대상에는 포함하지 않습니다.
 
 Codex CLI의 펫 에셋(`~/.codex/pets`)을 그대로 가져다 쓰기 때문에, Codex에서 펫을 설치해뒀다면 별도 설정 없이 바로 골라 쓸 수 있습니다.
 
@@ -61,6 +61,9 @@ Codex의 `~/.codex/sessions`, AGY의 로컬 transcript, Claude의 프로젝트 J
 - 작업 중단 → 쓰러짐
 
 세션 여러 개를 동시에 돌려도 각각 추적하고, 완료 이벤트가 없는 작업은 공급자별 quiet-time 또는 stale 처리 뒤 원래 상태로 돌아옵니다.
+
+- CLI 활동 제목은 자동 세션 제목 대신 프로젝트 폴더명을 사용합니다.
+- 관리형 Kimi Code 로그인에서는 작업 중 첫 Kimi 섹션에 `5h`·`7d` 남은 사용량을 표시합니다. 사용자 지정 provider와 컨텍스트 사용량은 표시하지 않습니다.
 
 말풍선 개인정보 수준은 설정의 `일반` 화면에서 선택합니다.
 

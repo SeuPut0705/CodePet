@@ -9,6 +9,8 @@ const { CodexThreadTitleResolver, readCodexThreadTitle } = require("./codex-thre
 const { AntigravityWatcher } = require("./antigravity-watcher");
 const { ClaudeWatcher } = require("./claude-watcher");
 const { KimiWatcher } = require("./kimi-watcher");
+const { KimiUsageClient } = require("./kimi-usage-client");
+const { KimiUsageController } = require("./kimi-usage-controller");
 const { ClaudeAccountSwitcher } = require("./claude-account-switcher");
 const { normalizeClaudeAccountMetadata } = require("./claude-account-metadata");
 const { AntigravityAccountSwitcher } = require("./antigravity-account-switcher");
@@ -35,7 +37,7 @@ const {
 } = require("./activity-bubble-state");
 const {
   ActivityUsageController,
-  decorateActivityBubbleWithUsage,
+  decorateActivityBubbleWithProviderUsage,
 } = require("./activity-usage");
 const {
   createStableWindowBounds,
@@ -496,6 +498,15 @@ const activeActivityBubbles = new ActivityBubbleState();
 const activityUsageController = new ActivityUsageController({
   onBadgesChanged: () => {
     if (codexWatcher.working && activeActivityBubbles.size > 0) {
+      showActiveActivityBubble();
+    }
+  },
+});
+const kimiUsageClient = new KimiUsageClient();
+const kimiUsageController = new KimiUsageController({
+  client: kimiUsageClient,
+  onBadgesChanged: () => {
+    if (pendingBubbleData?.activitySource === "active") {
       showActiveActivityBubble();
     }
   },
@@ -2334,10 +2345,12 @@ function createVisibleActivityBubble(data) {
 }
 
 function buildActiveActivityBubble() {
-  return decorateActivityBubbleWithUsage(
+  return decorateActivityBubbleWithProviderUsage(
     activeActivityBubbles.toBubbleData(),
-    activityUsageController.buildBadges(),
-    { codexWorking: codexWatcher.working }
+    {
+      codex: activityUsageController.buildBadges(),
+      kimi: kimiUsageController.buildBadges(),
+    }
   );
 }
 
@@ -3400,6 +3413,9 @@ app.whenReady().then(() => {
   registerCodexWatcher();
   registerExternalWatcher(antigravityWatcher, "AGY");
   registerExternalWatcher(claudeWatcher, "Claude");
+  kimiWatcher.on("working-changed", () => {
+    kimiUsageController.setWorking(kimiWatcher.working);
+  });
   registerExternalWatcher(kimiWatcher, "Kimi");
   createTray();
   createWindow();
@@ -3426,6 +3442,7 @@ app.whenReady().then(() => {
 app.on("before-quit", () => {
   isQuitting = true;
   activityUsageController.dispose();
+  kimiUsageController.dispose();
   teardownCodexProxyOnQuit();
 });
 

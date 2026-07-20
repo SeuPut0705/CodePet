@@ -1,6 +1,17 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const path = require("node:path");
 const { KimiUsageController } = require("../src/kimi-usage-controller");
+
+test("main은 Kimi 사용량 controller를 watcher와 말풍선 수명주기에 연결한다", () => {
+  const main = fs.readFileSync(path.join(__dirname, "..", "src", "main.js"), "utf8");
+  assert.match(main, /new KimiUsageClient\(/);
+  assert.match(main, /new KimiUsageController\(/);
+  assert.match(main, /kimiUsageController\.setWorking\(kimiWatcher\.working\)/);
+  assert.match(main, /kimiUsageController\.dispose\(\)/);
+  assert.match(main, /decorateActivityBubbleWithProviderUsage/);
+});
 
 function deferred() {
   let resolve;
