@@ -9,6 +9,28 @@ let installedFonts = [];
 let selectedFont = "";
 let toastTimer = null;
 
+const i18n = window.settingsI18n;
+let currentLanguage = "ko";
+
+function t(key, vars) {
+  return i18n ? i18n.translate(currentLanguage, key, vars) : key;
+}
+
+// HTML에 담긴 한국어 기본 내용을 선택 언어로 즉시 치환합니다.
+function applyLanguage(language) {
+  currentLanguage = i18n ? i18n.resolveLanguage(language, state?.systemLocale) : "ko";
+  document.documentElement.lang = currentLanguage;
+  for (const element of document.querySelectorAll("[data-i18n]")) {
+    element.textContent = t(element.getAttribute("data-i18n"));
+  }
+  for (const element of document.querySelectorAll("[data-i18n-placeholder]")) {
+    element.setAttribute("placeholder", t(element.getAttribute("data-i18n-placeholder")));
+  }
+  for (const element of document.querySelectorAll("[data-i18n-aria]")) {
+    element.setAttribute("aria-label", t(element.getAttribute("data-i18n-aria")));
+  }
+}
+
 function $(selector) {
   return document.querySelector(selector);
 }
@@ -65,7 +87,7 @@ function applyAppearance(appearance, fontFamily = appearance?.fontFamily || "") 
 
 function showError(message) {
   clearTimeout(toastTimer);
-  toastElement.textContent = String(message || "오류가 발생했습니다.");
+  toastElement.textContent = String(message || t("error.generic"));
   toastElement.hidden = false;
   toastTimer = setTimeout(() => {
     toastElement.hidden = true;
@@ -77,7 +99,7 @@ function responseError(response, fallback) {
   return response?.error || fallback;
 }
 
-function setButtonBusy(button, busy, busyLabel = "처리 중…") {
+function setButtonBusy(button, busy, busyLabel = t("busy.check")) {
   if (!button) return;
   if (busy) {
     button.dataset.label = button.textContent;
@@ -119,7 +141,7 @@ function resolveInstalledFontFamily(fontFamily) {
 }
 
 function updateFontPreview() {
-  $("#font-preview-name").textContent = selectedFont || "시스템 기본";
+  $("#font-preview-name").textContent = selectedFont || t("font.systemDefault");
   applyAppearance(state?.appearance || {}, selectedFont);
 }
 
@@ -128,22 +150,22 @@ function renderFonts() {
   const filteredFonts = query
     ? installedFonts.filter((font) => font.toLocaleLowerCase("ko").includes(query))
     : installedFonts;
-  const options = [createFontOption("시스템 기본", "")];
+  const options = [createFontOption(t("font.systemDefault"), "")];
 
   if (selectedFont && !filteredFonts.includes(selectedFont)) {
-    options.push(createFontOption(`${selectedFont} · 현재`, selectedFont, selectedFont));
+    options.push(createFontOption(`${selectedFont} ${t("font.currentSuffix")}`, selectedFont, selectedFont));
   }
   options.push(...filteredFonts.map((font) => createFontOption(font, font, font)));
   if (query && filteredFonts.length === 0) {
-    const empty = new Option("검색 결과 없음", "__empty__");
+    const empty = new Option(t("font.noResult"), "__empty__");
     empty.disabled = true;
     options.push(empty);
   }
 
   replaceOptions(fontSelect, options, selectedFont);
   $("#font-count").textContent = query
-    ? `${filteredFonts.length} / ${installedFonts.length}개`
-    : `${installedFonts.length}개`;
+    ? t("font.countFiltered", { filtered: filteredFonts.length, total: installedFonts.length })
+    : t("font.count", { count: installedFonts.length });
   updateFontPreview();
 }
 
@@ -158,12 +180,13 @@ function renderGeneral({ resetAppearance = false } = {}) {
   $("#bubble-mode").value = state.activityBubbleMode;
   $("#usage-badges").checked = state.showUsageBadges !== false;
   $("#subagent-badge").checked = state.showSubagentBadge !== false;
+  $("#language").value = state.language || "system";
   $("#follow").checked = state.followMouse;
   const autostart = $("#autostart");
   autostart.checked = state.autoStart;
   autostart.disabled = state.autoStartSupported === false;
   $("#autostart-note").textContent = autostart.disabled
-    ? "macOS 개발 실행에서는 앱 빌드 후 사용할 수 있습니다."
+    ? t("pet.autostartNote")
     : "";
 
   const bgVal = state.appearance.bubbleBgColor || "";
@@ -205,7 +228,7 @@ function createProviderGroup(provider) {
     createElement("h2", "", provider.label)
   );
 
-  const addButton = createElement("button", "button", "계정 추가");
+  const addButton = createElement("button", "button", t("accounts.add"));
   addButton.type = "button";
   addButton.addEventListener("click", () =>
     runAccountAction({ provider: provider.id, action: "login" }, addButton)
@@ -215,7 +238,7 @@ function createProviderGroup(provider) {
 
   const list = createElement("div", "stack-list");
   if (!provider.accounts?.length) {
-    list.appendChild(createEmptyState("저장된 계정 없음"));
+    list.appendChild(createEmptyState(t("accounts.empty")));
     group.appendChild(list);
     return group;
   }
@@ -230,7 +253,7 @@ function createProviderGroup(provider) {
     const copy = createElement("div", "list-copy");
     const titleRow = createElement("span");
     titleRow.appendChild(createElement("strong", "", account.email || account.label));
-    if (account.active) titleRow.appendChild(createElement("span", "active-chip", "현재"));
+    if (account.active) titleRow.appendChild(createElement("span", "active-chip", t("accounts.current")));
     copy.appendChild(titleRow);
     if (account.plan) copy.appendChild(createElement("small", "", account.plan));
     identity.appendChild(copy);
@@ -239,7 +262,7 @@ function createProviderGroup(provider) {
     const switchButton = createElement(
       "button",
       "button",
-      account.active ? "사용 중" : "전환"
+      account.active ? t("accounts.using") : t("accounts.switch")
     );
     switchButton.type = "button";
     switchButton.disabled = account.active;
@@ -251,12 +274,12 @@ function createProviderGroup(provider) {
     );
     actions.appendChild(switchButton);
 
-    const deleteButton = createElement("button", "button danger-button", "삭제");
+    const deleteButton = createElement("button", "button danger-button", t("accounts.delete"));
     deleteButton.type = "button";
     deleteButton.disabled = account.active;
     deleteButton.addEventListener("click", () => {
       const accountLabel = account.email || account.label || provider.label;
-      if (!window.confirm(`"${accountLabel}" 저장 계정을 삭제할까요?`)) return;
+      if (!window.confirm(t("accounts.confirmDelete", { label: accountLabel }))) return;
       runAccountAction(
         { provider: provider.id, action: "delete", profileKey: account.key },
         deleteButton
@@ -283,17 +306,18 @@ function clampPercent(value) {
 }
 
 function resetLabel(value) {
-  if (!value) return "—";
+  if (!value) return t("usage.resetNone");
   const date = new Date(value);
   if (Number.isNaN(date.getTime()) || !/^\d{4}-\d{2}-\d{2}T/.test(String(value))) {
     return String(value);
   }
-  return `${new Intl.DateTimeFormat("ko-KR", {
+  const time = new Intl.DateTimeFormat(i18n ? i18n.dateLocale(currentLanguage) : "ko-KR", {
     month: "short",
     day: "numeric",
     hour: "numeric",
     minute: "2-digit",
-  }).format(date)} 초기화`;
+  }).format(date);
+  return t("usage.resetAt", { time });
 }
 
 function createUsageGauge(gauge) {
@@ -319,23 +343,23 @@ function renderUsage() {
   for (const item of state?.usage || []) {
     const card = createElement("article", "usage-card");
     const heading = createElement("header", "usage-card-heading");
-    const providerLabel = item.providerLabel || item.label || "계정";
+    const providerLabel = item.providerLabel || item.label || t("accounts.title");
     const title = createElement("div", "usage-account-title");
     title.append(
       createElement("h2", "", providerLabel),
-      createElement("p", "", item.accountLabel || "연결된 계정")
+      createElement("p", "", item.accountLabel || t("accounts.heading"))
     );
     heading.append(
       createElement("span", "provider-mark", providerLabel.slice(0, 1)),
       title
     );
-    if (item.active) heading.appendChild(createElement("span", "usage-current", "현재"));
+    if (item.active) heading.appendChild(createElement("span", "usage-current", t("accounts.current")));
     card.appendChild(heading);
 
     if (item.error) {
       card.appendChild(createElement("p", "usage-error", item.error));
     } else if (!item.gauges?.length) {
-      card.appendChild(createElement("p", "usage-error", "한도 정보 없음"));
+      card.appendChild(createElement("p", "usage-error", t("usage.noLimits")));
     } else {
       for (const gauge of item.gauges) card.appendChild(createUsageGauge(gauge));
     }
@@ -351,14 +375,14 @@ function renderAll(options = {}) {
 
 async function runAccountAction(input, sourceButton) {
   const busyLabel = input.action === "switch"
-    ? "전환 중…"
+    ? t("busy.switch")
     : input.action === "delete"
-      ? "삭제 중…"
-      : "여는 중…";
+      ? t("busy.delete")
+      : t("busy.open");
   setButtonBusy(sourceButton, true, busyLabel);
   try {
     const response = await api.account(input);
-    if (!response?.ok) throw new Error(responseError(response, "계정 작업에 실패했습니다."));
+    if (!response?.ok) throw new Error(responseError(response, t("error.accountAction")));
     state = response.data;
     renderAccounts();
     renderUsage();
@@ -421,9 +445,15 @@ function registerAppearanceControls() {
     selectedFont = fontSelect.value;
     updateFontPreview();
   });
+  $("#language").addEventListener("change", () => {
+    applyLanguage($("#language").value);
+    renderFonts();
+    renderAccounts();
+    renderUsage();
+  });
   async function handleSave(event) {
     const button = event.currentTarget;
-    setButtonBusy(button, true, "적용 중…");
+    setButtonBusy(button, true, t("action.saving"));
     try {
       const response = await api.save({
         fontFamily: selectedFont || null,
@@ -435,9 +465,11 @@ function registerAppearanceControls() {
         bubbleTextColor: $("#bubble-text-color").value.trim() || null,
         showUsageBadges: $("#usage-badges").checked,
         showSubagentBadge: $("#subagent-badge").checked,
+        language: $("#language").value,
       });
-      if (!response?.ok) throw new Error(responseError(response, "설정을 적용하지 못했습니다."));
+      if (!response?.ok) throw new Error(responseError(response, t("error.save")));
       state = response.data;
+      applyLanguage(state.language);
       renderAll({ resetAppearance: true });
       applyAppearance(state.appearance, selectedFont);
     } catch (error) {
@@ -453,10 +485,10 @@ function registerAppearanceControls() {
 function registerProviderControls() {
   $("#refresh-accounts").addEventListener("click", async (event) => {
     const button = event.currentTarget;
-    setButtonBusy(button, true, "확인 중…");
+    setButtonBusy(button, true, t("busy.check"));
     try {
       const response = await api.get();
-      if (!response?.ok) throw new Error(responseError(response, "계정을 확인하지 못했습니다."));
+      if (!response?.ok) throw new Error(responseError(response, t("error.accounts")));
       state = response.data;
       renderAccounts();
       renderUsage();
@@ -469,10 +501,10 @@ function registerProviderControls() {
 
   $("#refresh-usage").addEventListener("click", async (event) => {
     const button = event.currentTarget;
-    setButtonBusy(button, true, "확인 중…");
+    setButtonBusy(button, true, t("busy.check"));
     try {
       const response = await api.usage();
-      if (!response?.ok) throw new Error(responseError(response, "사용량을 확인하지 못했습니다."));
+      if (!response?.ok) throw new Error(responseError(response, t("error.usage")));
       state = response.data;
       renderAccounts();
       renderUsage();
@@ -503,11 +535,11 @@ function registerTitlebarControls() {
     if (isMaximized) {
       if (maxIcon) maxIcon.style.display = "none";
       if (restoreIcon) restoreIcon.style.display = "block";
-      btn.setAttribute("aria-label", "이전 크기로 복원");
+      btn.setAttribute("aria-label", t("titlebar.restore"));
     } else {
       if (maxIcon) maxIcon.style.display = "block";
       if (restoreIcon) restoreIcon.style.display = "none";
-      btn.setAttribute("aria-label", "최대화");
+      btn.setAttribute("aria-label", t("titlebar.maximize"));
     }
   });
 }
@@ -596,10 +628,11 @@ async function initialize() {
       ? fontResponse.data
       : [];
     if (!settingsResponse?.ok) {
-      throw new Error(responseError(settingsResponse, "설정을 불러오지 못했습니다."));
+      throw new Error(responseError(settingsResponse, t("error.load")));
     }
     state = settingsResponse.data;
     selectedFont = resolveInstalledFontFamily(state.appearance.fontFamily);
+    applyLanguage(state.language);
     renderAll({ resetAppearance: true });
     applyAppearance(state.appearance, selectedFont);
   } catch (error) {

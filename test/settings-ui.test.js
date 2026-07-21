@@ -15,6 +15,7 @@ const settingsHtml = source("src/settings.html");
 const settingsJs = source("src/settings.js");
 const settingsCss = source("src/settings.css");
 const settingsPreloadJs = source("src/settings-preload.js");
+const settingsI18nJs = source("src/settings-i18n.js");
 const bubbleCss = source("src/bubble.css");
 const bubbleJs = source("src/bubble.js");
 const bubbleHtml = source("src/bubble.html");
@@ -688,6 +689,17 @@ test("말풍선 표시 기능 토글은 설정 저장부터 appearance 전파까
   assert.match(bubbleJs, /appearance\?\.showSubagentBadge !== false/);
 });
 
+test("설정 창 다국어는 언어 선택부터 저장·사전 적용까지 연결된다", () => {
+  assert.match(settingsHtml, /<script src="\.\/settings-i18n\.js"><\/script>[\s\S]*<script src="\.\/settings\.js"><\/script>/);
+  assert.match(settingsHtml, /data-i18n="nav\.general"/);
+  assert.match(settingsHtml, /id="language"/);
+  assert.match(settingsJs, /applyLanguage\(state\.language\)/);
+  assert.match(settingsJs, /language: \$\("#language"\)\.value/);
+  assert.match(mainJs, /language: settings\.language \|\| "system"/);
+  assert.match(mainJs, /systemLocale: app\.getLocale\(\)/);
+  assert.match(mainJs, /patch\.language = next\.language/);
+});
+
 test("말풍선 색상 라이브 프리뷰는 bubble 창에 즉시 반영되고 닫으면 저장값으로 복원된다", () => {
   assert.match(settingsPreloadJs, /PREVIEW_APPEARANCE: "settings:preview-appearance"/);
   assert.match(settingsPreloadJs, /previewAppearance: \(value\) => ipcRenderer\.send/);
@@ -1051,7 +1063,8 @@ test("계정 설정은 비활성 프로필 삭제를 확인하고 삭제 중 상
   assert.match(settingsJs, /action: "delete", profileKey: account\.key/);
   assert.match(settingsJs, /window\.confirm/);
   assert.match(settingsJs, /deleteButton\.disabled = account\.active/);
-  assert.match(settingsJs, /"삭제 중…"/);
+  assert.match(settingsJs, /t\("busy\.delete"\)/);
+  assert.match(settingsI18nJs, /삭제 중…/);
   assert.match(settingsCss, /\.danger-button/);
 });
 

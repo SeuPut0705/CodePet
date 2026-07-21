@@ -132,6 +132,7 @@ Internal reasoning and subagent messages are never shown in the bubble.
 - Mouse following and two-dimensional roaming
 - Persisted movement pause and mouse-follow settings
 - Login auto-start on macOS and Windows
+- Settings UI is available in 한국어, English, 日本語, and 简体中文, following the system language by default
 
 ## Controls
 

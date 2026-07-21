@@ -3385,6 +3385,12 @@ function registerIpcHandlers() {
       patch.showSubagentBadge = next.showSubagentBadge;
     }
     if (
+      typeof next.language === "string" &&
+      ["system", "ko", "en", "ja", "zh-CN"].includes(next.language)
+    ) {
+      patch.language = next.language;
+    }
+    if (
       typeof next.petKey === "string" &&
       listAvailablePets().some((pet) => pet.key === next.petKey)
     ) {
@@ -3723,6 +3729,8 @@ function buildSettingsBaseData() {
     activityBubbleMode: settings.activityBubbleMode || "full",
     showUsageBadges: settings.showUsageBadges !== false,
     showSubagentBadge: settings.showSubagentBadge !== false,
+    language: settings.language || "system",
+    systemLocale: app.getLocale(),
     followMouse: runtime.followMouse,
     autoStart: isAutoLaunchEnabled(),
     autoStartSupported: isAutoLaunchSupported(),

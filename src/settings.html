@@ -10,17 +10,17 @@
     <div class="titlebar">
       <div class="titlebar-drag">
         <span class="titlebar-logo"><img src="./codepet-icon.png" alt="" /></span>
-        <span class="titlebar-title">CodePet 설정</span>
+        <span class="titlebar-title" data-i18n="titlebar.title">CodePet 설정</span>
       </div>
       <div class="titlebar-controls">
-        <button class="titlebar-btn btn-minimize" id="btn-minimize" type="button" aria-label="최소화">
+        <button class="titlebar-btn btn-minimize" id="btn-minimize" type="button" aria-label="최소화" data-i18n-aria="titlebar.minimize">
           <svg viewBox="0 0 10 10"><path d="M 1,5 L 9,5" /></svg>
         </button>
-        <button class="titlebar-btn btn-maximize" id="btn-maximize" type="button" aria-label="최대화">
+        <button class="titlebar-btn btn-maximize" id="btn-maximize" type="button" aria-label="최대화" data-i18n-aria="titlebar.maximize">
           <svg class="icon-maximize" viewBox="0 0 10 10"><path d="M 2,2 L 8,2 L 8,8 L 2,8 Z" /></svg>
           <svg class="icon-restore" viewBox="0 0 10 10" style="display: none;"><path d="M 2,4 L 6,4 L 6,8 L 2,8 Z M 4,4 L 4,2 L 8,2 L 8,6 L 6,6" /></svg>
         </button>
-        <button class="titlebar-btn btn-close" id="btn-close" type="button" aria-label="닫기">
+        <button class="titlebar-btn btn-close" id="btn-close" type="button" aria-label="닫기" data-i18n-aria="titlebar.close">
           <svg viewBox="0 0 10 10"><path d="M 2,2 L 8,8 M 8,2 L 2,8" /></svg>
         </button>
       </div>
@@ -32,7 +32,7 @@
           <strong>CodePet</strong>
         </div>
 
-        <nav class="settings-nav" aria-label="설정 섹션" role="tablist">
+        <nav class="settings-nav" aria-label="설정 섹션" role="tablist" data-i18n-aria="nav.label">
           <button
             class="nav-item is-active"
             id="nav-general"
@@ -43,7 +43,7 @@
             data-section="general"
           >
             <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h9M17 7h3M4 12h3M11 12h9M4 17h11M19 17h1" /><circle cx="15" cy="7" r="2" /><circle cx="9" cy="12" r="2" /><circle cx="17" cy="17" r="2" /></svg>
-            <span>일반 및 모양</span>
+            <span data-i18n="nav.general">일반 및 모양</span>
           </button>
           <button
             class="nav-item"
@@ -56,7 +56,7 @@
             tabindex="-1"
           >
             <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h16v11H9l-5 5V4z" /></svg>
-            <span>말풍선</span>
+            <span data-i18n="nav.bubble">말풍선</span>
           </button>
           <button
             class="nav-item"
@@ -69,7 +69,7 @@
             tabindex="-1"
           >
             <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="3.5" /><path d="M5 19.5c1.4-3.2 4-4.8 7-4.8s5.6 1.6 7 4.8" /></svg>
-            <span>계정</span>
+            <span data-i18n="nav.accounts">계정</span>
           </button>
           <button
             class="nav-item"
@@ -82,7 +82,7 @@
             tabindex="-1"
           >
             <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 20v-7M11 20V5M17 20v-4M3 20h18" /></svg>
-            <span>사용량</span>
+            <span data-i18n="nav.usage">사용량</span>
           </button>
         </nav>
       </aside>
@@ -97,18 +97,25 @@
           aria-labelledby="nav-general"
           tabindex="0"
         >
+          <header class="panel-header">
+            <div>
+              <h1 data-i18n="general.title">일반 및 모양</h1>
+              <p data-i18n="general.desc">글꼴, 언어, 펫과 알림 동작을 설정합니다.</p>
+            </div>
+          </header>
+
           <section class="setting-section font-section" aria-labelledby="font-title">
             <div class="section-title-row">
               <div>
-                <h2 id="font-title">설치된 글꼴</h2>
-                <p class="section-help">이 PC에 설치된 글꼴을 사용합니다.</p>
+                <h2 data-i18n="font.title" id="font-title">설치된 글꼴</h2>
+                <p class="section-help" data-i18n="font.help">이 PC에 설치된 글꼴을 사용합니다.</p>
               </div>
               <span class="count-label" id="font-count">불러오는 중</span>
             </div>
 
             <div class="font-workbench">
               <div class="font-picker">
-                <label for="font-search">글꼴 찾기</label>
+                <label for="font-search" data-i18n="font.search">글꼴 찾기</label>
                 <div class="search-field">
                   <span aria-hidden="true"></span>
                   <input
@@ -116,41 +123,52 @@
                     type="search"
                     autocomplete="off"
                     placeholder="글꼴 이름"
+                    data-i18n-placeholder="font.searchPlaceholder"
                   />
                 </div>
-                <label class="sr-only" for="font">설치된 글꼴 목록</label>
+                <label class="sr-only" for="font" data-i18n="font.listLabel">설치된 글꼴 목록</label>
                 <select id="font" size="7" aria-describedby="font-note">
                   <option value="">시스템 기본</option>
                 </select>
               </div>
 
               <div class="font-preview" id="font-preview" aria-live="polite">
-                <span class="preview-label">LIVE PREVIEW</span>
-                <strong>오늘의 작업을<br />편안하게.</strong>
-                <p>CodePet이 작업 흐름을 알려드려요.</p>
+                <span class="preview-label" data-i18n="font.previewLabel">LIVE PREVIEW</span>
+                <strong data-i18n="font.previewTitle">오늘의 작업을<br />편안하게.</strong>
+                <p data-i18n="font.previewBody">CodePet이 작업 흐름을 알려드려요.</p>
                 <span class="preview-meta" id="font-preview-name">시스템 기본</span>
               </div>
             </div>
-            <p class="inline-note" id="font-note">삭제된 글꼴은 시스템 기본값으로 돌아갑니다.</p>
+            <p class="inline-note" id="font-note" data-i18n="font.note">삭제된 글꼴은 시스템 기본값으로 돌아갑니다.</p>
           </section>
 
           <section class="setting-section" aria-labelledby="pet-behavior-title">
             <div class="section-title-row">
-              <h2 id="pet-behavior-title">펫과 알림</h2>
+              <h2 data-i18n="pet.title" id="pet-behavior-title">펫과 알림</h2>
             </div>
             <div class="control-grid">
               <label class="control-field" for="pet">
-                <span>사용할 펫</span>
+                <span data-i18n="pet.select">사용할 펫</span>
                 <select id="pet"></select>
               </label>
+              <label class="control-field" for="language">
+                <span data-i18n="language.label">언어</span>
+                <select id="language">
+                  <option value="system" data-i18n="language.system">시스템 기본</option>
+                  <option value="ko">한국어</option>
+                  <option value="en">English</option>
+                  <option value="ja">日本語</option>
+                  <option value="zh-CN">简体中文</option>
+                </select>
+              </label>
               <label class="switch-row" for="follow">
-                <span><strong>마우스 따라가기</strong></span>
+                <span><strong data-i18n="pet.follow">마우스 따라가기</strong></span>
                 <input id="follow" type="checkbox" />
                 <i aria-hidden="true"></i>
               </label>
               <label class="switch-row" for="autostart">
                 <span>
-                  <strong>로그인 시 자동 실행</strong>
+                  <strong data-i18n="pet.autostart">로그인 시 자동 실행</strong>
                   <small id="autostart-note"></small>
                 </span>
                 <input id="autostart" type="checkbox" />
@@ -160,7 +178,7 @@
           </section>
 
           <footer class="panel-actions panel-actions-end">
-            <button class="button button-primary" id="save" type="button">변경 사항 적용</button>
+            <button class="button button-primary" id="save" type="button" data-i18n="action.save">변경 사항 적용</button>
           </footer>
         </section>
 
@@ -172,61 +190,70 @@
           tabindex="0"
           hidden
         >
-          <fieldset class="setting-section color-section">
-            <legend>말풍선 색상</legend>
-            <p class="section-help">말풍선의 배경 색상과 글자 색상을 직접 지정합니다.</p>
-            <div class="color-grid">
-              <div class="color-field">
-                <span class="color-label">배경 색상</span>
-                <div class="color-input-wrapper">
-                  <input type="color" id="bubble-bg-picker" />
-                  <input type="text" id="bubble-bg-color" placeholder="#ffffff" maxlength="9" />
-                </div>
-              </div>
-              <div class="color-field">
-                <span class="color-label">글자 색상</span>
-                <div class="color-input-wrapper">
-                  <input type="color" id="bubble-text-picker" />
-                  <input type="text" id="bubble-text-color" placeholder="#09090b" maxlength="7" />
-                </div>
-              </div>
+          <header class="panel-header">
+            <div>
+              <h1 data-i18n="bubble.title">말풍선</h1>
+              <p data-i18n="bubble.desc">말풍선 색상과 표시 기능을 설정합니다.</p>
             </div>
-          </fieldset>
+          </header>
 
-          <section class="setting-section" aria-labelledby="bubble-display-title">
-            <div class="section-title-row">
-              <h2 id="bubble-display-title">표시 기능</h2>
-            </div>
-            <div class="control-grid">
-              <label class="control-field" for="bubble-mode">
-                <span>활동 말풍선</span>
-                <select id="bubble-mode">
-                  <option value="full">전체 내용</option>
-                  <option value="status">상태만</option>
-                  <option value="off">끄기</option>
-                </select>
-              </label>
-              <label class="switch-row" for="usage-badges">
-                <span>
-                  <strong>사용량 배지</strong>
-                  <small>작업 제목 옆 5h·7d 남은 사용량 표시</small>
-                </span>
-                <input id="usage-badges" type="checkbox" />
-                <i aria-hidden="true"></i>
-              </label>
-              <label class="switch-row" for="subagent-badge">
-                <span>
-                  <strong>서브에이전트 개수</strong>
-                  <small>실행 중인 서브에이전트 수 표시</small>
-                </span>
-                <input id="subagent-badge" type="checkbox" />
-                <i aria-hidden="true"></i>
-              </label>
-            </div>
-          </section>
+          <div class="panel-2col">
+            <fieldset class="setting-section setting-card color-section">
+              <legend data-i18n="color.title">말풍선 색상</legend>
+              <p class="section-help" data-i18n="color.help">말풍선의 배경 색상과 글자 색상을 직접 지정합니다.</p>
+              <div class="color-grid">
+                <div class="color-field">
+                  <span class="color-label" data-i18n="color.bg">배경 색상</span>
+                  <div class="color-input-wrapper">
+                    <input type="color" id="bubble-bg-picker" />
+                    <input type="text" id="bubble-bg-color" placeholder="#ffffff" maxlength="9" />
+                  </div>
+                </div>
+                <div class="color-field">
+                  <span class="color-label" data-i18n="color.text">글자 색상</span>
+                  <div class="color-input-wrapper">
+                    <input type="color" id="bubble-text-picker" />
+                    <input type="text" id="bubble-text-color" placeholder="#09090b" maxlength="7" />
+                  </div>
+                </div>
+              </div>
+            </fieldset>
+
+            <section class="setting-section setting-card" aria-labelledby="bubble-display-title">
+              <div class="section-title-row">
+                <h2 data-i18n="display.title" id="bubble-display-title">표시 기능</h2>
+              </div>
+              <div class="control-stack">
+                <label class="control-field" for="bubble-mode">
+                  <span data-i18n="display.mode">활동 말풍선</span>
+                  <select id="bubble-mode">
+                    <option value="full" data-i18n="mode.full">전체 내용</option>
+                    <option value="status" data-i18n="mode.status">상태만</option>
+                    <option value="off" data-i18n="mode.off">끄기</option>
+                  </select>
+                </label>
+                <label class="switch-row" for="usage-badges">
+                  <span>
+                    <strong data-i18n="display.usageBadges">사용량 배지</strong>
+                    <small data-i18n="display.usageBadgesDesc">작업 제목 옆 5h·7d 남은 사용량 표시</small>
+                  </span>
+                  <input id="usage-badges" type="checkbox" />
+                  <i aria-hidden="true"></i>
+                </label>
+                <label class="switch-row" for="subagent-badge">
+                  <span>
+                    <strong data-i18n="display.subagent">서브에이전트 개수</strong>
+                    <small data-i18n="display.subagentDesc">실행 중인 서브에이전트 수 표시</small>
+                  </span>
+                  <input id="subagent-badge" type="checkbox" />
+                  <i aria-hidden="true"></i>
+                </label>
+              </div>
+            </section>
+          </div>
 
           <footer class="panel-actions panel-actions-end">
-            <button class="button button-primary" id="save-bubble" type="button">변경 사항 적용</button>
+            <button class="button button-primary" id="save-bubble" type="button" data-i18n="action.save">변경 사항 적용</button>
           </footer>
         </section>
 
@@ -238,11 +265,16 @@
           tabindex="0"
           hidden
         >
-          <section class="setting-section" aria-labelledby="provider-list-title">
-            <div class="section-title-row">
-              <h2 id="provider-list-title">연결된 계정</h2>
-              <button class="text-button" id="refresh-accounts" type="button">새로고침</button>
+          <header class="panel-header">
+            <div>
+              <h1 data-i18n="accounts.title">계정</h1>
+              <p data-i18n="accounts.desc">공급자별 계정을 연결하고 전환합니다.</p>
             </div>
+            <button class="text-button" id="refresh-accounts" type="button" data-i18n="accounts.refresh">새로고침</button>
+          </header>
+
+          <section class="setting-section" aria-labelledby="provider-list-title">
+            <h2 class="sr-only" data-i18n="accounts.heading" id="provider-list-title">연결된 계정</h2>
             <div class="provider-groups" id="provider-groups"></div>
           </section>
         </section>
@@ -255,17 +287,23 @@
           tabindex="0"
           hidden
         >
-          <section class="setting-section" aria-labelledby="usage-list-title">
-            <div class="section-title-row">
-              <h2 id="usage-list-title">계정별 한도</h2>
-              <button class="text-button" id="refresh-usage" type="button">새로고침</button>
+          <header class="panel-header">
+            <div>
+              <h1 data-i18n="usage.title">사용량</h1>
+              <p data-i18n="usage.desc">계정별 한도와 남은 사용량을 확인합니다.</p>
             </div>
+            <button class="text-button" id="refresh-usage" type="button" data-i18n="usage.refresh">새로고침</button>
+          </header>
+
+          <section class="setting-section" aria-labelledby="usage-list-title">
+            <h2 class="sr-only" data-i18n="usage.heading" id="usage-list-title">계정별 한도</h2>
             <div class="usage-grid" id="usage-cards"></div>
           </section>
         </section>
       </main>
     </div>
 
+    <script src="./settings-i18n.js"></script>
     <script src="./settings.js"></script>
   </body>
 </html>

@@ -244,6 +244,58 @@ input:disabled {
   display: none;
 }
 
+.panel-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 20px;
+}
+
+.panel-header h1 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 19px;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+}
+
+.panel-header p {
+  margin: 3px 0 0;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
+.panel-header .text-button {
+  flex: none;
+  margin-top: 2px;
+}
+
+.panel-2col {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  align-items: start;
+}
+
+.setting-card {
+  margin: 0;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.setting-card .color-grid {
+  grid-template-columns: 1fr;
+}
+
+.control-stack {
+  display: grid;
+  gap: 10px;
+}
+
 .setting-section {
   margin: 0;
   padding: 14px 0;
@@ -461,6 +513,7 @@ input[type="search"]::placeholder {
   font-weight: 700;
   line-height: 1.15;
   letter-spacing: -0.04em;
+  white-space: pre-line;
   position: relative;
   z-index: 1;
   color: var(--bubble-ink, var(--ink));
@@ -1194,7 +1247,8 @@ input[type="search"]::placeholder {
 
   .font-workbench,
   .control-grid,
-  .usage-grid {
+  .usage-grid,
+  .panel-2col {
     grid-template-columns: 1fr;
   }
 
