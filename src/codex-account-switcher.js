@@ -189,6 +189,14 @@ class CodexAccountSwitcher {
       null;
     const accessToken = auth?.tokens?.access_token || auth?.access_token || null;
     const subject = idPayload.sub || accessPayload.sub || null;
+    const userId =
+      openAiAuth.chatgpt_user_id ||
+      openAiAuth.user_id ||
+      idPayload.chatgpt_user_id ||
+      accessPayload.chatgpt_user_id ||
+      idPayload.user_id ||
+      accessPayload.user_id ||
+      null;
     const email = idPayload.email || accessPayload.email || null;
     const displayId =
       email ||
@@ -204,6 +212,7 @@ class CodexAccountSwitcher {
       accountId,
       accessToken,
       subject,
+      userId,
       email,
       displayId,
       planType,
@@ -223,6 +232,7 @@ class CodexAccountSwitcher {
         accountId: null,
         accessToken: null,
         subject: null,
+        userId: null,
         email: null,
         displayId: null,
         planType: null,
@@ -293,9 +303,13 @@ class CodexAccountSwitcher {
     if (!left || !right) return false;
 
     // accountId는 개인/Business 워크스페이스를 가리킬 수 있어 여러 사용자가 공유합니다.
-    // 둘 다 있으면 사용자(sub)와 워크스페이스를 함께 비교해야 다른 멤버를 덮어쓰지 않습니다.
+    // Business 로그인에서는 OAuth sub도 공유될 수 있으므로 전용 사용자 ID를 먼저 비교합니다.
     if (left.accountId && right.accountId) {
       if (left.accountId !== right.accountId) return false;
+      if (left.userId && right.userId) return left.userId === right.userId;
+      if (left.email && right.email && left.email.toLowerCase() !== right.email.toLowerCase()) {
+        return false;
+      }
       if (left.subject && right.subject) return left.subject === right.subject;
       if (left.email && right.email) {
         return left.email.toLowerCase() === right.email.toLowerCase();
@@ -303,8 +317,16 @@ class CodexAccountSwitcher {
       return false;
     }
 
-    // accountId가 없는 구형 auth끼리는 안정적인 사용자 subject를 우선 사용합니다.
+    // accountId가 없는 구형 auth끼리도 전용 사용자 ID가 있으면 우선 사용합니다.
+    if (!left.accountId && !right.accountId && left.userId && right.userId) {
+      return left.userId === right.userId;
+    }
+
+    // 전용 사용자 ID가 없는 구형 auth는 subject를 사용하되, 다른 이메일은 합치지 않습니다.
     if (!left.accountId && !right.accountId && left.subject && right.subject) {
+      if (left.email && right.email && left.email.toLowerCase() !== right.email.toLowerCase()) {
+        return false;
+      }
       return left.subject === right.subject;
     }
 

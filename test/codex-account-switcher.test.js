@@ -10,10 +10,12 @@ function jwt(payload) {
   return `header.${Buffer.from(JSON.stringify(payload)).toString("base64url")}.signature`;
 }
 
-function auth({ subject, email, accountId, planType = "team" }) {
+function auth({ subject, email, accountId, planType = "team", userId = subject }) {
   const authClaims = {
     chatgpt_account_id: accountId,
     chatgpt_plan_type: planType,
+    chatgpt_user_id: userId,
+    user_id: userId,
   };
 
   return {
@@ -58,6 +60,34 @@ test("같은 Business 워크스페이스의 서로 다른 사용자를 별도 Co
   assert.deepEqual(
     profiles.map((profile) => profile.email).sort(),
     ["second@example.com", "third@example.com"]
+  );
+});
+
+test("같은 Business workspace와 OAuth sub를 공유해도 전용 user id가 다르면 별도 연결한다", (t) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "codepet-codex-business-user-"));
+  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+
+  const switcher = new CodexAccountSwitcher({ homeDir: home });
+  writeJson(switcher.profileAuthPath("first"), auth({
+    subject: "shared-oauth-subject",
+    userId: "business-user-first",
+    email: "first@example.com",
+    accountId: "shared-business-workspace",
+  }));
+
+  const pending = switcher.createLoginProfile();
+  writeJson(path.join(pending.homePath, "auth.json"), auth({
+    subject: "shared-oauth-subject",
+    userId: "business-user-second",
+    email: "second@example.com",
+    accountId: "shared-business-workspace",
+  }));
+
+  const profiles = switcher.listProfiles();
+  assert.equal(profiles.length, 2);
+  assert.deepEqual(
+    profiles.map((profile) => profile.email).sort(),
+    ["first@example.com", "second@example.com"]
   );
 });
 
