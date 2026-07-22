@@ -208,6 +208,9 @@ class ExternalWatcher extends EventEmitter {
   accept(event, now) {
     if (!event || !event.sessionId || !event.type) return;
     const id = `${this.provider}:${event.sessionId}`;
+    // 완료 신호는 이미 추적 중인 작업을 닫는 이벤트입니다. final 응답 뒤 중복 stop이
+    // 오거나 앱 시작 직후 과거 종료 행만 읽혀도 빈 유령 작업을 새로 만들지 않습니다.
+    if (event.type === "lifecycle" && event.finished && !this.sessions.has(id)) return;
     const eventKey = event.eventId ? `${id}:${event.eventId}` : null;
     if (eventKey && !this.rememberEvent(eventKey)) return;
 
@@ -240,7 +243,7 @@ class ExternalWatcher extends EventEmitter {
         context
       );
     }
-    if (event.finished) this.finish(id, "done", event.text);
+    if (event.finished) this.finish(id, event.failed ? "error" : "done", event.text);
   }
 
   finish(id, reason, message = "") {

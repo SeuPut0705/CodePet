@@ -1,5 +1,6 @@
 const { app, BrowserWindow, Menu, Tray, nativeImage, ipcMain, screen, shell } = require("electron");
 const { spawn, spawnSync, execFile } = require("node:child_process");
+const crypto = require("node:crypto");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
@@ -9,6 +10,10 @@ const { CodexThreadTitleResolver, readCodexThreadTitle } = require("./codex-thre
 const { AntigravityWatcher } = require("./antigravity-watcher");
 const { ClaudeWatcher } = require("./claude-watcher");
 const { KimiWatcher } = require("./kimi-watcher");
+const { GeminiWatcher } = require("./gemini-watcher");
+const { OpenCodeWatcher } = require("./opencode-watcher");
+const { HookProviderWatcher } = require("./provider-hook-watcher");
+const { ProviderHookBridge } = require("./provider-hook-bridge");
 const { KimiUsageClient } = require("./kimi-usage-client");
 const { buildKimiUsageGauges } = require("./kimi-usage");
 const { KimiUsageController } = require("./kimi-usage-controller");
@@ -16,6 +21,20 @@ const { ClaudeAccountSwitcher } = require("./claude-account-switcher");
 const { normalizeClaudeAccountMetadata } = require("./claude-account-metadata");
 const { AntigravityAccountSwitcher } = require("./antigravity-account-switcher");
 const { loadAccountUsageCards } = require("./account-usage");
+const { buildSettingsAccountProviders } = require("./settings-account-providers");
+const {
+  appCandidates,
+  cliCandidates,
+  cliNames,
+  discoverProviderClients,
+  geminiUserDir,
+  openCodeStoragePaths,
+} = require("./provider-client-discovery");
+const { PROVIDER_IDS, getProviderDefinition } = require("./provider-catalog");
+const {
+  installProviderIntegration,
+  providerIntegrationStatus,
+} = require("./provider-integrations");
 const {
   clearUsageCache,
   fetchAntigravityIdentity,
@@ -80,6 +99,9 @@ const {
 } = require("./sprite-layout");
 
 app.commandLine.appendSwitch("disable-features", "CalculateNativeWinOcclusion");
+const hasSingleInstanceLock = app.requestSingleInstanceLock();
+let pendingSecondInstanceArgs = null;
+if (!hasSingleInstanceLock) app.quit();
 
 // IPC 채널명은 main/preload/renderer가 같은 문자열을 써야 하므로 상수로 모아 둡니다.
 // 나중에 기능을 늘릴 때도 이 객체에 채널을 추가하면 검색과 변경이 쉬워집니다.
@@ -704,6 +726,27 @@ const codexThreadTitles = new CodexThreadTitleResolver({
 const antigravityWatcher = new AntigravityWatcher();
 const claudeWatcher = new ClaudeWatcher();
 const kimiWatcher = new KimiWatcher();
+const geminiWatcher = new GeminiWatcher();
+const copilotWatcher = new HookProviderWatcher({ provider: "copilot" });
+const cursorWatcher = new HookProviderWatcher({ provider: "cursor" });
+const windsurfWatcher = new HookProviderWatcher({ provider: "windsurf" });
+const opencodeCommand = resolveProviderCommand("opencode");
+const opencodeAppDetected = appCandidates("opencode", {
+  platform: process.platform,
+  homeDir: os.homedir(),
+  env: process.env,
+}).some((candidate) => candidate && fs.existsSync(candidate));
+const opencodeWatcher = new OpenCodeWatcher({
+  command: opencodeCommand,
+  available: Boolean(opencodeCommand || opencodeAppDetected),
+});
+const hookProviderWatchers = Object.freeze({
+  copilot: copilotWatcher,
+  cursor: cursorWatcher,
+  windsurf: windsurfWatcher,
+});
+let providerHookBridge = null;
+let providerHookBridgePromise = null;
 // macOS에서는 Claude Code live 자격 증명이 Keychain에 있으므로 플랫폼 저장소를 주입합니다.
 const claudeLiveStore = createClaudeLiveStore();
 const claudeAccountSwitcher = new ClaudeAccountSwitcher({ liveStore: claudeLiveStore });
@@ -1192,7 +1235,17 @@ function playManualReaction(stateName) {
 }
 
 function isAnyProviderWorking() {
-  return codexWatcher.working || antigravityWatcher.working || claudeWatcher.working || kimiWatcher.working;
+  return [
+    codexWatcher,
+    antigravityWatcher,
+    claudeWatcher,
+    kimiWatcher,
+    geminiWatcher,
+    copilotWatcher,
+    cursorWatcher,
+    opencodeWatcher,
+    windsurfWatcher,
+  ].some((watcher) => watcher.working);
 }
 
 // 수동 Pause/Resume 메뉴 항목에서 자동 이동을 토글합니다.
@@ -1519,6 +1572,84 @@ function resolveCommand(command, candidates = []) {
   }
 }
 
+function resolveProviderCommand(provider) {
+  for (const name of cliNames(provider)) {
+    const command = resolveCommand(name, cliCandidates(name, {
+      platform: process.platform,
+      homeDir: os.homedir(),
+      env: process.env,
+    }));
+    if (command) return command;
+  }
+  return null;
+}
+
+function providerBridgeIdentityFile() {
+  return path.join(app.getPath("userData"), "provider-bridge.json");
+}
+
+function loadProviderBridgeIdentity() {
+  try {
+    const saved = JSON.parse(fs.readFileSync(providerBridgeIdentityFile(), "utf8"));
+    const port = Number(saved?.port);
+    const token = typeof saved?.token === "string" ? saved.token : "";
+    if (Number.isInteger(port) && port >= 1024 && port <= 65535 && /^[a-f0-9]{48}$/.test(token)) {
+      return { port, token };
+    }
+  } catch {
+    // 첫 실행이나 손상된 로컬 bridge 설정은 새 identity로 교체합니다.
+  }
+  return { port: 43721, token: crypto.randomBytes(24).toString("hex") };
+}
+
+function persistProviderBridgeIdentity(identity) {
+  const file = providerBridgeIdentityFile();
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, `${JSON.stringify(identity, null, 2)}\n`, {
+    encoding: "utf8",
+    mode: 0o600,
+  });
+}
+
+function refreshInstalledProviderIntegrations(bridge) {
+  for (const provider of Object.keys(hookProviderWatchers)) {
+    if (!providerIntegrationStatus(provider)) continue;
+    try {
+      installProviderIntegration(provider, { bridge });
+    } catch (error) {
+      appendDebugLog(`${provider} integration refresh failed: ${error.message || String(error)}`);
+    }
+  }
+}
+
+function ensureProviderHookBridge() {
+  if (providerHookBridgePromise) return providerHookBridgePromise;
+  providerHookBridgePromise = (async () => {
+    const saved = loadProviderBridgeIdentity();
+    let lastError = null;
+    for (let offset = 0; offset < 8; offset += 1) {
+      const port = saved.port + offset;
+      if (port > 65535) break;
+      const identity = { ...saved, port };
+      const bridge = new ProviderHookBridge({ watchers: hookProviderWatchers, ...identity });
+      try {
+        const info = await bridge.start();
+        providerHookBridge = bridge;
+        persistProviderBridgeIdentity(info);
+        refreshInstalledProviderIntegrations(info);
+        return info;
+      } catch (error) {
+        lastError = error;
+        bridge.stop();
+        if (error?.code !== "EADDRINUSE") break;
+      }
+    }
+    providerHookBridgePromise = null;
+    throw lastError || new Error("CodePet 이벤트 브리지를 시작하지 못했습니다.");
+  })();
+  return providerHookBridgePromise;
+}
+
 // GUI로 실행된 macOS 앱은 셸 PATH를 물려받지 않으므로 자주 쓰이는 설치 경로를 후보로 함께 넘깁니다.
 function claudeCommandCandidates() {
   if (process.platform === "win32") {
@@ -1635,6 +1766,67 @@ function writeClaudeLoginScript() {
     "utf8"
   );
   return scriptPath;
+}
+
+const PROVIDER_LOGIN_COMMANDS = Object.freeze({
+  kimi: { args: ["login"], title: "Kimi Login" },
+  gemini: { args: ["--prompt-interactive", "/auth"], title: "Gemini Login" },
+  copilot: { args: ["login"], title: "GitHub Copilot Login" },
+  cursor: { args: ["login"], title: "Cursor Login" },
+  opencode: { args: ["auth", "login"], title: "OpenCode Login" },
+});
+
+function writeProviderLoginScript(provider, command) {
+  const definition = PROVIDER_LOGIN_COMMANDS[provider];
+  if (!definition) throw new Error("이 공급자는 CLI 로그인을 지원하지 않습니다.");
+  const args = definition.args.map(quoteShellArgument).join(" ");
+  if (process.platform === "darwin") {
+    return writeMacLoginScript(`codepet-${provider}-login.command`, [
+      `echo ${quoteShellArgument(`CodePet ${definition.title}`)}`,
+      `${quoteShellArgument(command)}${args ? ` ${args}` : ""}`,
+    ]);
+  }
+  if (process.platform === "win32") {
+    const scriptPath = path.join(app.getPath("userData"), `codepet-${provider}-login.cmd`);
+    fs.writeFileSync(scriptPath, [
+      "@echo off",
+      `title CodePet ${definition.title}`,
+      `call ${quoteCmdArgument(command)} ${definition.args.join(" ")}`.trim(),
+      "echo.",
+      "pause",
+      "",
+    ].join("\r\n"), "utf8");
+    return scriptPath;
+  }
+  throw new Error("현재 CodePet 로그인 실행기는 Windows/macOS를 지원합니다.");
+}
+
+async function openProviderLoginTerminal(provider) {
+  const command = resolveProviderCommand(provider);
+  const label = getProviderDefinition(provider)?.label || provider;
+  if (!command) throw new Error(`${label} CLI를 찾지 못했습니다.`);
+  const scriptPath = writeProviderLoginScript(provider, command);
+  const error = await shell.openPath(scriptPath);
+  if (error) throw new Error(error);
+  return true;
+}
+
+async function openProviderApp(provider) {
+  const appPath = resolveProviderApp(provider);
+  const label = getProviderDefinition(provider)?.label || provider;
+  if (!appPath) throw new Error(`${label} 앱을 찾지 못했습니다.`);
+  const error = await shell.openPath(appPath);
+  if (error) throw new Error(error);
+  return true;
+}
+
+function resolveProviderApp(provider) {
+  const candidates = appCandidates(provider, {
+    platform: process.platform,
+    homeDir: os.homedir(),
+    env: process.env,
+  });
+  return candidates.find((candidate) => candidate && fs.existsSync(candidate)) || null;
 }
 
 function getClaudeAuthStatus() {
@@ -2941,6 +3133,36 @@ async function startProviderLogin(provider) {
     return true;
   }
 
+  if (["kimi", "gemini"].includes(provider)) {
+    return openProviderLoginTerminal(provider);
+  }
+
+  if (provider === "opencode") {
+    const command = resolveProviderCommand(provider);
+    if (command) return openProviderLoginTerminal(provider);
+    if (resolveProviderApp(provider)) return openProviderApp(provider);
+    throw new Error("OpenCode 앱 또는 CLI를 찾지 못했습니다.");
+  }
+
+  if (["copilot", "cursor", "windsurf"].includes(provider)) {
+    const command = resolveProviderCommand(provider);
+    const appPath = resolveProviderApp(provider);
+    if (provider === "copilot" && !command) {
+      throw new Error("GitHub Copilot CLI를 찾지 못했습니다.");
+    }
+    if (provider === "cursor" && !command && !appPath) {
+      throw new Error("Cursor 앱 또는 CLI를 찾지 못했습니다.");
+    }
+    if (provider === "windsurf" && !appPath) {
+      throw new Error("Windsurf 앱을 찾지 못했습니다.");
+    }
+    const bridge = await ensureProviderHookBridge();
+    installProviderIntegration(provider, { bridge });
+    if (provider === "windsurf") return openProviderApp(provider);
+    if (command) return openProviderLoginTerminal(provider);
+    if (provider === "cursor") return openProviderApp(provider);
+  }
+
   throw new Error("지원하지 않는 계정 유형입니다.");
 }
 
@@ -3430,26 +3652,26 @@ function registerIpcHandlers() {
   ipcMain.handle("settings:account", async (_event, input) => {
     try {
       const action = input?.action;
-      let succeeded = false;
-
-      if (["agy", "claude"].includes(input?.provider)) {
-        if (action === "login") succeeded = await startProviderLogin(input.provider);
-        else if (action === "switch" && typeof input.profileKey === "string") succeeded = await switchProviderAccount(input.provider, input.profileKey);
-        else if (action === "delete" && typeof input.profileKey === "string") succeeded = Boolean(deleteProviderAccount(input.provider, input.profileKey));
-        else return { ok: false, error: "알 수 없는 계정 작업입니다." };
-        return succeeded ? { ok: true, data: await getSettingsData() } : { ok: false, error: "작업을 완료하지 못했습니다." };
-      }
-
-      if (input?.provider && input.provider !== "codex") {
+      const provider = typeof input?.provider === "string" ? input.provider : "codex";
+      if (!PROVIDER_IDS.includes(provider)) {
         return { ok: false, error: "지원하지 않는 계정 유형입니다." };
       }
+      let succeeded = false;
 
       if (action === "login") {
-        succeeded = await openCodexLoginTerminal();
-      } else if (action === "switch" && typeof input.profileKey === "string") {
-        succeeded = await switchCodexAccount(input.profileKey);
-      } else if (action === "delete" && typeof input.profileKey === "string") {
-        succeeded = Boolean(deleteProviderAccount("codex", input.profileKey));
+        succeeded = await startProviderLogin(provider);
+      } else if (
+        action === "switch" &&
+        typeof input.profileKey === "string" &&
+        ["codex", "agy", "claude"].includes(provider)
+      ) {
+        succeeded = await switchProviderAccount(provider, input.profileKey);
+      } else if (
+        action === "delete" &&
+        typeof input.profileKey === "string" &&
+        ["codex", "agy", "claude"].includes(provider)
+      ) {
+        succeeded = Boolean(deleteProviderAccount(provider, input.profileKey));
       } else {
         return { ok: false, error: "알 수 없는 계정 작업입니다." };
       }
@@ -3489,6 +3711,7 @@ function registerIpcHandlers() {
 
 // 앱 수명주기 진입점입니다.
 app.whenReady().then(() => {
+  if (!hasSingleInstanceLock) return;
   clearUnsupportedAutoLaunch(app, getAutoLaunchContext());
   // macOS에서는 데스크톱 펫이 Dock에 남아 있을 이유가 없어 메뉴바(트레이)로만 동작하게 합니다.
   if (process.platform === "darwin" && app.dock) {
@@ -3505,6 +3728,11 @@ app.whenReady().then(() => {
   kimiWatcher.on("working-changed", syncKimiUsageWorking);
   kimiWatcher.on("context-changed", syncKimiUsageWorking);
   registerExternalWatcher(kimiWatcher, "Kimi");
+  registerExternalWatcher(geminiWatcher, "Gemini");
+  registerExternalWatcher(copilotWatcher, "Copilot");
+  registerExternalWatcher(cursorWatcher, "Cursor");
+  registerExternalWatcher(opencodeWatcher, "OpenCode");
+  registerExternalWatcher(windsurfWatcher, "Windsurf");
   createTray();
   createWindow();
   createBubbleWindow();
@@ -3512,12 +3740,26 @@ app.whenReady().then(() => {
   if (process.argv.includes("--settings")) {
     openSettingsWindow();
   }
+  if (pendingSecondInstanceArgs) {
+    const args = pendingSecondInstanceArgs;
+    pendingSecondInstanceArgs = null;
+    if (args.includes("--settings")) openSettingsWindow();
+    else showPetWindowFromTray();
+  }
   // 사용량 풍선은 수동 호출이라 문제가 없지만, 대화 말풍선은 watcher가 시작되지 않으면 절대 뜨지 않습니다.
   // 그래서 말풍선 renderer 로드 여부와 무관하게 감시를 바로 시작하고, 표시 데이터는 showBubble()에서 큐잉합니다.
   codexWatcher.start();
   antigravityWatcher.start();
   claudeWatcher.start();
   kimiWatcher.start();
+  geminiWatcher.start();
+  copilotWatcher.start();
+  cursorWatcher.start();
+  void opencodeWatcher.start();
+  windsurfWatcher.start();
+  void ensureProviderHookBridge().catch((error) => {
+    appendDebugLog(`provider hook bridge start failed: ${error.message || String(error)}`);
+  });
   codexProxyStartupPromise = restoreCodexProxyMode();
   void codexProxyStartupPromise;
 
@@ -3528,12 +3770,28 @@ app.whenReady().then(() => {
   });
 });
 
+app.on("second-instance", (_event, argv) => {
+  if (!hasSingleInstanceLock) return;
+  if (!app.isReady()) {
+    pendingSecondInstanceArgs = argv;
+    return;
+  }
+  if (argv.includes("--settings")) {
+    openSettingsWindow();
+    return;
+  }
+  showPetWindowFromTray();
+});
+
 app.on("before-quit", () => {
   isQuitting = true;
   unregisterBubbleDisplayListeners();
   activityUsageController.dispose();
   kimiUsageController.dispose();
   teardownCodexProxyOnQuit();
+  providerHookBridge?.stop();
+  providerHookBridge = null;
+  providerHookBridgePromise = null;
 });
 
 // 타이머를 모두 정리하고 앱을 종료합니다.
@@ -3547,6 +3805,11 @@ app.on("window-all-closed", () => {
   antigravityWatcher.stop();
   claudeWatcher.stop();
   kimiWatcher.stop();
+  geminiWatcher.stop();
+  copilotWatcher.stop();
+  cursorWatcher.stop();
+  opencodeWatcher.stop();
+  windsurfWatcher.stop();
 
   // 트레이에 남아 있어야 하는 일반 닫힘과, "완전 종료"를 명확히 분리합니다.
   if (isQuitting) {
@@ -3587,6 +3850,68 @@ function codexAccountRows() {
     plan: profile.planType,
     hasAuth: profile.hasAuth,
   }));
+}
+
+function geminiAccountRows() {
+  try {
+    const data = JSON.parse(
+      fs.readFileSync(path.join(geminiUserDir(), "google_accounts.json"), "utf8")
+    );
+    const active = typeof data?.active === "string" ? data.active.trim() : "";
+    const candidates = [
+      active,
+      ...(Array.isArray(data?.old) ? data.old : []),
+      ...(Array.isArray(data?.accounts) ? data.accounts : []),
+    ];
+    const seen = new Set();
+    return candidates.flatMap((value) => {
+      const email = typeof value === "string"
+        ? value.trim()
+        : typeof value?.email === "string"
+          ? value.email.trim()
+          : "";
+      if (!email || seen.has(email)) return [];
+      seen.add(email);
+      return [{
+        key: email,
+        label: email,
+        email,
+        active: email === active || (!active && seen.size === 1),
+        canSwitch: false,
+        canDelete: false,
+      }];
+    });
+  } catch {
+    return [];
+  }
+}
+
+function settingsAccountProviderRows({ agyAccounts, claudeAccounts, kimiAccounts, geminiAccounts } = {}) {
+  const accounts = {
+    codex: codexAccountRows(),
+    agy: Array.isArray(agyAccounts)
+      ? agyAccounts
+      : antigravityAccountSwitcher.listProfiles(),
+    claude: Array.isArray(claudeAccounts)
+      ? claudeAccounts
+      : claudeAccountSwitcher.listProfiles(),
+    kimi: Array.isArray(kimiAccounts) ? kimiAccounts : [],
+    gemini: Array.isArray(geminiAccounts) ? geminiAccounts : geminiAccountRows(),
+  };
+  const clients = discoverProviderClients({ resolveCommand });
+  for (const provider of Object.keys(hookProviderWatchers)) {
+    clients[provider] = {
+      ...clients[provider],
+      connected: providerIntegrationStatus(provider),
+    };
+  }
+  try {
+    const auth = JSON.parse(fs.readFileSync(openCodeStoragePaths().auth, "utf8"));
+    clients.opencode.connected = Boolean(auth && typeof auth === "object" && Object.keys(auth).length);
+  } catch {
+    // OpenCode가 설치됐지만 로그인하지 않은 상태입니다.
+  }
+  return buildSettingsAccountProviders(accounts, clients);
 }
 
 async function loadCodexUsage() {
@@ -3688,15 +4013,21 @@ async function loadClaudeProvider(forceUsage) {
   return { accounts: claudeAccountSwitcher.listProfiles(), usage };
 }
 
-async function loadKimiUsage() {
+async function loadKimiProvider() {
   let profiles = [];
   try {
     await kimiUsageClient.readCredentials();
-    profiles = [{ key: "managed", label: "관리형 로그인", active: true }];
+    profiles = [{
+      key: "managed",
+      label: "Kimi Code",
+      active: true,
+      canSwitch: false,
+      canDelete: false,
+    }];
   } catch {
-    // 관리형 Kimi 로그인이 없으면 빈 카드로 표시합니다.
+    // 관리형 Kimi 로그인이 없으면 사용량 화면에서 숨깁니다.
   }
-  return loadAccountUsageCards({
+  const usage = await loadAccountUsageCards({
     providerId: "kimi",
     providerLabel: "Kimi",
     profiles,
@@ -3710,6 +4041,7 @@ async function loadKimiUsage() {
       }
     },
   });
+  return { accounts: profiles, usage };
 }
 
 let lastUsageSnapshot = null;
@@ -3743,26 +4075,23 @@ async function getSettingsData({ forceUsage = false, usageMode = "full" } = {}) 
     // 창을 바로 열기 위해 마지막 조회 결과를 즉시 반환하고, 최신값은 백그라운드에서 밀어 넣습니다.
     return {
       ...base,
-      providers: lastUsageSnapshot?.providers ?? [
-        { id: "codex", label: "Codex", accounts: codexAccountRows() },
-        { id: "agy", label: "AGY", accounts: antigravityAccountSwitcher.listProfiles() },
-        { id: "claude", label: "Claude", accounts: claudeAccountSwitcher.listProfiles() },
-      ],
+      providers: lastUsageSnapshot?.providers ?? settingsAccountProviderRows(),
       usage: lastUsageSnapshot?.usage ?? [],
     };
   }
 
-  const [codexUsage, agy, claude, kimiUsage] = await Promise.all([
+  const [codexUsage, agy, claude, kimi] = await Promise.all([
     loadCodexUsage(),
     loadAntigravityProvider(forceUsage),
     loadClaudeProvider(forceUsage),
-    loadKimiUsage(),
+    loadKimiProvider(),
   ]);
-  const providers = [
-    { id: "codex", label: "Codex", accounts: codexAccountRows() },
-    { id: "agy", label: "AGY", accounts: agy.accounts },
-    { id: "claude", label: "Claude", accounts: claude.accounts },
-  ];
+  const providers = settingsAccountProviderRows({
+    agyAccounts: agy.accounts,
+    claudeAccounts: claude.accounts,
+    kimiAccounts: kimi.accounts,
+  });
+  const kimiUsage = kimi.usage;
   const usage = [...codexUsage, ...agy.usage, ...claude.usage, ...kimiUsage];
   lastUsageSnapshot = { providers, usage };
   return { ...base, providers, usage };

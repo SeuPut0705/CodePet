@@ -945,7 +945,7 @@ test("main은 KIMI_CODE_HOME을 공유하는 기본 생성자로 Kimi watcher와
   assert.match(main, /registerExternalWatcher\(kimiWatcher, "Kimi"\)/);
   assert.match(main, /kimiWatcher\.start\(\)/);
   assert.match(main, /kimiWatcher\.stop\(\)/);
-  assert.match(main, /claudeWatcher\.working \|\| kimiWatcher\.working/);
+  assert.match(main, /claudeWatcher,[\s\S]*kimiWatcher,[\s\S]*\.some\(\(watcher\) => watcher\.working\)/);
   assert.match(main, /watcher\.on\("context-changed"/);
   assert.match(main, /activityHeading\(completionTitle, result\)/);
 });

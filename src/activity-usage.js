@@ -1,7 +1,8 @@
 const TARGET_WINDOWS = Object.freeze([
-  { minutes: 300, key: "5h", accessibleName: "5시간" },
-  { minutes: 10080, key: "7d", accessibleName: "7일" },
+  { minutes: 300, key: "5h", accessibleName: "5시간", priority: 0 },
+  { minutes: 10080, key: "7d", accessibleName: "7일", priority: 1 },
 ]);
+const MAX_ACTIVITY_USAGE_BADGES = 2;
 const MAX_TIMER_DELAY_MS = 2_147_483_647;
 
 function clampPercent(value) {
@@ -19,6 +20,30 @@ function normalizeFiniteNumber(value) {
 function resetAtMilliseconds(rateWindow) {
   const resetAt = normalizeFiniteNumber(rateWindow?.resets_at ?? rateWindow?.reset_at);
   return resetAt === null ? null : resetAt * 1000;
+}
+
+function targetForWindow(rateWindow) {
+  const minutes = normalizeFiniteNumber(rateWindow?.window_minutes);
+  if (minutes === null || minutes <= 0) return null;
+
+  const known = TARGET_WINDOWS.find((target) => target.minutes === minutes);
+  if (known) return known;
+
+  if (minutes >= 28 * 1440 && minutes <= 31 * 1440) {
+    return { minutes, key: "1mo", accessibleName: "월간", priority: 2 };
+  }
+  if (Number.isInteger(minutes / 1440) && minutes / 1440 <= 999) {
+    const days = minutes / 1440;
+    return { minutes, key: `${days}d`, accessibleName: `${days}일`, priority: 3 };
+  }
+  if (Number.isInteger(minutes / 60) && minutes / 60 <= 999) {
+    const hours = minutes / 60;
+    return { minutes, key: `${hours}h`, accessibleName: `${hours}시간`, priority: 4 };
+  }
+  if (Number.isInteger(minutes) && minutes <= 999) {
+    return { minutes, key: `${minutes}m`, accessibleName: `${minutes}분`, priority: 5 };
+  }
+  return null;
 }
 
 function badgeForWindow(rateWindow, target, nowMs) {
@@ -54,14 +79,26 @@ function rateLimitWindows(usage) {
 
 function buildActivityUsageBadges(usage, nowMs = Date.now()) {
   const windows = rateLimitWindows(usage);
-
-  return TARGET_WINDOWS.flatMap((target) => {
-    for (const rateWindow of windows) {
-      const badge = badgeForWindow(rateWindow, target, nowMs);
-      if (badge) return [badge];
-    }
-    return [];
+  const candidates = windows.flatMap((rateWindow, index) => {
+    const target = targetForWindow(rateWindow);
+    const badge = target ? badgeForWindow(rateWindow, target, nowMs) : null;
+    return badge ? [{ badge, target, index }] : [];
   });
+  candidates.sort((left, right) => (
+    left.target.priority - right.target.priority ||
+    left.target.minutes - right.target.minutes ||
+    left.index - right.index
+  ));
+
+  const seen = new Set();
+  const badges = [];
+  for (const candidate of candidates) {
+    if (seen.has(candidate.badge.key)) continue;
+    seen.add(candidate.badge.key);
+    badges.push(candidate.badge);
+    if (badges.length >= MAX_ACTIVITY_USAGE_BADGES) break;
+  }
+  return badges;
 }
 
 function usageBadgesEqual(left, right) {
@@ -119,11 +156,14 @@ class ActivityUsageState {
 
   nextResetAt(nowMs = Date.now()) {
     let nextResetAt = null;
+    const visibleKeys = new Set(this.buildBadges(nowMs).map((badge) => badge.key));
     for (const rateWindow of rateLimitWindows(this.latestUsage())) {
-      const target = TARGET_WINDOWS.find(
-        ({ minutes }) => normalizeFiniteNumber(rateWindow?.window_minutes) === minutes
-      );
-      if (!target || !badgeForWindow(rateWindow, target, nowMs)) continue;
+      const target = targetForWindow(rateWindow);
+      if (
+        !target ||
+        !visibleKeys.has(target.key) ||
+        !badgeForWindow(rateWindow, target, nowMs)
+      ) continue;
       const resetAtMs = resetAtMilliseconds(rateWindow);
       if (resetAtMs <= nowMs) continue;
       if (nextResetAt === null || resetAtMs < nextResetAt) nextResetAt = resetAtMs;

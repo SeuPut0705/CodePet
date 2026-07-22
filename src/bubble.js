@@ -118,7 +118,7 @@ function appendUsageBadges(element, badges) {
   if (!showUsageBadges) return;
   if (!Array.isArray(badges)) return;
   const validBadges = badges.filter((badge) =>
-    ["5h", "7d"].includes(badge?.key) &&
+    /^(?:1mo|[1-9]\d{0,2}[mhd])$/.test(badge?.key) &&
     Number.isSafeInteger(badge?.remainingPercent) &&
     badge.remainingPercent >= 0 &&
     badge.remainingPercent <= 100 &&

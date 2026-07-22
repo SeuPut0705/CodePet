@@ -57,6 +57,20 @@ test("rate limit 순서와 무관하게 5h·7d 남은 퍼센트를 만든다", (
   ]);
 });
 
+test("월간 창만 제공돼도 남은 사용량 배지를 만든다", () => {
+  const usage = {
+    rateLimits: {
+      windows: [
+        { window_minutes: 43800, used_percent: 24, resets_at: 500 },
+      ],
+    },
+  };
+
+  assert.deepEqual(buildActivityUsageBadges(usage, 1_000), [
+    { key: "1mo", remainingPercent: 76, ariaLabel: "Codex 월간 76% 남음" },
+  ]);
+});
+
 test("초기화·범위 보정·잘못된 창을 안전하게 처리한다", () => {
   const usage = {
     rateLimits: {

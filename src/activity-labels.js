@@ -24,6 +24,7 @@ const REASONING_LABELS = new Map([
 
 const WORKER_DISPLAY_LABELS = new Set(MODEL_LABELS.values());
 const REASONING_DISPLAY_LABELS = new Set(REASONING_LABELS.values());
+const EXTERNAL_MODEL_LABEL = /^(?:Gemini|Claude|GPT|Kimi|Copilot|Cursor|OpenCode|Windsurf)(?:[ A-Za-z0-9._+/-]{1,48})?$/;
 
 function normalizeWorkerLabel(model) {
   return MODEL_LABELS.get(model) || null;
@@ -34,7 +35,9 @@ function normalizeReasoningLabel(effort) {
 }
 
 function safeWorkerLabel(value) {
-  return WORKER_DISPLAY_LABELS.has(value) ? value : null;
+  if (WORKER_DISPLAY_LABELS.has(value)) return value;
+  const label = safeSectionLabel(value);
+  return label && EXTERNAL_MODEL_LABEL.test(label) ? label : null;
 }
 
 function safeReasoningLabel(value) {

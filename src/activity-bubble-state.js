@@ -12,7 +12,17 @@ function updatedIdentity(context, key, previous = null) {
 }
 
 function safeProvider(value) {
-  return ["codex", "kimi", "claude", "agy"].includes(value) ? value : null;
+  return [
+    "codex",
+    "kimi",
+    "claude",
+    "agy",
+    "gemini",
+    "copilot",
+    "cursor",
+    "opencode",
+    "windsurf",
+  ].includes(value) ? value : null;
 }
 
 function updatedProvider(context, previous = null) {
@@ -89,6 +99,7 @@ class ActivityBubbleState {
   }
 
   remove(threadId) {
+    this.subagentCounts.delete(threadId);
     return this.activities.delete(threadId);
   }
 

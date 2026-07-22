@@ -490,6 +490,23 @@ test("활동 heading의 최종 접근성 이름은 제목·provider quota·서�
   assert.equal(name.match(/Codex 5시간 42% 남음/g)?.length, 1);
 });
 
+test("월간 남은 사용량 배지를 작업 제목에 표시한다", () => {
+  const bubble = renderBubble({
+    kind: "activity",
+    title: "CodePet · Sol · Max",
+    statusIcon: "writing",
+    usageBadges: [
+      { key: "1mo", remainingPercent: 76, ariaLabel: "Codex 월간 76% 남음" },
+    ],
+    text: "작업 중",
+  });
+  const usageGroup = childWithClass(bubble.children[0], "activity-usage-badges");
+
+  assert.ok(usageGroup);
+  assert.deepEqual(usageGroup.children.map((badge) => badge.textContent), ["1mo 76%"]);
+  assert.equal(usageGroup.children[0].attributes["aria-label"], "Codex 월간 76% 남음");
+});
+
 test("긴 제목·서브에이전트·5h·7d 결합 헤더는 제목만 축소하고 배지는 한 줄에 고정한다", () => {
   const bubble = renderBubble({
     kind: "activity",
@@ -937,6 +954,9 @@ test("설정 창은 테마 선택 없이 색상, 설치 글꼴, 세 provider, �
   assert.match(settingsJs, /function resolveInstalledFontFamily/);
   assert.match(settingsHtml, /id="provider-groups"/);
   assert.match(settingsHtml, /id="usage-cards"/);
+  assert.match(settingsJs, /function createProviderMark/);
+  assert.match(settingsJs, /provider\.icon/);
+  assert.match(settingsCss, /\.provider-mark img/);
   assert.match(settingsCss, /--font-body:\s*"Segoe UI Variable"/);
   assert.doesNotMatch(settingsHtml, /<link[^>]+href=["']https?:/);
   assert.doesNotMatch(settingsHtml, /\.\.\/assets\//);

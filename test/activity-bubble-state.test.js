@@ -98,21 +98,19 @@ test("한 대화만 남으면 기존 단일 말풍선 형태를 유지한다", (
 });
 
 test("활동 section에는 허용된 provider만 보존한다", () => {
+  const providers = ["codex", "kimi", "claude", "agy", "gemini", "copilot", "cursor", "opencode", "windsurf"];
+  for (const provider of providers) {
+    const state = new ActivityBubbleState();
+    state.upsert("thread", activity(`${provider} 작업`, "detail", "status"), { provider });
+    assert.equal(state.toBubbleData().provider, provider);
+  }
+
   const state = new ActivityBubbleState();
-  ["codex", "kimi", "claude", "agy"].forEach((provider, index) => {
-    state.upsert(THREADS[index], activity(`${provider} 작업`, "detail", "status"), {
-      provider,
-      taskStartedAt: startedAt(index + 1),
-    });
+  state.upsert(THREADS[0], activity("Codex", "detail", "status"), {
+    provider: "codex",
   });
-
-  assert.deepEqual(
-    state.toBubbleData().sections.map((section) => section.provider),
-    ["codex", "kimi", "claude", "agy"]
-  );
-
-  state.refresh(THREADS[1], { provider: "<script>secret</script>" });
-  assert.equal(state.toBubbleData().sections[1].provider, null);
+  state.refresh(THREADS[0], { provider: "<script>secret</script>" });
+  assert.equal(state.toBubbleData().provider, null);
 });
 
 test("Kimi section은 main session별 managed 사용량 eligibility를 보존하고 unknown은 닫는다", () => {
@@ -214,6 +212,20 @@ test("서브에이전트 수는 작업별 badge에만 두고 제목 접근성 �
   assert.equal(sections[0].titleLabel, "응답 작성 중 · CodePet · Sol · Medium");
 });
 
+test("종료된 작업의 서브에이전트 수는 같은 thread id의 다음 작업에 남지 않는다", () => {
+  const state = new ActivityBubbleState();
+  state.upsert("cursor:same", activity("작업 중", "첫 작업", "상태"), {
+    provider: "cursor",
+    subagentCount: 2,
+  });
+  state.remove("cursor:same");
+  state.upsert("cursor:same", activity("작업 중", "다음 작업", "상태"), {
+    provider: "cursor",
+  });
+
+  assert.equal(state.toBubbleData().subagentCount, 0);
+});
+
 test("서브에이전트 수는 upsert에서 안전한 양의 정수만 보존한다", () => {
   const state = new ActivityBubbleState();
   state.upsert(THREADS[0], activity("응답 작성 중", "a", "status"), { subagentCount: "2" });
@@ -254,13 +266,13 @@ test("section 전의 0개 서브에이전트 수는 보류한 양의 수를 지�
   assert.equal(state.toBubbleData().subagentCount, 0);
 });
 
-test("활동을 제거 후 재생성해도 살아 있는 서브에이전트 수를 유지한다", () => {
+test("활동을 제거하면 같은 ID로 재생성돼도 이전 서브에이전트 수를 지운다", () => {
   const state = new ActivityBubbleState();
 
   state.upsert(THREADS[0], activity("작업 중", "a", "status"), { subagentCount: 3 });
   assert.equal(state.remove(THREADS[0]), true);
   state.upsert(THREADS[0], activity("새 작업", "a", "status"));
-  assert.equal(state.toBubbleData().subagentCount, 3);
+  assert.equal(state.toBubbleData().subagentCount, 0);
 
   state.remove(THREADS[0]);
   state.refresh(THREADS[0], { subagentCount: 0 });
@@ -307,18 +319,22 @@ test("full/status/off 모드는 각 대화 section의 내용에 적용된다", (
   assert.equal(applyActivityPrivacy(data, "off"), null);
 });
 
-test("허용된 Sol/Terra/Luna 라벨만 붙이고 외부 provider 제목은 그대로 유지한다", () => {
+test("허용된 모델 라벨만 붙이고 내부 모델 id는 숨긴다", () => {
   const state = new ActivityBubbleState();
   state.upsert(THREADS[0], activity("첫 작업", "detail", "status"), {
     workerLabel: "gpt-5.6-terra-internal",
   });
   state.upsert(THREADS[1], activity("둘째 작업", "detail", "status"), { workerLabel: "Luna" });
   state.upsert(THREADS[3], activity("AGY 작업", "detail", "status"), {});
+  state.upsert("gemini:main", activity("Gemini 작업", "detail", "status"), {
+    workerLabel: "Gemini 2.5 Pro",
+  });
   const bubble = state.toBubbleData();
   assert.deepEqual(bubble.sections.map((section) => section.title), [
     "첫 작업",
     "둘째 작업 · Luna",
     "AGY 작업",
+    "Gemini 작업 · Gemini 2.5 Pro",
   ]);
 });
 

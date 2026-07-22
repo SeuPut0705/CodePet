@@ -1212,7 +1212,12 @@ class CodexWatcher extends EventEmitter {
     }
 
     if (entry?.type === "session_meta") {
-      this.registerRolloutMetadata(filePath, rolloutMetadataFromPayload(entry.payload));
+      // fork된 서브에이전트 rollout은 첫 자식 metadata 뒤에 부모의 session_meta 기록을 포함합니다.
+      // 파일 정체성은 첫 줄에서 이미 확정되므로 뒤의 부모 metadata로 덮어쓰지 않습니다.
+      const firstMetadata = this.rolloutClassifications.get(filePath) ||
+        readRolloutMetadata(filePath) ||
+        rolloutMetadataFromPayload(entry.payload);
+      this.registerRolloutMetadata(filePath, firstMetadata);
       return;
     }
 

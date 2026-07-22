@@ -31,7 +31,7 @@
 
 ---
 
-CodePet 是一款桌面宠物，可同时监控 **Codex**、**Google Antigravity (AGY)**、**Claude Code** 和 **Kimi Code CLI** 的本地工作记录。它把多个任务的状态和最新消息整理到一个响应式气泡中，并集中管理账户额度与宠物设置。
+CodePet 是一款桌面宠物，可同时监控 **Codex**、**Google Antigravity (AGY)**、**Claude Code**、**Kimi Code CLI**、**Gemini CLI**、**GitHub Copilot CLI**、**Cursor**、**OpenCode** 和 **Windsurf** 的本地工作。它把多个任务的状态和最新消息整理到一个响应式气泡中，并集中管理已检测的 provider、账户、额度与宠物设置。
 
 工作数据只为屏幕显示而在本地读取。你可以自行选择活动气泡显示多少内容。
 
@@ -66,18 +66,29 @@ npm run dist -- --mac # macOS dmg + zip
 
 ## 支持范围
 
-| 工具 | 活动检测 | 额度显示 | 账户保存与切换 |
+| 工具 | 活动检测 | 额度显示 | 账户与连接 |
 |---|:---:|:---:|:---:|
 | Codex Desktop / CLI | ✓ | ✓ | ✓ |
 | Google Antigravity | ✓ | ✓ | ✓ |
 | Claude Code | ✓ | ✓ | ✓ |
 | Kimi Code CLI | ✓ | 仅托管登录 | — |
+| Gemini CLI | ✓ | — | 登录与账户识别 |
+| GitHub Copilot CLI | ✓ | — | 登录与 hook 连接 |
+| Cursor App / CLI | ✓ | — | 登录与 hook 连接 |
+| OpenCode App / CLI | ✓ | — | 登录检测 |
+| Windsurf App | ✓ | — | hook 连接 |
 
 - **Codex** 同时监控 `~/.codex/sessions` 下的 Desktop 与 CLI 工作。
 - **Claude Code** 监控 `~/.claude/projects` 中记录的 CLI 与桌面应用会话。
 - **Kimi Code CLI** 读取 `~/.kimi-code/sessions` 或 `KIMI_CODE_HOME` 下的工作记录。自定义 provider 不会被视为托管 Kimi。
 - CodePet 不支持 Kimi 账户切换。
+- **Gemini CLI** 读取 `~/.gemini/tmp` 或 `GEMINI_CLI_HOME` 下的 JSONL 会话。只显示主会话消息；嵌套 subagent 不显示正文，只计入活动数量。
+- **OpenCode** 在后台 worker 中读取本地 SQLite 会话数据库。只显示应用与 CLI 的主会话消息；子会话只计入活动数量。
+- 从设置连接 **GitHub Copilot CLI**、**Cursor** 或 **Windsurf** 时，CodePet 会在各工具的 hook 配置中加入本地事件转发项。已有 hook 会保留，损坏的 JSON 不会被覆盖。
+- 设置中的 provider 列表只显示已检测到应用或 CLI、已连接集成或已识别账户的项目。其余 provider 可从**添加账户**中选择并连接。
 - CLI 活动标题使用**项目文件夹名称**，而不是自动生成的会话标题。
+
+检测路径、连接文件、隐私边界与恢复行为见 [provider 连接与检测结构](../provider-integrations.md)。
 
 ## 主要功能
 
@@ -94,7 +105,7 @@ CodePet 将各 provider 的事件归一为统一状态。
 | 任务中断 | 失败动作 |
 | 子代理运行 | 仅显示每个任务的活动数量，不显示子代理消息内容 |
 
-气泡会根据内容和当前屏幕自动调整宽度。长消息会在最大宽度内换行，而任务标题、模型、子代理数量、`5h` 和 `7d` 徽标保持在同一行。
+气泡会根据内容和当前屏幕自动调整宽度。长消息会在最大宽度内换行，而任务标题、模型、子代理数量和用量徽标保持在同一行。
 
 如果 Codex rollout 元数据包含 Sol、Terra 或 Luna 模型及推理强度，CodePet 会把它们显示在任务标题旁。并行会话的标题和消息彼此分离；没有完成事件的任务会在 provider 对应的 quiet-time 或 stale 处理后清理。
 
@@ -121,7 +132,7 @@ CodePet 将各 provider 的事件归一为统一状态。
 | 仅状态 (상태만) | 工作中、测试中、等待批准等状态 |
 | 关闭 (끄기) | 隐藏自动任务气泡，宠物动作仍然运行 |
 
-气泡中的内部推理内容或子代理消息不会显示。
+气泡中的内部推理内容或子代理消息不会显示。可显示的工具输入也会遮盖授权标头、API 密钥、Cookie、密码和 URL 中的秘密参数。
 
 ### 外观与移动
 
@@ -234,6 +245,11 @@ GitHub Actions 已禁用。本地 `npm test` 是验证标准。
 - `src/antigravity-watcher.js` — Google Antigravity transcript 监控
 - `src/claude-watcher.js` — Claude Code 项目日志监控
 - `src/kimi-watcher.js` — Kimi Code CLI 会话与活动监控
+- `src/gemini-watcher.js`、`src/opencode-watcher.js` — Gemini CLI、OpenCode 会话与子任务生命周期监控
+- `src/opencode-db-query.js`、`src/opencode-db-worker.js` — OpenCode SQLite 后台查询
+- `src/provider-hook-bridge.js`、`src/provider-hook-watcher.js`、`src/provider-integrations.js` — Copilot、Cursor 与 Windsurf 本地 hook 连接和事件归一化
+- `src/provider-catalog.js`、`src/provider-client-discovery.js` — provider 元数据与应用、CLI 安装检测
+- `src/activity-redaction.js` — 工具输入进入气泡前的秘密值清理
 - `src/activity-bubble-state.js` — 跨 provider 的并行活动汇总
 - `src/bubble-window-geometry.js` — 基于内容和屏幕的气泡几何计算
 - `src/codex-account-switcher.js`、`src/antigravity-account-switcher.js`、`src/claude-account-switcher.js` — 已保存账户切换

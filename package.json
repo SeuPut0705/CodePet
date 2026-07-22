@@ -3,7 +3,7 @@
   "version": "0.3.2",
   "private": true,
   "author": "SeuPut0705",
-  "description": "Multi-provider desktop companion for Codex, Antigravity, Claude, and Kimi.",
+  "description": "Local-first desktop companion for Codex, Claude, Kimi, Gemini, Copilot, Cursor, OpenCode, Windsurf, and Antigravity.",
   "main": "src/main.js",
   "scripts": {
     "start": "electron .",

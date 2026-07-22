@@ -10,6 +10,10 @@ let selectedFont = "";
 let toastTimer = null;
 
 const i18n = window.settingsI18n;
+const {
+  accountProviderMenuItems,
+  connectedAccountProviders,
+} = window.settingsAccountProviders;
 let currentLanguage = "ko";
 
 function t(key, vars) {
@@ -40,6 +44,20 @@ function createElement(tagName, className, text) {
   if (className) element.className = className;
   if (text !== undefined && text !== null) element.textContent = String(text);
   return element;
+}
+
+function createProviderMark(provider) {
+  const mark = createElement("span", "provider-mark");
+  if (provider?.icon) {
+    const icon = document.createElement("img");
+    icon.src = provider.icon;
+    icon.alt = "";
+    icon.draggable = false;
+    mark.appendChild(icon);
+    return mark;
+  }
+  mark.textContent = String(provider?.label || "?").trim().slice(0, 1);
+  return mark;
 }
 
 function quoteFontFamily(fontFamily) {
@@ -213,10 +231,63 @@ function accountInitial(account, provider) {
   return source.trim().slice(0, 1).toLocaleUpperCase("ko") || "C";
 }
 
-function createEmptyState(title) {
-  const empty = createElement("div", "empty-state");
-  empty.appendChild(createElement("strong", "", title));
-  return empty;
+function renderAccountProviderMenu() {
+  const menu = $("#account-provider-menu");
+  const trigger = $("#add-account");
+  menu.replaceChildren();
+
+  for (const provider of accountProviderMenuItems(state?.providers)) {
+    const option = createElement("button", "account-provider-option");
+    option.type = "button";
+    option.setAttribute("role", "menuitem");
+    option.append(
+      createProviderMark(provider),
+      createElement("span", "", provider.label)
+    );
+    option.addEventListener("click", () => {
+      setAccountProviderMenuOpen(false);
+      void runAccountAction(
+        provider.action,
+        trigger
+      );
+    });
+    menu.appendChild(option);
+  }
+}
+
+function setAccountProviderMenuOpen(open, { returnFocus = false } = {}) {
+  const menu = $("#account-provider-menu");
+  const trigger = $("#add-account");
+  const nextOpen = Boolean(open);
+  if (nextOpen) renderAccountProviderMenu();
+  menu.hidden = !nextOpen;
+  trigger.setAttribute("aria-expanded", String(nextOpen));
+  if (nextOpen) {
+    menu.querySelector('[role="menuitem"]')?.focus();
+  } else if (returnFocus) {
+    trigger.focus();
+  }
+}
+
+function handleAccountProviderMenuKeydown(event) {
+  const menu = $("#account-provider-menu");
+  if (event.key === "Escape") {
+    event.preventDefault();
+    setAccountProviderMenuOpen(false, { returnFocus: true });
+    return;
+  }
+  if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
+
+  const options = [...menu.querySelectorAll('[role="menuitem"]')];
+  if (!options.length) return;
+  event.preventDefault();
+  const currentIndex = options.indexOf(document.activeElement);
+  let nextIndex = currentIndex;
+  if (event.key === "ArrowDown") nextIndex = (currentIndex + 1) % options.length;
+  else if (event.key === "ArrowUp") nextIndex = (currentIndex - 1 + options.length) % options.length;
+  else if (event.key === "Home") nextIndex = 0;
+  else if (event.key === "End") nextIndex = options.length - 1;
+  options[nextIndex].focus();
 }
 
 function createProviderGroup(provider) {
@@ -224,25 +295,42 @@ function createProviderGroup(provider) {
   const heading = createElement("header", "provider-heading");
   const title = createElement("div", "provider-title");
   title.append(
-    createElement("span", "provider-mark", provider.label.slice(0, 1)),
+    createProviderMark(provider),
     createElement("h2", "", provider.label)
   );
 
-  const addButton = createElement("button", "button", t("accounts.add"));
-  addButton.type = "button";
-  addButton.addEventListener("click", () =>
-    runAccountAction({ provider: provider.id, action: "login" }, addButton)
-  );
-  heading.append(title, addButton);
+  const clientBadges = createElement("div", "provider-clients");
+  for (const client of provider.clients || []) {
+    clientBadges.appendChild(createElement("span", "client-chip", client.label));
+  }
+  if (provider.connected) {
+    clientBadges.appendChild(createElement("span", "client-chip is-connected", t("accounts.connected")));
+  }
+  heading.append(title, clientBadges);
   group.appendChild(heading);
 
   const list = createElement("div", "stack-list");
   if (!provider.accounts?.length) {
-    list.appendChild(createEmptyState(t("accounts.empty")));
-    group.appendChild(list);
-    return group;
+    const row = createElement("article", "list-row provider-connection-row");
+    const copy = createElement("div", "list-copy");
+    copy.appendChild(createElement(
+      "strong",
+      "",
+      provider.detected ? t("accounts.clientDetected") : t("accounts.notDetected")
+    ));
+    const connectButton = createElement(
+      "button",
+      "button",
+      provider.connected ? t("accounts.reconnect") : t("accounts.connect")
+    );
+    connectButton.type = "button";
+    connectButton.addEventListener("click", () => runAccountAction(
+      { provider: provider.id, action: "login" },
+      connectButton
+    ));
+    row.append(copy, connectButton);
+    list.appendChild(row);
   }
-
   for (const account of provider.accounts) {
     const row = createElement("article", "list-row");
     const identity = createElement("div", "list-identity");
@@ -259,33 +347,37 @@ function createProviderGroup(provider) {
     identity.appendChild(copy);
 
     const actions = createElement("div", "list-actions");
-    const switchButton = createElement(
-      "button",
-      "button",
-      account.active ? t("accounts.using") : t("accounts.switch")
-    );
-    switchButton.type = "button";
-    switchButton.disabled = account.active;
-    switchButton.addEventListener("click", () =>
-      runAccountAction(
-        { provider: provider.id, action: "switch", profileKey: account.key },
-        switchButton
-      )
-    );
-    actions.appendChild(switchButton);
-
-    const deleteButton = createElement("button", "button danger-button", t("accounts.delete"));
-    deleteButton.type = "button";
-    deleteButton.disabled = account.active;
-    deleteButton.addEventListener("click", () => {
-      const accountLabel = account.email || account.label || provider.label;
-      if (!window.confirm(t("accounts.confirmDelete", { label: accountLabel }))) return;
-      runAccountAction(
-        { provider: provider.id, action: "delete", profileKey: account.key },
-        deleteButton
+    if (account.canSwitch !== false) {
+      const switchButton = createElement(
+        "button",
+        "button",
+        account.active ? t("accounts.using") : t("accounts.switch")
       );
-    });
-    actions.appendChild(deleteButton);
+      switchButton.type = "button";
+      switchButton.disabled = account.active;
+      switchButton.addEventListener("click", () =>
+        runAccountAction(
+          { provider: provider.id, action: "switch", profileKey: account.key },
+          switchButton
+        )
+      );
+      actions.appendChild(switchButton);
+    }
+
+    if (account.canDelete !== false) {
+      const deleteButton = createElement("button", "button danger-button", t("accounts.delete"));
+      deleteButton.type = "button";
+      deleteButton.disabled = account.active;
+      deleteButton.addEventListener("click", () => {
+        const accountLabel = account.email || account.label || provider.label;
+        if (!window.confirm(t("accounts.confirmDelete", { label: accountLabel }))) return;
+        runAccountAction(
+          { provider: provider.id, action: "delete", profileKey: account.key },
+          deleteButton
+        );
+      });
+      actions.appendChild(deleteButton);
+    }
     row.append(identity, actions);
     list.appendChild(row);
   }
@@ -296,7 +388,8 @@ function createProviderGroup(provider) {
 function renderAccounts() {
   const root = $("#provider-groups");
   root.replaceChildren();
-  for (const provider of state?.providers || []) {
+  renderAccountProviderMenu();
+  for (const provider of connectedAccountProviders(state?.providers)) {
     root.appendChild(createProviderGroup(provider));
   }
 }
@@ -344,13 +437,16 @@ function renderUsage() {
     const card = createElement("article", "usage-card");
     const heading = createElement("header", "usage-card-heading");
     const providerLabel = item.providerLabel || item.label || t("accounts.title");
+    const provider = state?.providers?.find((candidate) => candidate.id === item.providerId) || {
+      label: providerLabel,
+    };
     const title = createElement("div", "usage-account-title");
     title.append(
       createElement("h2", "", providerLabel),
       createElement("p", "", item.accountLabel || t("accounts.heading"))
     );
     heading.append(
-      createElement("span", "provider-mark", providerLabel.slice(0, 1)),
+      createProviderMark(provider),
       title
     );
     if (item.active) heading.appendChild(createElement("span", "usage-current", t("accounts.current")));
@@ -483,6 +579,17 @@ function registerAppearanceControls() {
 }
 
 function registerProviderControls() {
+  const addControl = $("#account-add-control");
+  const addTrigger = $("#add-account");
+  const providerMenu = $("#account-provider-menu");
+  addTrigger.addEventListener("click", () => {
+    setAccountProviderMenuOpen(addTrigger.getAttribute("aria-expanded") !== "true");
+  });
+  providerMenu.addEventListener("keydown", handleAccountProviderMenuKeydown);
+  document.addEventListener("click", (event) => {
+    if (!addControl.contains(event.target)) setAccountProviderMenuOpen(false);
+  });
+
   $("#refresh-accounts").addEventListener("click", async (event) => {
     const button = event.currentTarget;
     setButtonBusy(button, true, t("busy.check"));

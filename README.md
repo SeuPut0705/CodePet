@@ -31,7 +31,7 @@
 
 ---
 
-CodePet은 **Codex**, **Google Antigravity(AGY)**, **Claude Code**, **Kimi Code CLI**의 로컬 작업 기록을 함께 감시하는 데스크톱 펫입니다. 여러 작업의 상태와 마지막 메시지를 하나의 반응형 말풍선에 정리하고, 계정별 사용량과 펫 설정도 한곳에서 관리합니다.
+CodePet은 **Codex**, **Google Antigravity(AGY)**, **Claude Code**, **Kimi Code CLI**, **Gemini CLI**, **GitHub Copilot CLI**, **Cursor**, **OpenCode**, **Windsurf**의 로컬 작업을 함께 감시하는 데스크톱 펫입니다. 여러 작업의 상태와 마지막 메시지를 하나의 반응형 말풍선에 정리하고, 감지된 공급자·계정·사용량과 펫 설정도 한곳에서 관리합니다.
 
 작업 내용은 화면에 표시하기 위해 로컬에서 읽습니다. 개인정보 표시 수준은 사용자가 직접 선택할 수 있습니다.
 
@@ -66,18 +66,29 @@ npm run dist -- --mac # macOS dmg + zip
 
 ## 지원 범위
 
-| 도구 | 활동 감지 | 사용량 표시 | 계정 저장·전환 |
+| 도구 | 활동 감지 | 사용량 표시 | 계정·연결 |
 |---|:---:|:---:|:---:|
 | Codex Desktop / CLI | ✓ | ✓ | ✓ |
 | Google Antigravity | ✓ | ✓ | ✓ |
 | Claude Code | ✓ | ✓ | ✓ |
 | Kimi Code CLI | ✓ | 관리형 로그인만 | — |
+| Gemini CLI | ✓ | — | 로그인·계정 식별 |
+| GitHub Copilot CLI | ✓ | — | 로그인·hook 연결 |
+| Cursor App / CLI | ✓ | — | 로그인·hook 연결 |
+| OpenCode App / CLI | ✓ | — | 로그인 감지 |
+| Windsurf App | ✓ | — | hook 연결 |
 
 - **Codex**는 `~/.codex/sessions`의 Desktop·CLI 작업을 함께 감지합니다.
 - **Claude Code**는 `~/.claude/projects`에 기록되는 CLI와 데스크톱 앱 세션을 함께 감지합니다.
 - **Kimi Code CLI**는 `~/.kimi-code/sessions` 또는 `KIMI_CODE_HOME` 아래의 작업 기록을 읽습니다. 사용자 지정 provider를 관리형 Kimi로 간주하지 않습니다.
 - CodePet은 Kimi 계정 전환을 지원하지 않으며, Kimi는 계정 전환 대상이 아닙니다.
+- **Gemini CLI**는 `~/.gemini/tmp` 또는 `GEMINI_CLI_HOME` 아래의 JSONL 세션을 읽습니다. 메인 세션만 메시지로 표시하고 중첩 subagent는 본문 없이 활성 개수만 합산합니다.
+- **OpenCode**는 로컬 SQLite 세션 DB를 백그라운드 워커에서 읽습니다. 앱과 CLI의 메인 세션만 메시지로 표시하고 하위 세션은 활성 개수만 합산합니다.
+- **GitHub Copilot CLI**, **Cursor**, **Windsurf**는 설정에서 연결할 때 각 도구의 hook 설정에 CodePet 로컬 이벤트 전달 항목을 추가합니다. 기존 hook은 유지하며 손상된 JSON은 덮어쓰지 않습니다.
+- 설정의 공급자 목록은 설치된 앱·CLI, 연결된 통합, 확인된 계정 중 하나가 있는 항목만 보여 줍니다. `계정 추가`에서 나머지 공급자를 선택해 연결할 수 있습니다.
 - CLI 활동 제목은 자동 생성된 세션 제목 대신 **프로젝트 폴더명**을 사용합니다.
+
+감지 경로, 연결 파일, 개인정보 경계와 복구 동작은 [공급자 연결·감지 구조](docs/provider-integrations.md)에 정리되어 있습니다.
 
 ## 주요 기능
 
@@ -94,7 +105,7 @@ CodePet은 공급자별 작업 이벤트를 공통 상태로 정리합니다.
 | 작업 중단 | 실패 모션 표시 |
 | 서브에이전트 실행 | 메시지 내용 대신 작업별 활성 개수만 표시 |
 
-말풍선은 **콘텐츠와 현재 화면 크기에 맞춰 자동으로 폭을 조절**합니다. 긴 메시지는 최대 폭 안에서 줄바꿈하고, 작업 제목·모델·서브에이전트 수·`5h`·`7d` 배지는 한 줄을 유지합니다.
+말풍선은 **콘텐츠와 현재 화면 크기에 맞춰 자동으로 폭을 조절**합니다. 긴 메시지는 최대 폭 안에서 줄바꿈하고, 작업 제목·모델·서브에이전트 수·사용량 배지는 한 줄을 유지합니다.
 
 Codex rollout에서 확인된 Sol·Terra·Luna 모델과 추론 강도는 작업 제목 옆에 표시됩니다. 여러 세션을 동시에 실행해도 각 작업의 제목과 메시지를 분리하며, 완료 이벤트가 없는 작업은 공급자별 quiet-time 또는 stale 처리 후 정리합니다.
 
@@ -121,7 +132,7 @@ Kimi의 컨텍스트 사용량이나 사용자 지정 provider 값은 계정 한
 | 상태만 | 작업 중, 테스트 중, 승인 대기 같은 상태 |
 | 끄기 | 자동 작업 말풍선 숨김, 펫 모션은 유지 |
 
-내부 추론 내용과 서브에이전트 메시지는 말풍선에 노출하지 않습니다.
+내부 추론 내용과 서브에이전트 메시지는 말풍선에 노출하지 않습니다. 표시 가능한 도구 입력에서도 인증 헤더, API 키, 쿠키, 비밀번호와 URL 비밀값을 마스킹합니다.
 
 ### 화면과 움직임
 
@@ -234,6 +245,11 @@ GitHub Actions는 사용하지 않습니다. 변경 검증 기준은 로컬 `npm
 - `src/antigravity-watcher.js` — Google Antigravity transcript 감시
 - `src/claude-watcher.js` — Claude Code 프로젝트 로그 감시
 - `src/kimi-watcher.js` — Kimi Code CLI 세션·활동 감시
+- `src/gemini-watcher.js`, `src/opencode-watcher.js` — Gemini CLI·OpenCode 세션과 하위 작업 수명주기 감시
+- `src/opencode-db-query.js`, `src/opencode-db-worker.js` — OpenCode SQLite 백그라운드 조회
+- `src/provider-hook-bridge.js`, `src/provider-hook-watcher.js`, `src/provider-integrations.js` — Copilot·Cursor·Windsurf 로컬 hook 연결과 이벤트 정규화
+- `src/provider-catalog.js`, `src/provider-client-discovery.js` — 공급자 메타데이터와 앱·CLI 설치 감지
+- `src/activity-redaction.js` — 말풍선에 전달하기 전 도구 입력의 비밀값 제거
 - `src/activity-bubble-state.js` — 공급자별 동시 작업과 표시 상태 집계
 - `src/bubble-window-geometry.js` — 콘텐츠·화면 기반 말풍선 크기와 배치
 - `src/codex-account-switcher.js`, `src/antigravity-account-switcher.js`, `src/claude-account-switcher.js` — 계정 프로필 저장·전환

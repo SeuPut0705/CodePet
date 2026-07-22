@@ -14,7 +14,7 @@
 ## 문서 구조
 
 1. 배너, 제품명, 한 줄 설명, 지원 플랫폼·런타임·테스트 배지
-2. 핵심 가치: 네 공급자 동시 감시, 상태 말풍선, 계정별 사용량, 펫 커스터마이징
+2. 핵심 가치: 여러 공급자 동시 감시, 상태 말풍선, 계정별 사용량, 펫 커스터마이징
 3. 빠른 시작과 패키지 빌드
 4. 지원 대상과 데이터 처리 경계
 5. 주요 기능 설명
@@ -26,7 +26,8 @@
 
 ## 정확성 기준
 
-- 지원 도구는 Codex, Google Antigravity, Claude Code, Kimi Code CLI로 표기한다.
+- 지원 도구는 Codex, Google Antigravity, Claude Code, Kimi Code CLI, Gemini CLI, GitHub Copilot CLI, Cursor, OpenCode, Windsurf로 표기한다.
+- 현재 감지·연결 계약은 `docs/provider-integrations.md`를 기준으로 한다.
 - Kimi는 관리형 로그인에서만 `5h`·`7d` 남은 사용량을 표시하고 계정 전환 대상에서는 제외한다.
 - macOS와 Windows 지원, npm 실행·빌드 명령, 로컬 로그 경로, 개인정보 표시 모드를 현재 구현과 맞춘다.
 - 공식 배포 다운로드가 없는 상태에서 설치 파일을 제공한다고 오해할 문구나 배지는 사용하지 않는다.

@@ -31,7 +31,7 @@
 
 ---
 
-CodePet は **Codex**、**Google Antigravity (AGY)**、**Claude Code**、**Kimi Code CLI** のローカル作業ログをまとめて監視するデスクトップペットです。複数タスクの状態と最新メッセージを一つのレスポンシブな吹き出しに整理し、アカウント別の利用上限とペット設定も一か所で管理できます。
+CodePet は **Codex**、**Google Antigravity (AGY)**、**Claude Code**、**Kimi Code CLI**、**Gemini CLI**、**GitHub Copilot CLI**、**Cursor**、**OpenCode**、**Windsurf** のローカル作業をまとめて監視するデスクトップペットです。複数タスクの状態と最新メッセージを一つのレスポンシブな吹き出しに整理し、検出した provider・アカウント・利用上限とペット設定も一か所で管理できます。
 
 作業データは画面表示のためにローカルで読み取ります。吹き出しに表示する情報量はユーザーが選べます。
 
@@ -66,18 +66,29 @@ npm run dist -- --mac # macOS dmg + zip
 
 ## 対応範囲
 
-| ツール | 活動検知 | 利用上限 | アカウント保存・切り替え |
+| ツール | 活動検知 | 利用上限 | アカウント・連携 |
 |---|:---:|:---:|:---:|
 | Codex Desktop / CLI | ✓ | ✓ | ✓ |
 | Google Antigravity | ✓ | ✓ | ✓ |
 | Claude Code | ✓ | ✓ | ✓ |
 | Kimi Code CLI | ✓ | 管理対象ログインのみ | — |
+| Gemini CLI | ✓ | — | ログイン・アカウント識別 |
+| GitHub Copilot CLI | ✓ | — | ログイン・hook 連携 |
+| Cursor App / CLI | ✓ | — | ログイン・hook 連携 |
+| OpenCode App / CLI | ✓ | — | ログイン検知 |
+| Windsurf App | ✓ | — | hook 連携 |
 
 - **Codex** は `~/.codex/sessions` にある Desktop と CLI の作業をまとめて検知します。
 - **Claude Code** は `~/.claude/projects` に記録される CLI とデスクトップアプリのセッションを検知します。
 - **Kimi Code CLI** は `~/.kimi-code/sessions` または `KIMI_CODE_HOME` 配下の作業記録を読み取ります。カスタム provider を管理対象 Kimi として扱いません。
 - CodePet は Kimi のアカウント切り替えには対応しません。
+- **Gemini CLI** は `~/.gemini/tmp` または `GEMINI_CLI_HOME` 配下の JSONL セッションを読み取ります。メインセッションのメッセージだけを表示し、ネストされた subagent は本文を出さず有効数だけを集計します。
+- **OpenCode** はローカル SQLite セッション DB をバックグラウンドワーカーで読み取ります。アプリ・CLI のメインセッションだけをメッセージとして表示し、子セッションは有効数だけを集計します。
+- **GitHub Copilot CLI**、**Cursor**、**Windsurf** は設定から接続すると、各ツールの hook 設定に CodePet のローカルイベント転送項目を追加します。既存の hook は維持し、壊れた JSON は上書きしません。
+- 設定の provider 一覧には、アプリ・CLI、連携、確認済みアカウントのいずれかが存在する項目だけを表示します。残りは **アカウント追加** から選んで接続できます。
 - CLI の活動タイトルには自動生成されたセッション名ではなく、**プロジェクトフォルダー名**を使います。
+
+検知パス、接続ファイル、プライバシー境界、復旧動作は [provider の接続・検知構造](../provider-integrations.md) にまとめています。
 
 ## 主な機能
 
@@ -94,7 +105,7 @@ CodePet は provider ごとのイベントを共通状態に正規化します�
 | タスク中断 | 失敗モーション |
 | サブエージェント実行 | メッセージ本文ではなくタスク別の有効数のみ表示 |
 
-吹き出しは内容と現在の画面サイズに合わせて幅を自動調整します。長いメッセージは上限幅の中で折り返し、タスク名・モデル・サブエージェント数・`5h`・`7d` バッジは一行を維持します。
+吹き出しは内容と現在の画面サイズに合わせて幅を自動調整します。長いメッセージは上限幅の中で折り返し、タスク名・モデル・サブエージェント数・利用量バッジは一行を維持します。
 
 Codex rollout に Sol・Terra・Luna モデルと推論強度が含まれる場合はタスク名の横に表示します。複数セッションを同時に動かしてもタイトルとメッセージを分離し、完了イベントのないタスクは provider ごとの quiet-time または stale 処理後に整理します。
 
@@ -121,7 +132,7 @@ Codex rollout に Sol・Terra・Luna モデルと推論強度が含まれる場�
 | 状態のみ (상태만) | 作業中、テスト中、承認待ちなどの状態 |
 | オフ (끄기) | 自動吹き出しを非表示、ペットのモーションは継続 |
 
-内部推論とサブエージェントのメッセージは吹き出しに表示しません。
+内部推論とサブエージェントのメッセージは吹き出しに表示しません。表示可能なツール入力からも認証ヘッダー、API キー、Cookie、パスワード、URL の秘密値をマスクします。
 
 ### 見た目と移動
 
@@ -234,6 +245,11 @@ GitHub Actions は無効です。ローカルの `npm test` を検証基準に�
 - `src/antigravity-watcher.js` — Google Antigravity transcript 監視
 - `src/claude-watcher.js` — Claude Code プロジェクトログ監視
 - `src/kimi-watcher.js` — Kimi Code CLI セッション・活動監視
+- `src/gemini-watcher.js`, `src/opencode-watcher.js` — Gemini CLI・OpenCode のセッションと子タスクのライフサイクル監視
+- `src/opencode-db-query.js`, `src/opencode-db-worker.js` — OpenCode SQLite のバックグラウンド照会
+- `src/provider-hook-bridge.js`, `src/provider-hook-watcher.js`, `src/provider-integrations.js` — Copilot・Cursor・Windsurf のローカル hook 連携とイベント正規化
+- `src/provider-catalog.js`, `src/provider-client-discovery.js` — provider メタデータとアプリ・CLI のインストール検知
+- `src/activity-redaction.js` — ツール入力を吹き出しへ渡す前の秘密値除去
 - `src/activity-bubble-state.js` — provider 間の同時作業集約
 - `src/bubble-window-geometry.js` — 内容と画面に応じた吹き出し配置
 - `src/codex-account-switcher.js`, `src/antigravity-account-switcher.js`, `src/claude-account-switcher.js` — 保存アカウント切り替え

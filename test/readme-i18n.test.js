@@ -34,7 +34,13 @@ const sharedTokens = [
   "Google Antigravity",
   "Claude Code",
   "Kimi Code CLI",
+  "Gemini CLI",
+  "GitHub Copilot CLI",
+  "Cursor",
+  "OpenCode",
+  "Windsurf",
   "KIMI_CODE_HOME",
+  "GEMINI_CLI_HOME",
   "5h",
   "7d",
   "npm install",
@@ -106,4 +112,30 @@ test("각 언어는 Kimi·개인정보·배포 제한을 명시한다", () => {
     const markdown = readRepositoryFile(file);
     for (const pattern of patterns) assert.match(markdown, pattern, `${file}: ${pattern}`);
   }
+});
+
+test("공급자 연결 문서는 현재 감지·보안·복구 계약을 설명한다", () => {
+  const document = readRepositoryFile("docs/provider-integrations.md");
+  for (const token of [
+    "Codex",
+    "Antigravity",
+    "Claude",
+    "Kimi",
+    "Gemini",
+    "GitHub Copilot",
+    "Cursor",
+    "OpenCode",
+    "Windsurf",
+    "127.0.0.1",
+    "X-CodePet-Token",
+    "activity-redaction.js",
+    "opencode-db-worker.js",
+    "npm test",
+  ]) {
+    assert.ok(document.includes(token), `docs/provider-integrations.md: ${token}`);
+  }
+
+  assert.match(document, /subagent.*본문.*(표시하지|숨기)/s);
+  assert.match(document, /손상.*JSON.*덮어쓰지/s);
+  assert.match(document, /Apple Developer ID.*서명.*공증/s);
 });

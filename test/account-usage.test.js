@@ -44,7 +44,7 @@ test("연결된 모든 계정의 사용량을 카드로 만들고 계정별 조�
   ]);
 });
 
-test("연결된 계정이 없는 provider는 로그인 안내 카드 하나를 만든다", async () => {
+test("연결되거나 인식된 계정이 없는 provider는 사용량 카드에서 숨긴다", async () => {
   const cards = await loadAccountUsageCards({
     providerId: "agy",
     providerLabel: "AGY",
@@ -52,13 +52,5 @@ test("연결된 계정이 없는 provider는 로그인 안내 카드 하나를 �
     loadUsage: async () => ({ gauges: [] }),
   });
 
-  assert.deepEqual(cards, [{
-    id: "agy:empty",
-    providerId: "agy",
-    providerLabel: "AGY",
-    accountLabel: "연결된 계정 없음",
-    active: false,
-    error: "로그인 필요",
-    gauges: [],
-  }]);
+  assert.deepEqual(cards, []);
 });

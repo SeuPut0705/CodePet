@@ -11,7 +11,8 @@
 ## Global Constraints
 
 - 앱 코드, 기능, 버전, 배포 산출물은 변경하지 않는다.
-- 지원 도구는 Codex, Google Antigravity, Claude Code, Kimi Code CLI로 표기한다.
+- 지원 도구는 Codex, Google Antigravity, Claude Code, Kimi Code CLI, Gemini CLI, GitHub Copilot CLI, Cursor, OpenCode, Windsurf로 표기한다.
+- 현재 감지·연결 계약은 `docs/provider-integrations.md`를 기준으로 한다.
 - Kimi 계정 전환을 지원한다고 표현하지 않는다.
 - 공식 배포·CI가 존재한다고 오해할 배지를 만들지 않는다.
 - 생성 이미지 안에 텍스트, 공급자 로고, 워터마크를 넣지 않는다.
@@ -76,7 +77,7 @@ docs/assets/codepet-readme-hero.png
 ```bash
 node -e "const p=require('./package.json'); for (const name of ['start','dev','test','dist']) { if (!p.scripts[name]) throw new Error(name) }"
 test -f docs/assets/codepet-readme-hero.png
-rg -n 'Codex|Antigravity|Claude|Kimi|npm run start|npm test|npm run dist' README.md
+rg -n 'Codex|Antigravity|Claude|Kimi|Gemini|Copilot|Cursor|OpenCode|Windsurf|npm run start|npm test|npm run dist' README.md
 git diff --check
 ```
 

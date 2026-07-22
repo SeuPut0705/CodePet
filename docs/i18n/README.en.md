@@ -31,7 +31,7 @@
 
 ---
 
-CodePet is a desktop companion that watches local work logs from **Codex**, **Google Antigravity (AGY)**, **Claude Code**, and **Kimi Code CLI**. It combines multiple task states and recent messages into one responsive bubble, while keeping account quota and pet settings in one place.
+CodePet is a desktop companion that watches local work from **Codex**, **Google Antigravity (AGY)**, **Claude Code**, **Kimi Code CLI**, **Gemini CLI**, **GitHub Copilot CLI**, **Cursor**, **OpenCode**, and **Windsurf**. It combines multiple task states and recent messages into one responsive bubble, while keeping detected providers, accounts, quota, and pet settings in one place.
 
 Work data is read locally for on-screen display. You decide how much detail the activity bubble may show.
 
@@ -66,18 +66,29 @@ Build outputs are written to `artifacts/`. Quit CodePet completely before buildi
 
 ## Support matrix
 
-| Tool | Activity | Quota | Saved account switching |
+| Tool | Activity | Quota | Account / integration |
 |---|:---:|:---:|:---:|
 | Codex Desktop / CLI | ✓ | ✓ | ✓ |
 | Google Antigravity | ✓ | ✓ | ✓ |
 | Claude Code | ✓ | ✓ | ✓ |
 | Kimi Code CLI | ✓ | Managed login only | — |
+| Gemini CLI | ✓ | — | Login and identity |
+| GitHub Copilot CLI | ✓ | — | Login and hook connection |
+| Cursor App / CLI | ✓ | — | Login and hook connection |
+| OpenCode App / CLI | ✓ | — | Login detection |
+| Windsurf App | ✓ | — | Hook connection |
 
 - **Codex** watches both Desktop and CLI work under `~/.codex/sessions`.
 - **Claude Code** watches CLI and desktop-app sessions recorded under `~/.claude/projects`.
 - **Kimi Code CLI** reads work records under `~/.kimi-code/sessions` or `KIMI_CODE_HOME`. A custom provider is never treated as managed Kimi.
 - CodePet does not support Kimi account switching.
+- **Gemini CLI** reads JSONL sessions under `~/.gemini/tmp` or `GEMINI_CLI_HOME`. Only main-session messages are shown; nested subagents contribute an active count without exposing their text.
+- **OpenCode** reads its local SQLite session database in a background worker. Only main app/CLI session messages are shown; child sessions contribute an active count.
+- **GitHub Copilot CLI**, **Cursor**, and **Windsurf** add a CodePet local-event entry to each tool's hook configuration when connected from Settings. Existing hooks are preserved, and malformed JSON is never overwritten.
+- The Settings provider list shows only providers with a detected app or CLI, a connected integration, or a recognized account. Choose any remaining provider from **Add account** to connect it.
 - CLI activity uses the **project folder name** instead of an automatically generated session title.
+
+See [Provider integrations and detection](../provider-integrations.md) for paths, connection files, privacy boundaries, and recovery behavior.
 
 ## Features
 
@@ -94,7 +105,7 @@ CodePet normalizes provider-specific events into a common set of states.
 | Task interrupted | Failure animation |
 | Subagent running | Active count per task, never the subagent message text |
 
-The bubble automatically adjusts its width to its content and the current display. Long messages wrap within a capped width, while the task title, model, subagent count, and `5h` and `7d` badges stay on one line.
+The bubble automatically adjusts its width to its content and the current display. Long messages wrap within a capped width, while the task title, model, subagent count, and usage badges stay on one line.
 
 When Codex rollout metadata includes a Sol, Terra, or Luna model and reasoning effort, CodePet shows them next to the task title. Concurrent sessions keep separate titles and messages. Tasks without a completion event are cleared after provider-specific quiet-time or stale handling.
 
@@ -121,7 +132,7 @@ Choose the activity detail level in **General (일반)** settings.
 | Status only (상태만) | States such as working, testing, or waiting for approval |
 | Off (끄기) | Hides automatic task bubbles while pet motion continues |
 
-Internal reasoning and subagent messages are never shown in the bubble.
+Internal reasoning and subagent messages are never shown in the bubble. CodePet also redacts authorization headers, API keys, cookies, passwords, and secret URL parameters from visible tool input.
 
 ### Appearance and movement
 
@@ -235,6 +246,11 @@ GitHub Actions is disabled. Local `npm test` is the verification gate.
 - `src/antigravity-watcher.js` — Google Antigravity transcript watcher
 - `src/claude-watcher.js` — Claude Code project log watcher
 - `src/kimi-watcher.js` — Kimi Code CLI session and activity watcher
+- `src/gemini-watcher.js`, `src/opencode-watcher.js` — Gemini CLI and OpenCode session and child-task lifecycle watchers
+- `src/opencode-db-query.js`, `src/opencode-db-worker.js` — Background OpenCode SQLite queries
+- `src/provider-hook-bridge.js`, `src/provider-hook-watcher.js`, `src/provider-integrations.js` — Copilot, Cursor, and Windsurf local hook integration and event normalization
+- `src/provider-catalog.js`, `src/provider-client-discovery.js` — Provider metadata and installed app / CLI detection
+- `src/activity-redaction.js` — Secret removal before tool input reaches the bubble
 - `src/activity-bubble-state.js` — Concurrent activity aggregation across providers
 - `src/bubble-window-geometry.js` — Content- and display-aware bubble geometry
 - `src/codex-account-switcher.js`, `src/antigravity-account-switcher.js`, `src/claude-account-switcher.js` — Saved account switching

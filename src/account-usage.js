@@ -9,17 +9,7 @@ function usageCardBase(providerId, providerLabel, profile) {
 }
 
 async function loadAccountUsageCards({ providerId, providerLabel, profiles, loadUsage }) {
-  if (!profiles.length) {
-    return [{
-      id: `${providerId}:empty`,
-      providerId,
-      providerLabel,
-      accountLabel: "연결된 계정 없음",
-      active: false,
-      error: "로그인 필요",
-      gauges: [],
-    }];
-  }
+  if (!profiles.length) return [];
 
   return Promise.all(profiles.map(async (profile) => {
     const base = usageCardBase(providerId, providerLabel, profile);

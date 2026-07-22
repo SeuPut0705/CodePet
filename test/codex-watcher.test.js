@@ -449,6 +449,79 @@ test("session_meta가 덜 기록된 rollout은 다음 poll까지 보류한다", 
   );
 });
 
+test("서브에이전트 파일 안의 부모 session_meta가 최초 분류를 덮어쓰지 않는다", (t) => {
+  const codexHome = fs.mkdtempSync(path.join(os.tmpdir(), "codepet-nested-session-meta-"));
+  t.after(() => fs.rmSync(codexHome, { recursive: true, force: true }));
+  const dayDir = path.join(codexHome, "sessions", "2026", "07", "22");
+  fs.mkdirSync(dayDir, { recursive: true });
+  const rootId = "019f85b0-b0a7-73f1-8080-2ba11b4e5d25";
+  const childId = "019f85b1-1111-7222-8333-444444444444";
+  const now = Date.now();
+  const rootPath = writeTestRollout(dayDir, {
+    threadId: rootId,
+    threadSource: "user",
+    events: ["task_started"],
+    mtimeMs: now - 1_000,
+  });
+  const watcher = new CodexWatcher({ getCodexHomes: () => [codexHome] });
+  watcher.poll();
+
+  const childPath = path.join(dayDir, `rollout-test-${childId}.jsonl`);
+  const entries = [
+    {
+      type: "session_meta",
+      payload: {
+        id: childId,
+        thread_source: "subagent",
+        parent_thread_id: rootId,
+        source: { subagent: { thread_spawn: { parent_thread_id: rootId } } },
+      },
+    },
+    {
+      type: "session_meta",
+      payload: { id: rootId, thread_source: "user", source: "vscode" },
+    },
+    { type: "event_msg", payload: { type: "task_started" } },
+    { type: "event_msg", payload: { type: "agent_message", message: "내부 검토" } },
+    {
+      type: "response_item",
+      payload: {
+        type: "function_call",
+        name: "shell_command",
+        arguments: JSON.stringify({ command: "npm test" }),
+      },
+    },
+    {
+      type: "event_msg",
+      payload: {
+        type: "token_count",
+        rate_limits: {
+          primary: { window_minutes: 300, used_percent: 50, resets_at: 500 },
+        },
+      },
+    },
+  ];
+  fs.writeFileSync(
+    childPath,
+    `${entries.map((entry) => JSON.stringify(entry)).join("\n")}\n`,
+    "utf8"
+  );
+  fs.utimesSync(childPath, new Date(now), new Date(now));
+
+  const leaked = [];
+  const counts = [];
+  watcher.on("agent-message", () => leaked.push("message"));
+  watcher.on("user-message", () => leaked.push("message"));
+  watcher.on("tool-activity", () => leaked.push("tool"));
+  watcher.on("usage-updated", () => leaked.push("usage"));
+  watcher.on("subagent-count-changed", (value) => counts.push(value));
+  watcher.poll();
+
+  assert.deepEqual(leaked, []);
+  assert.deepEqual([...watcher.workingFiles], [rootPath]);
+  assert.deepEqual(counts.at(-1), { threadId: rootId, subagentCount: 1 });
+});
+
 test("서브에이전트 메시지는 숨기고 부모 작업에 재귀 활성 수만 발행한다", () => {
   const rootId = "019f4a30-b0a7-73f1-8080-2ba11b4e5d25";
   const childId = "019f4a31-1111-7222-8333-444444444444";
