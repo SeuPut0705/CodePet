@@ -990,16 +990,14 @@ input[type="search"]::placeholder {
   color: var(--accent-strong);
 }
 
-.provider-title,
-.usage-card-heading {
+.provider-title {
   min-width: 0;
   display: flex;
   align-items: center;
   gap: 9px;
 }
 
-.provider-title h2,
-.usage-card-heading h2 {
+.provider-title h2 {
   margin: 0;
   font-family: var(--font-display);
   font-size: 12.5px;
@@ -1048,127 +1046,88 @@ input[type="search"]::placeholder {
   justify-content: space-between;
 }
 
-.usage-grid {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 10px;
-  margin-top: 12px;
+.account-row.has-usage {
+  grid-template-columns: minmax(150px, 1fr) minmax(140px, 280px) auto;
+  gap: 12px;
 }
 
-.usage-card {
-  min-width: 0;
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
-  column-gap: 18px;
-  padding: 12px 14px;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  background: var(--surface);
-  box-shadow: var(--shadow);
-  transition: transform 140ms ease, border-color 140ms ease;
-}
-
-.usage-card:hover {
-  transform: translateY(-1px);
-  border-color: var(--line-strong);
-}
-
-.usage-card-heading {
-  grid-column: 1 / -1;
-  padding-bottom: 10px;
-  border-bottom: 1px solid var(--line);
-}
-
-.usage-account-title {
-  min-width: 0;
-  flex: 1;
-}
-
-.usage-account-title p {
-  overflow: hidden;
-  margin: 2px 0 0;
-  color: var(--muted);
-  font-size: 10.5px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.usage-current {
-  flex: none;
-  padding: 2px 7px;
-  border-radius: 999px;
-  border: 1px solid rgba(45, 212, 191, 0.3);
-  background: var(--accent-soft);
-  color: var(--accent-strong);
-  font-size: 10px;
-  font-weight: 700;
-}
-
-.usage-gauge {
-  display: grid;
-  gap: 5px;
-  padding-top: 10px;
-}
-
-.usage-gauge + .usage-gauge {
-  margin-top: 0;
-  border-top: 0;
-}
-
-.usage-row {
+.account-usage {
   min-width: 0;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  font-size: 12px;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 5px;
 }
 
-.usage-row > span {
+.account-usage-chip {
+  --usage-color: var(--accent);
+  position: relative;
+  min-width: 76px;
+  max-width: 138px;
+  min-height: 28px;
   overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 7px;
+  padding: 5px 8px 7px;
+  border: 1px solid rgba(45, 212, 191, 0.22);
+  border-radius: 8px;
+  background: rgba(45, 212, 191, 0.07);
   color: var(--ink-soft);
+}
+
+.account-usage-chip::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: var(--usage-remaining);
+  height: 2px;
+  border-radius: 0 999px 999px 0;
+  background: var(--usage-color);
+}
+
+.account-usage-chip > span {
+  overflow: hidden;
+  font-size: 10.5px;
+  font-weight: 650;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.usage-row strong {
+.account-usage-chip strong {
   flex: none;
-  font-size: 12px;
+  color: var(--ink);
+  font-size: 11px;
+  line-height: 1;
   font-variant-numeric: tabular-nums;
 }
 
-.usage-track {
-  height: 6px;
+.account-usage-chip.is-warn {
+  --usage-color: var(--warn);
+  border-color: rgba(251, 191, 36, 0.28);
+  background: rgba(251, 191, 36, 0.08);
+}
+
+.account-usage-chip.is-danger {
+  --usage-color: var(--danger);
+  border-color: rgba(248, 113, 113, 0.3);
+  background: var(--danger-soft);
+}
+
+.account-usage-note {
   overflow: hidden;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.08);
-}
-
-.usage-track i {
-  display: block;
-  height: 100%;
-  border-radius: inherit;
-  background: linear-gradient(90deg, var(--accent), #38bdf8);
-}
-
-.usage-track i.is-warn {
-  background: var(--warn);
-}
-
-.usage-track i.is-danger {
-  background: var(--danger);
-  box-shadow: 0 0 8px rgba(248, 113, 113, 0.5);
-}
-
-.usage-gauge small,
-.usage-error {
-  margin: 0;
   color: var(--muted);
-  font-size: 11.5px;
+  font-size: 10.5px;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.usage-error {
-  padding-top: 12px;
+.account-usage-note.is-error {
+  color: var(--danger);
 }
 
 .project-composer {
@@ -1315,7 +1274,6 @@ input[type="search"]::placeholder {
 
   .font-workbench,
   .control-grid,
-  .usage-grid,
   .panel-2col {
     grid-template-columns: 1fr;
   }
@@ -1331,11 +1289,13 @@ input[type="search"]::placeholder {
 }
 
 @media (max-width: 540px) {
-  .list-row {
+  .list-row,
+  .account-row.has-usage {
     grid-template-columns: 1fr;
   }
 
-  .list-actions {
+  .list-actions,
+  .account-usage {
     justify-content: flex-start;
     padding-left: 42px;
   }

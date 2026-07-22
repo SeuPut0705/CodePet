@@ -727,11 +727,11 @@ test("말풍선 색상 라이브 프리뷰는 bubble 창에 즉시 반영되고 
   assert.match(closedHandler, /sendAppearanceToWindows\(\)/);
 });
 
-test("설정 창은 캐시된 사용량으로 즉시 열리고 최신값은 백그라운드에서 갱신된다", () => {
+test("설정 창은 사용량이 결합된 계정 캐시로 즉시 열리고 최신값을 백그라운드 갱신한다", () => {
   assert.match(mainJs, /getSettingsData\(\{ usageMode: "cache" \}\)/);
   assert.match(mainJs, /scheduleUsageSnapshotRefresh\(\)/);
   assert.match(mainJs, /settingsWindow\.webContents\.send\("settings:usage-refreshed"/);
-  assert.match(mainJs, /lastUsageSnapshot = \{ providers, usage \}/);
+  assert.match(mainJs, /lastUsageSnapshot = \{ providers: providersWithUsage \}/);
   assert.match(settingsPreloadJs, /USAGE_REFRESHED: "settings:usage-refreshed"/);
   assert.match(settingsPreloadJs, /onUsageRefreshed: \(handler\) =>/);
   assert.match(settingsJs, /api\.onUsageRefreshed\(\(payload\) =>/);
@@ -953,10 +953,11 @@ test("설정 창은 테마 선택 없이 색상, 설치 글꼴, 세 provider, �
   assert.match(settingsHtml, /id="font-preview"/);
   assert.match(settingsJs, /function resolveInstalledFontFamily/);
   assert.match(settingsHtml, /id="provider-groups"/);
-  assert.match(settingsHtml, /id="usage-cards"/);
+  assert.doesNotMatch(settingsHtml, /id="usage-cards"/);
   assert.match(settingsJs, /function createProviderMark/);
   assert.match(settingsJs, /provider\.icon/);
   assert.match(settingsCss, /\.provider-mark img/);
+  assert.match(settingsCss, /\.account-usage/);
   assert.match(settingsCss, /--font-body:\s*"Segoe UI Variable"/);
   assert.doesNotMatch(settingsHtml, /<link[^>]+href=["']https?:/);
   assert.doesNotMatch(settingsHtml, /\.\.\/assets\//);
@@ -974,7 +975,7 @@ test("설정 대시보드는 중복 페이지 헤더와 장식용 문구 없이 
   assert.doesNotMatch(settingsHtml, /class="nav-index"/);
   assert.doesNotMatch(settingsHtml, /WORKSPACE COMPANION|VERSION 0\.3\.2/);
   assert.match(settingsHtml, /id="provider-list-title">연결된 계정/);
-  assert.match(settingsHtml, /id="usage-list-title">계정별 한도/);
+  assert.doesNotMatch(settingsHtml, /id="nav-usage"|id="usage-list-title"|id="refresh-usage"/);
 });
 
 test("설정 Footer는 짧은 창에서도 본문을 덮지 않고 글꼴 목록은 각 글꼴로 표시된다", () => {
@@ -1052,23 +1053,27 @@ test("프로젝트 연결과 Codex 현재 저장·재실행 UI는 제거됐다",
   assert.equal(fs.existsSync(path.join(__dirname, "..", "src", "project-account-bindings.js")), false);
 });
 
-test("사용량 카드는 한도만 렌더링하고 계정 action을 넣지 않는다", () => {
-  const usageRenderer = settingsJs.slice(
-    settingsJs.indexOf("function renderUsage"),
-    settingsJs.indexOf("function renderAll")
+test("계정 행은 한도를 컴팩트하게 결합하고 별도 사용량 탭을 만들지 않는다", () => {
+  const accountUsageRenderer = settingsJs.slice(
+    settingsJs.indexOf("function createAccountUsage"),
+    settingsJs.indexOf("function createProviderGroup")
   );
-  assert.match(settingsJs, /function createUsageGauge/);
-  assert.match(settingsJs, /function renderUsage/);
+  assert.match(settingsJs, /function createAccountUsage/);
+  assert.match(settingsJs, /account\?\.usage/);
+  assert.match(settingsJs, /--usage-remaining/);
+  assert.match(settingsCss, /\.account-usage-chip/);
   assert.doesNotMatch(settingsHtml, /data-account=/);
-  assert.doesNotMatch(usageRenderer, /runAccountAction\(/);
+  assert.doesNotMatch(settingsHtml, /id="nav-usage"|id="usage"|id="usage-cards"/);
+  assert.doesNotMatch(accountUsageRenderer, /runAccountAction\(/);
 });
 
-test("사용량 화면은 provider별 모든 계정을 개별 카드로 표시한다", () => {
+test("provider별 모든 계정 사용량을 계정 데이터에 결합해 한 화면에서 갱신한다", () => {
   assert.match(mainJs, /loadAccountUsageCards/);
   assert.match(mainJs, /usage = \[\.\.\.codexUsage, \.\.\.agy\.usage, \.\.\.claude\.usage, \.\.\.kimiUsage\]/);
-  assert.match(settingsJs, /item\.accountLabel/);
-  assert.match(settingsJs, /item\.active/);
-  assert.match(settingsHtml, />계정별 한도</);
+  assert.match(mainJs, /attachAccountUsage\(providers, usage\)/);
+  assert.doesNotMatch(settingsJs, /function renderUsage/);
+  assert.match(settingsJs, /const response = await api\.usage\(\)/);
+  assert.match(mainJs, /\["general", "bubble", "accounts"\]\.includes\(section\)/);
 });
 
 test("설정 renderer는 안전한 DOM API를 쓰고 성공 카드를 남기지 않는다", () => {

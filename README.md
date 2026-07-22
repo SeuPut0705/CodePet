@@ -39,7 +39,7 @@ CodePet은 **Codex**, **Google Antigravity(AGY)**, **Claude Code**, **Kimi Code 
 
 | 실시간 작업 상태 | 사용량과 계정 | 여러 작업 동시 표시 | 나만의 데스크톱 펫 |
 |---|---|---|---|
-| 응답 작성, 파일 수정, 명령, 테스트, 승인 대기, 완료를 모션과 말풍선으로 표시합니다. | Codex·AGY·Claude의 연결된 계정과 관리형 Kimi 로그인의 한도를 카드로 확인합니다. | 공급자를 합쳐 시작 순서대로 최대 5개 작업을 각각 추적합니다. | Codex 펫과 커스텀 스프라이트를 불러오고 크기·위치·이동 방식을 저장합니다. |
+| 응답 작성, 파일 수정, 명령, 테스트, 승인 대기, 완료를 모션과 말풍선으로 표시합니다. | Codex·AGY·Claude의 연결된 계정과 관리형 Kimi 로그인의 한도를 계정 행에서 바로 확인합니다. | 공급자를 합쳐 시작 순서대로 최대 5개 작업을 각각 추적합니다. | Codex 펫과 커스텀 스프라이트를 불러오고 크기·위치·이동 방식을 저장합니다. |
 
 ## 빠른 시작
 
@@ -109,14 +109,14 @@ CodePet은 공급자별 작업 이벤트를 공통 상태로 정리합니다.
 
 Codex rollout에서 확인된 Sol·Terra·Luna 모델과 추론 강도는 작업 제목 옆에 표시됩니다. 여러 세션을 동시에 실행해도 각 작업의 제목과 메시지를 분리하며, 완료 이벤트가 없는 작업은 공급자별 quiet-time 또는 stale 처리 후 정리합니다.
 
-### 연결된 모든 계정의 사용량
+### 계정과 사용량을 한 화면에서
 
-펫을 더블클릭하면 설정의 `계정별 한도` 화면이 열립니다.
+설정의 `계정` 화면은 연결·전환·삭제와 남은 사용량을 한곳에 모읍니다.
 
-- Codex·AGY·Claude에 연결된 계정과 관리형 Kimi 로그인을 각각 별도 카드로 표시
-- 한 계정 조회가 실패해도 나머지 카드 유지
+- Codex·AGY·Claude에 연결된 계정과 관리형 Kimi 로그인의 한도를 각 계정 행에 컴팩트한 잔여율 칩으로 표시
+- 한 계정 조회가 실패해도 나머지 계정 행과 사용량 유지
 - Codex 서버가 제공한 실제 기간을 읽어 5시간·주간·월간·모델별 한도 표시
-- 사용률 70% 이상은 노란색, 90% 이상은 빨간색으로 강조
+- 남은 비율 30% 이하는 노란색, 10% 이하는 빨간색으로 강조
 - Codex 사용률 90% 초과 시 초기화 주기당 한 번 경고
 - 관리형 Kimi Code 작업의 첫 섹션에 **`5h`·`7d` 남은 사용량** 표시
 
@@ -149,7 +149,7 @@ Kimi의 컨텍스트 사용량이나 사용자 지정 provider 값은 계정 한
 | 동작 | 반응 |
 |---|---|
 | 클릭 | 인사 |
-| 더블클릭 | 점프 후 계정별 한도 열기 |
+| 더블클릭 | 점프 후 현재 Codex 사용량 말풍선 표시 |
 | 드래그 | 펫 이동 |
 | 좌상단 크기 핸들 드래그 | 화면 끝에서도 우하단 기준으로 크기 조절 |
 | 우클릭 | 설정, 계정, 펫, 모션, 이동, 자동 실행, 숨기기 메뉴 |
@@ -254,7 +254,7 @@ GitHub Actions는 사용하지 않습니다. 변경 검증 기준은 로컬 `npm
 - `src/bubble-window-geometry.js` — 콘텐츠·화면 기반 말풍선 크기와 배치
 - `src/codex-account-switcher.js`, `src/antigravity-account-switcher.js`, `src/claude-account-switcher.js` — 계정 프로필 저장·전환
 - `src/kimi-usage-client.js`, `src/provider-usage.js` — 공급자 사용량 조회·정규화
-- `src/settings.html`, `src/settings.js`, `src/settings.css` — 설정과 계정별 한도 UI
+- `src/settings.html`, `src/settings.js`, `src/settings.css` — 설정과 계정·사용량 통합 UI
 - `src/renderer.js` — 펫 스프라이트 애니메이션
 - `src/bubble.html`, `src/bubble.js`, `src/bubble.css` — 통합 작업 말풍선
 - `test/` — Node 내장 test runner 기반 회귀 테스트

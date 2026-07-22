@@ -128,6 +128,20 @@ test("각 언어는 Codex Desktop 계정 전환의 자동 재실행 계약을 �
   }
 });
 
+test("각 언어는 계정과 사용량을 한 화면의 컴팩트한 계정 행으로 설명한다", () => {
+  const expectations = {
+    "README.md": [/계정과 사용량을 한 화면/, /계정 행.*잔여율 칩/],
+    "docs/i18n/README.en.md": [/Accounts and quota in one view/i, /remaining-quota chips.*account row/i],
+    "docs/i18n/README.ja.md": [/アカウントと利用上限を一つの画面/, /各行.*コンパクトな残量チップ/],
+    "docs/i18n/README.zh-CN.md": [/在一个页面管理账户与额度/, /账户行.*紧凑的剩余额度标签/],
+  };
+
+  for (const [file, patterns] of Object.entries(expectations)) {
+    const markdown = readRepositoryFile(file);
+    for (const pattern of patterns) assert.match(markdown, pattern, `${file}: ${pattern}`);
+  }
+});
+
 test("공급자 연결 문서는 현재 감지·보안·복구 계약을 설명한다", () => {
   const document = readRepositoryFile("docs/provider-integrations.md");
   for (const token of [

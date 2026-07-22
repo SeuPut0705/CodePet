@@ -21,7 +21,10 @@ const { ClaudeAccountSwitcher } = require("./claude-account-switcher");
 const { normalizeClaudeAccountMetadata } = require("./claude-account-metadata");
 const { AntigravityAccountSwitcher } = require("./antigravity-account-switcher");
 const { loadAccountUsageCards } = require("./account-usage");
-const { buildSettingsAccountProviders } = require("./settings-account-providers");
+const {
+  attachAccountUsage,
+  buildSettingsAccountProviders,
+} = require("./settings-account-providers");
 const {
   appCandidates,
   cliCandidates,
@@ -4140,7 +4143,6 @@ async function getSettingsData({ forceUsage = false, usageMode = "full" } = {}) 
     return {
       ...base,
       providers: lastUsageSnapshot?.providers ?? settingsAccountProviderRows(),
-      usage: lastUsageSnapshot?.usage ?? [],
     };
   }
 
@@ -4157,8 +4159,9 @@ async function getSettingsData({ forceUsage = false, usageMode = "full" } = {}) 
   });
   const kimiUsage = kimi.usage;
   const usage = [...codexUsage, ...agy.usage, ...claude.usage, ...kimiUsage];
-  lastUsageSnapshot = { providers, usage };
-  return { ...base, providers, usage };
+  const providersWithUsage = attachAccountUsage(providers, usage);
+  lastUsageSnapshot = { providers: providersWithUsage };
+  return { ...base, providers: providersWithUsage };
 }
 
 function scheduleUsageSnapshotRefresh() {
@@ -4168,7 +4171,6 @@ function scheduleUsageSnapshotRefresh() {
       if (settingsWindow && !settingsWindow.isDestroyed()) {
         settingsWindow.webContents.send("settings:usage-refreshed", {
           providers: data.providers,
-          usage: data.usage,
         });
       }
     })
@@ -4179,7 +4181,7 @@ function scheduleUsageSnapshotRefresh() {
 }
 
 function openSettingsWindow(section = "general") {
-  const requestedSection = ["general", "bubble", "accounts", "usage"].includes(section)
+  const requestedSection = ["general", "bubble", "accounts"].includes(section)
     ? section
     : "general";
   if (settingsWindow && !settingsWindow.isDestroyed()) {

@@ -109,14 +109,14 @@ The bubble automatically adjusts its width to its content and the current displa
 
 When Codex rollout metadata includes a Sol, Terra, or Luna model and reasoning effort, CodePet shows them next to the task title. Concurrent sessions keep separate titles and messages. Tasks without a completion event are cleared after provider-specific quiet-time or stale handling.
 
-### Every connected account quota
+### Accounts and quota in one view
 
-Double-click the pet to open **Usage by Account (계정별 한도)** in Settings.
+The **Accounts (계정)** view combines connection, switching, deletion, and remaining quota.
 
-- One card for every connected Codex, AGY, and Claude account, plus the managed Kimi login
-- A failed account lookup never hides the other cards
+- Compact remaining-quota chips appear inside every connected Codex, AGY, and Claude account row, plus the managed Kimi login
+- A failed account lookup never hides the other account rows or quotas
 - Codex windows use the actual server duration for five-hour, weekly, monthly, and model-specific limits
-- Usage over 70% turns yellow; usage over 90% turns red
+- Remaining quota at 30% or less turns yellow; 10% or less turns red
 - Codex warns once per reset window after usage exceeds 90%
 - The first active managed Kimi Code section shows remaining **`5h` and `7d` quota**
 
@@ -150,7 +150,7 @@ Internal reasoning and subagent messages are never shown in the bubble. CodePet 
 | Action | Response |
 |---|---|
 | Click | Wave |
-| Double-click | Jump and open Usage by Account |
+| Double-click | Jump and show the current Codex usage bubble |
 | Drag | Move the pet |
 | Drag the top-left resize handle | Resize while keeping the bottom-right corner anchored |
 | Right-click | Settings, accounts, pets, motion, movement, auto-start, and hide menu |

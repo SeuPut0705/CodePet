@@ -42,6 +42,33 @@
     ));
   }
 
+  function attachAccountUsage(providers, usageItems) {
+    if (!Array.isArray(providers)) return [];
+    const usageByAccount = new Map();
+    for (const item of Array.isArray(usageItems) ? usageItems : []) {
+      const id = typeof item?.id === "string" ? item.id : "";
+      if (!id) continue;
+      const gauges = Array.isArray(item.gauges)
+        ? item.gauges.map((gauge) => ({ ...gauge }))
+        : [];
+      const error = typeof item.error === "string" && item.error.trim()
+        ? item.error.trim()
+        : null;
+      usageByAccount.set(id, error ? { error, gauges } : { gauges });
+    }
+
+    return providers.map((provider) => {
+      if (!provider || !Array.isArray(provider.accounts)) return provider;
+      return {
+        ...provider,
+        accounts: provider.accounts.map((account) => {
+          const usage = usageByAccount.get(`${provider.id}:${account?.key}`);
+          return usage ? { ...account, usage } : account;
+        }),
+      };
+    });
+  }
+
   function accountProviderMenuItems(providers) {
     if (!Array.isArray(providers)) return [];
     const seen = new Set();
@@ -63,6 +90,7 @@
 
   return {
     accountProviderMenuItems,
+    attachAccountUsage,
     buildSettingsAccountProviders,
     connectedAccountProviders,
   };

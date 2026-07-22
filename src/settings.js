@@ -290,6 +290,59 @@ function handleAccountProviderMenuKeydown(event) {
   options[nextIndex].focus();
 }
 
+function clampPercent(value) {
+  return Math.min(100, Math.max(0, Number(value) || 0));
+}
+
+function resetLabel(value) {
+  if (!value) return t("usage.resetNone");
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime()) || !/^\d{4}-\d{2}-\d{2}T/.test(String(value))) {
+    return String(value);
+  }
+  const time = new Intl.DateTimeFormat(i18n ? i18n.dateLocale(currentLanguage) : "ko-KR", {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(date);
+  return t("usage.resetAt", { time });
+}
+
+function createAccountUsage(account) {
+  const usage = account?.usage;
+  if (!usage) return null;
+
+  const container = createElement("div", "account-usage");
+  if (usage.error) {
+    container.appendChild(createElement("span", "account-usage-note is-error", usage.error));
+    return container;
+  }
+  if (!usage.gauges?.length) {
+    container.appendChild(createElement("span", "account-usage-note", t("usage.noLimits")));
+    return container;
+  }
+
+  for (const gauge of usage.gauges) {
+    const used = clampPercent(gauge.usedPercent);
+    const remaining = Math.round(100 - used);
+    const reset = resetLabel(gauge.resetText);
+    const chip = createElement(
+      "span",
+      `account-usage-chip${remaining <= 10 ? " is-danger" : remaining <= 30 ? " is-warn" : ""}`
+    );
+    chip.style.setProperty("--usage-remaining", `${remaining}%`);
+    chip.title = `${gauge.label} · ${t("usage.remaining", { percent: remaining })} · ${reset}`;
+    chip.setAttribute("aria-label", chip.title);
+    chip.append(
+      createElement("span", "", gauge.label),
+      createElement("strong", "", `${remaining}%`)
+    );
+    container.appendChild(chip);
+  }
+  return container;
+}
+
 function createProviderGroup(provider) {
   const group = createElement("section", "provider-group");
   const heading = createElement("header", "provider-heading");
@@ -332,7 +385,7 @@ function createProviderGroup(provider) {
     list.appendChild(row);
   }
   for (const account of provider.accounts) {
-    const row = createElement("article", "list-row");
+    const row = createElement("article", "list-row account-row");
     const identity = createElement("div", "list-identity");
     identity.appendChild(
       createElement("span", "account-avatar", accountInitial(account, provider))
@@ -378,7 +431,13 @@ function createProviderGroup(provider) {
       });
       actions.appendChild(deleteButton);
     }
-    row.append(identity, actions);
+    const usage = createAccountUsage(account);
+    row.append(identity);
+    if (usage) {
+      row.classList.add("has-usage");
+      row.appendChild(usage);
+    }
+    row.appendChild(actions);
     list.appendChild(row);
   }
   group.appendChild(list);
@@ -394,79 +453,9 @@ function renderAccounts() {
   }
 }
 
-function clampPercent(value) {
-  return Math.min(100, Math.max(0, Number(value) || 0));
-}
-
-function resetLabel(value) {
-  if (!value) return t("usage.resetNone");
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime()) || !/^\d{4}-\d{2}-\d{2}T/.test(String(value))) {
-    return String(value);
-  }
-  const time = new Intl.DateTimeFormat(i18n ? i18n.dateLocale(currentLanguage) : "ko-KR", {
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  }).format(date);
-  return t("usage.resetAt", { time });
-}
-
-function createUsageGauge(gauge) {
-  const used = clampPercent(gauge.usedPercent);
-  const remaining = Math.round(100 - used);
-  const container = createElement("div", "usage-gauge");
-  const row = createElement("div", "usage-row");
-  row.append(
-    createElement("span", "", gauge.label),
-    createElement("strong", "", `${remaining}%`)
-  );
-  const track = createElement("div", "usage-track");
-  const fill = createElement("i", used >= 90 ? "is-danger" : used >= 70 ? "is-warn" : "");
-  fill.style.width = `${used}%`;
-  track.appendChild(fill);
-  container.append(row, track, createElement("small", "", resetLabel(gauge.resetText)));
-  return container;
-}
-
-function renderUsage() {
-  const root = $("#usage-cards");
-  root.replaceChildren();
-  for (const item of state?.usage || []) {
-    const card = createElement("article", "usage-card");
-    const heading = createElement("header", "usage-card-heading");
-    const providerLabel = item.providerLabel || item.label || t("accounts.title");
-    const provider = state?.providers?.find((candidate) => candidate.id === item.providerId) || {
-      label: providerLabel,
-    };
-    const title = createElement("div", "usage-account-title");
-    title.append(
-      createElement("h2", "", providerLabel),
-      createElement("p", "", item.accountLabel || t("accounts.heading"))
-    );
-    heading.append(
-      createProviderMark(provider),
-      title
-    );
-    if (item.active) heading.appendChild(createElement("span", "usage-current", t("accounts.current")));
-    card.appendChild(heading);
-
-    if (item.error) {
-      card.appendChild(createElement("p", "usage-error", item.error));
-    } else if (!item.gauges?.length) {
-      card.appendChild(createElement("p", "usage-error", t("usage.noLimits")));
-    } else {
-      for (const gauge of item.gauges) card.appendChild(createUsageGauge(gauge));
-    }
-    root.appendChild(card);
-  }
-}
-
 function renderAll(options = {}) {
   renderGeneral(options);
   renderAccounts();
-  renderUsage();
 }
 
 async function runAccountAction(input, sourceButton) {
@@ -481,7 +470,6 @@ async function runAccountAction(input, sourceButton) {
     if (!response?.ok) throw new Error(responseError(response, t("error.accountAction")));
     state = response.data;
     renderAccounts();
-    renderUsage();
   } catch (error) {
     showError(error.message || String(error));
   } finally {
@@ -545,7 +533,6 @@ function registerAppearanceControls() {
     applyLanguage($("#language").value);
     renderFonts();
     renderAccounts();
-    renderUsage();
   });
   async function handleSave(event) {
     const button = event.currentTarget;
@@ -594,27 +581,10 @@ function registerProviderControls() {
     const button = event.currentTarget;
     setButtonBusy(button, true, t("busy.check"));
     try {
-      const response = await api.get();
+      const response = await api.usage();
       if (!response?.ok) throw new Error(responseError(response, t("error.accounts")));
       state = response.data;
       renderAccounts();
-      renderUsage();
-    } catch (error) {
-      showError(error.message || String(error));
-    } finally {
-      setButtonBusy(button, false);
-    }
-  });
-
-  $("#refresh-usage").addEventListener("click", async (event) => {
-    const button = event.currentTarget;
-    setButtonBusy(button, true, t("busy.check"));
-    try {
-      const response = await api.usage();
-      if (!response?.ok) throw new Error(responseError(response, t("error.usage")));
-      state = response.data;
-      renderAccounts();
-      renderUsage();
     } catch (error) {
       showError(error.message || String(error));
     } finally {
@@ -714,9 +684,7 @@ function registerUsageUpdates() {
   api.onUsageRefreshed((payload) => {
     if (!state || !payload || typeof payload !== "object") return;
     if (Array.isArray(payload.providers)) state.providers = payload.providers;
-    if (Array.isArray(payload.usage)) state.usage = payload.usage;
     renderAccounts();
-    renderUsage();
   });
 }
 

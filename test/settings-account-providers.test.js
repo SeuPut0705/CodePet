@@ -5,6 +5,7 @@ const path = require("node:path");
 
 const {
   accountProviderMenuItems,
+  attachAccountUsage,
   buildSettingsAccountProviders,
   connectedAccountProviders,
 } = require("../src/settings-account-providers");
@@ -68,6 +69,44 @@ test("공급자 연결 상태와 아이콘은 계정 카드까지 유지된다",
   assert.match(cursor.icon, /provider-icons\/cursor\.svg$/);
   assert.equal(cursor.connected, true);
   assert.deepEqual(cursor.clients, [{ kind: "app", label: "앱", detected: true }]);
+});
+
+test("계정별 사용량은 같은 provider와 profile의 계정 행에만 결합한다", () => {
+  const providers = buildSettingsAccountProviders({
+    codex: [
+      { key: "work", label: "work@example.com", active: true },
+      { key: "personal", label: "personal@example.com", active: false },
+    ],
+    claude: [{ key: "main", label: "claude@example.com", active: true }],
+  });
+
+  const merged = attachAccountUsage(providers, [
+    {
+      id: "codex:work",
+      providerId: "codex",
+      gauges: [{ label: "5시간", usedPercent: 28, resetText: "오늘 18:00" }],
+    },
+    {
+      id: "codex:personal",
+      providerId: "codex",
+      error: "조회 불가",
+      gauges: [],
+    },
+    {
+      id: "claude:other",
+      providerId: "claude",
+      gauges: [{ label: "7일", usedPercent: 90 }],
+    },
+  ]);
+
+  const codex = merged.find((provider) => provider.id === "codex");
+  const claude = merged.find((provider) => provider.id === "claude");
+  assert.deepEqual(codex.accounts.map((account) => account.usage), [
+    { gauges: [{ label: "5시간", usedPercent: 28, resetText: "오늘 18:00" }] },
+    { error: "조회 불가", gauges: [] },
+  ]);
+  assert.equal(claude.accounts[0].usage, undefined);
+  assert.equal(providers.find((provider) => provider.id === "codex").accounts[0].usage, undefined);
 });
 
 test("계정이 없어도 설치된 앱이나 CLI는 연결 대상으로 보여준다", () => {
