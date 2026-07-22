@@ -114,6 +114,20 @@ test("각 언어는 Kimi·개인정보·배포 제한을 명시한다", () => {
   }
 });
 
+test("각 언어는 Codex Desktop 계정 전환의 자동 재실행 계약을 설명한다", () => {
+  const expectations = {
+    "README.md": [/실제 종료를 확인한 뒤 인증을 교체/, /수동으로 종료할 필요가 없/],
+    "docs/i18n/README.en.md": [/waits for it to exit.*launches it again automatically/i, /do not need to quit Codex manually/i],
+    "docs/i18n/README.ja.md": [/実際の終了を確認してから.*自動的に再起動/s, /手動で終了する必要はありません/],
+    "docs/i18n/README.zh-CN.md": [/确认进程已结束.*自动重新启动/s, /无需手动退出 Codex/],
+  };
+
+  for (const [file, patterns] of Object.entries(expectations)) {
+    const markdown = readRepositoryFile(file);
+    for (const pattern of patterns) assert.match(markdown, pattern, `${file}: ${pattern}`);
+  }
+});
+
 test("공급자 연결 문서는 현재 감지·보안·복구 계약을 설명한다", () => {
   const document = readRepositoryFile("docs/provider-integrations.md");
   for (const token of [
@@ -127,6 +141,7 @@ test("공급자 연결 문서는 현재 감지·보안·복구 계약을 설명�
     "OpenCode",
     "Windsurf",
     "127.0.0.1",
+    "com.openai.codex",
     "X-CodePet-Token",
     "activity-redaction.js",
     "opencode-db-worker.js",
@@ -136,6 +151,7 @@ test("공급자 연결 문서는 현재 감지·보안·복구 계약을 설명�
   }
 
   assert.match(document, /subagent.*본문.*(표시하지|숨기)/s);
+  assert.match(document, /종료 확인 뒤에만.*auth\.json/s);
   assert.match(document, /손상.*JSON.*덮어쓰지/s);
   assert.match(document, /Apple Developer ID.*서명.*공증/s);
 });

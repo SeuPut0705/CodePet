@@ -179,11 +179,11 @@ const MOVEMENT_CONFIG = Object.freeze({
 // Codex 계정 전환 뒤 Codex Desktop App을 다시 띄우는 설정입니다.
 // codex-auth/codex-profile류 스위처들은 auth를 바꾼 뒤 실행 중인 클라이언트를 재시작해야
 // 새 auth가 확실히 적용되는 구조를 씁니다. CodePet도 같은 흐름을 따릅니다.
-// enabledAfterAccountSwitch를 false로 바꾸면 active 프로필만 저장하고 재시작은 하지 않습니다.
 const CODEX_DESKTOP_RESTART_CONFIG = Object.freeze({
-  enabledAfterAccountSwitch: true,
+  macBundleId: "com.openai.codex",
   windowsProcessPathMarker: "\\WindowsApps\\OpenAI.Codex_",
   launchDelayMs: 900,
+  statePollMs: 120,
   timeoutMs: 20000,
 });
 
@@ -559,7 +559,7 @@ const usageWarnedResets = { primary: null, secondary: null };
 
 const codexAccountSwitcher = new CodexAccountSwitcher();
 
-// Codex 재시작 없는 전환 + 한도 자동 로테이션용 로컬 프록시입니다. (명시적 opt-in)
+// Codex CLI 요청의 인증 교체 + 한도 자동 로테이션용 로컬 프록시입니다.
 // 선호 순서: 활성 프로필 → 나머지 저장 프로필. 저장 프로필이 하나도 없으면 live auth.json 하나로 동작.
 // 저장 프로필에서 직접 읽으므로 실행 중인 Codex 앱이 auth.json을 되덮어써도 전환이 유지됩니다.
 // listProfiles()는 디렉토리 스캔 + auth.json 해시 등 무거운 동기 fs라서, 프록시가 요청마다
@@ -647,7 +647,7 @@ async function setCodexProxyMode(enabled) {
       codexProxyLastError = null;
       writeSettings({ codexProxyMode: true });
       showCodexAccountBubble(
-        "재시작 없는 전환(프록시)을 켰습니다.\n실행 중인 Codex CLI/앱은 한 번만 다시 시작하면 이후 전환부터는 재시작이 필요 없습니다."
+        "Codex 로컬 프록시를 켰습니다.\n새 CLI 연결의 인증 교체와 한도 자동 전환에 사용합니다.\n실행 중인 Desktop 계정 전환은 CodePet이 자동 재실행합니다."
       );
     } else {
       disableProxyInConfig();
@@ -655,7 +655,7 @@ async function setCodexProxyMode(enabled) {
       codexProxyActive = false;
       codexProxyLastError = null;
       writeSettings({ codexProxyMode: false });
-      showCodexAccountBubble("재시작 없는 전환(프록시)을 껐습니다.\nCodex는 원래 방식으로 되돌아갑니다.");
+      showCodexAccountBubble("Codex 로컬 프록시를 껐습니다.\nDesktop 자동 재실행 계정 전환은 계속 작동합니다.");
     }
   } catch (error) {
     appendDebugLog(`codex proxy toggle failed: ${error.message || String(error)}`);
@@ -1704,6 +1704,74 @@ function quitMacApp(appName, timeoutMs = 15000) {
   });
 }
 
+function execFileResult(command, args, timeoutMs = 15000) {
+  return new Promise((resolve) => {
+    execFile(
+      command,
+      args,
+      { encoding: "utf8", windowsHide: true, timeout: timeoutMs },
+      (error, stdout, stderr) => {
+        resolve({
+          ok: !error,
+          stdout: String(stdout || "").trim(),
+          stderr: String(stderr || "").trim(),
+        });
+      }
+    );
+  });
+}
+
+async function isCodexDesktopAppRunning() {
+  if (process.platform === "darwin") {
+    const bundleId = CODEX_DESKTOP_RESTART_CONFIG.macBundleId;
+    const result = await execFileResult(
+      "osascript",
+      ["-e", `application id "${bundleId}" is running`],
+      CODEX_DESKTOP_RESTART_CONFIG.timeoutMs
+    );
+    if (!result.ok) {
+      throw new Error(result.stderr || "Codex Desktop 실행 상태를 확인하지 못했습니다.");
+    }
+    return result.stdout.toLowerCase() === "true";
+  }
+
+  if (process.platform === "win32") {
+    const marker = quotePowerShellString(CODEX_DESKTOP_RESTART_CONFIG.windowsProcessPathMarker);
+    const command = `
+$marker = ${marker}
+$running = @(Get-CimInstance Win32_Process | Where-Object {
+  ($_.ExecutablePath -and $_.ExecutablePath.Contains($marker)) -or
+  ($_.CommandLine -and $_.CommandLine.Contains($marker))
+}).Count -gt 0
+Write-Output $running
+`.trim();
+    const result = await runHiddenPowerShell(command, CODEX_DESKTOP_RESTART_CONFIG.timeoutMs);
+    if (!result.ok) {
+      throw new Error(result.stderr || result.stdout || "Codex Desktop 실행 상태를 확인하지 못했습니다.");
+    }
+    return String(result.stdout || "").trim().toLowerCase() === "true";
+  }
+
+  return false;
+}
+
+async function waitForCodexDesktopState(expectedRunning) {
+  const deadline = Date.now() + CODEX_DESKTOP_RESTART_CONFIG.timeoutMs;
+  while (Date.now() < deadline) {
+    if ((await isCodexDesktopAppRunning()) === expectedRunning) return true;
+    await new Promise((resolve) => setTimeout(resolve, CODEX_DESKTOP_RESTART_CONFIG.statePollMs));
+  }
+  throw new Error(
+    expectedRunning
+      ? "Codex Desktop이 제한 시간 안에 실행되지 않았습니다."
+      : "Codex Desktop이 제한 시간 안에 종료되지 않았습니다."
+  );
+}
+
+function waitForCodexDesktopExit() {
+  return waitForCodexDesktopState(false);
+}
+
 async function restartAntigravityApp() {
   if (process.platform === "darwin") {
     const executable = resolveAntigravityExecutable();
@@ -1864,12 +1932,16 @@ function getClaudeAuthStatus() {
 // Windows의 Codex Desktop App만 선별적으로 종료합니다.
 // 일반 터미널 Codex CLI 세션까지 죽이지 않기 위해 WindowsApps 패키지 경로를 가진 프로세스만 대상으로 삼습니다.
 async function stopCodexDesktopApp() {
-  if (!CODEX_DESKTOP_RESTART_CONFIG.enabledAfterAccountSwitch) {
-    return { ok: true, skipped: true, stdout: "Restart disabled by config." };
-  }
-
   if (process.platform === "darwin") {
-    const result = await quitMacApp("Codex", CODEX_DESKTOP_RESTART_CONFIG.timeoutMs);
+    if (!(await isCodexDesktopAppRunning())) {
+      return { ok: true, skipped: true, stdout: "Codex Desktop is not running." };
+    }
+    const bundleId = CODEX_DESKTOP_RESTART_CONFIG.macBundleId;
+    const result = await execFileResult(
+      "osascript",
+      ["-e", `tell application id "${bundleId}" to quit`],
+      CODEX_DESKTOP_RESTART_CONFIG.timeoutMs
+    );
     // osascript 실패(자동화 권한 거부/타임아웃)를 성공으로 보고하면, 실제로는 멈추지 않은 앱을
     // 멈춘 것으로 오인해 사용자에게 "전환됨"이라고 잘못 알립니다. 실제 결과를 그대로 전달합니다.
     if (!result.ok) {
@@ -1912,12 +1984,17 @@ Write-Output "Stopped $($ids.Count) Codex Desktop process(es)."
 // 현재 ~/.codex/auth.json 기준으로 Codex Desktop App을 실행합니다.
 function launchCodexDesktopApp() {
   if (process.platform === "darwin") {
-    const codexCommand = resolveCommand("codex", codexCommandCandidates());
-    const child = codexCommand
-      ? spawn(codexCommand, ["app"], { detached: true, stdio: "ignore" })
-      : spawn("open", ["-a", "Codex"], { detached: true, stdio: "ignore" });
-    child.unref();
-    return Promise.resolve({ ok: true, skipped: false, stdout: "Launched Codex Desktop." });
+    return execFileResult(
+      "open",
+      ["-b", CODEX_DESKTOP_RESTART_CONFIG.macBundleId],
+      CODEX_DESKTOP_RESTART_CONFIG.timeoutMs
+    ).then(async (result) => {
+      if (!result.ok) {
+        throw new Error(result.stderr || "Codex Desktop 실행에 실패했습니다.");
+      }
+      await waitForCodexDesktopState(true);
+      return { ok: true, skipped: false, stdout: "Launched Codex Desktop." };
+    });
   }
 
   if (process.platform !== "win32") {
@@ -1942,6 +2019,7 @@ function launchCodexDesktopApp() {
 
 async function restartCodexDesktopApp() {
   const stopResult = await stopCodexDesktopApp();
+  if (!stopResult.skipped) await waitForCodexDesktopExit();
   const launchResult = await launchCodexDesktopApp();
   return {
     ok: true,
@@ -2056,76 +2134,62 @@ async function switchCodexAccount(profileKey) {
     await codexProxyStartupPromise;
   }
 
-  if (proxyModeRequested && !codexProxyActive) {
-    const reason = codexProxyLastError?.message || "프록시가 아직 활성화되지 않았습니다.";
-    showCodexAccountBubble(
-      `Codex 계정을 전환하지 않았습니다.\n재시작 없는 프록시 모드 시작에 실패했습니다.\n${reason}`
-    );
-    return false;
-  }
-
-  // 프록시가 실제로 config에 주입되어 트래픽이 프록시를 탈 때만 무재시작 경로를 씁니다.
-  // (start만 되고 주입이 실패한 상태에서 이 경로로 빠지면 전환이 조용히 무시됩니다.)
-  if (codexProxyActive) {
-    try {
-      const result = codexAccountSwitcher.switchToProfile(profileKey);
-      invalidateProxyAccountsCache();
-      refreshTrayMenu();
-      showCodexAccountBubble(
-        `"${result.profile.label}" 계정으로 전환했습니다.\n프록시 모드: 재시작 없이 다음 요청부터 바로 적용됩니다.`
-      );
-      return true;
-    } catch (error) {
-      showCodexAccountBubble(`Codex auth 전환에 실패했습니다.\n${error.message || String(error)}`);
-      return false;
-    }
-  }
-
+  let desktopWasRunning = false;
+  let desktopStopped = false;
   try {
-    showCodexAccountBubble(
-      "Codex Desktop App을 멈추고 계정 전환을 준비하는 중입니다."
-    );
-
-    let stopError = null;
-    try {
+    desktopWasRunning = await isCodexDesktopAppRunning();
+    if (desktopWasRunning) {
+      showCodexAccountBubble(
+        "Codex Desktop App을 자동으로 다시 실행해 계정을 전환하는 중입니다."
+      );
       await stopCodexDesktopApp();
-    } catch (error) {
-      stopError = error;
-      appendDebugLog(`Codex Desktop stop failed before switch: ${error.message || String(error)}`);
+      // macOS quit Apple Event와 Windows Stop-Process가 반환돼도 프로세스 정리가
+      // 끝나지 않았을 수 있습니다. 종료 확인 전에 auth를 바꾸면 실행 중 앱이 다시 덮어쓸 수 있습니다.
+      await waitForCodexDesktopExit();
+      desktopStopped = true;
     }
 
-    try {
-      const result = codexAccountSwitcher.switchToProfile(profileKey);
-      refreshTrayMenu();
+    const result = codexAccountSwitcher.switchToProfile(profileKey);
+    invalidateProxyAccountsCache();
+    refreshTrayMenu();
 
-      let launchText = "Codex Desktop App 재실행을 요청했습니다.";
+    if (desktopWasRunning) {
       try {
-        const restartResult = await launchCodexDesktopApp();
-        launchText = restartResult.skipped
-          ? "재시작 설정이 꺼져 있어 auth만 교체했습니다."
-          : "Codex Desktop App 재실행을 요청했습니다.";
+        await launchCodexDesktopApp();
       } catch (launchError) {
-        launchText = `auth 교체는 완료됐지만 Codex Desktop 재실행은 실패했습니다.\n${launchError.message || String(launchError)}`;
         appendDebugLog(`Codex Desktop launch failed after switch: ${launchError.message || String(launchError)}`);
+        showCodexAccountBubble(
+          `"${result.profile.label}" auth 전환은 완료됐지만 Codex Desktop 자동 재실행에 실패했습니다.\n${launchError.message || String(launchError)}`
+        );
+        return false;
       }
-
-      const stopText = stopError
-        ? `Codex Desktop 종료 확인은 실패했지만 auth 교체는 진행했습니다.\n${stopError.message || String(stopError)}\n`
-        : "";
-
-      showCodexAccountBubble(
-        `"${result.profile.label}" 계정으로 전환했습니다.\n${stopText}${launchText}\n열려 있던 Codex CLI 터미널은 새로 시작해야 적용됩니다.`
-      );
-      return true;
-    } catch (switchError) {
-      showCodexAccountBubble(
-        `Codex auth 전환에 실패했습니다.\n${switchError.message || String(switchError)}`
-      );
-      return false;
     }
-  } catch (error) {
+
+    const proxyFallbackText = proxyModeRequested && !codexProxyActive
+      ? `\n프록시는 사용할 수 없어 안전한 Desktop 재시작 방식으로 적용했습니다.\n${codexProxyLastError?.message || "프록시가 활성화되지 않았습니다."}`
+      : "";
+    const appliedText = desktopWasRunning
+      ? "Codex Desktop을 자동으로 종료·재실행해 새 계정을 적용했습니다."
+      : codexProxyActive
+        ? "Codex Desktop이 실행 중이 아니어서 다음 실행부터 새 계정이 적용됩니다."
+        : "다음 Codex Desktop 실행부터 새 계정이 적용됩니다.";
     showCodexAccountBubble(
-      `Codex 계정을 전환하지 못했어요.\n${error.message || String(error)}`
+      `"${result.profile.label}" 계정으로 전환했습니다.\n${appliedText}${proxyFallbackText}\n열려 있던 Codex CLI 터미널은 새로 시작해야 적용됩니다.`
+    );
+    return true;
+  } catch (error) {
+    appendDebugLog(`Codex Desktop account switch failed: ${error.message || String(error)}`);
+    if (desktopStopped) {
+      try {
+        await launchCodexDesktopApp();
+      } catch (launchError) {
+        appendDebugLog(
+          `Codex Desktop recovery launch failed: ${launchError.message || String(launchError)}`
+        );
+      }
+    }
+    showCodexAccountBubble(
+      `Codex 계정을 전환하지 못했습니다.\n실행 중인 앱의 종료를 확인하지 못하면 auth를 바꾸지 않습니다.\n${error.message || String(error)}`
     );
     return false;
   }
@@ -2172,7 +2236,7 @@ function buildAppMenuTemplate() {
     },
     { type: "separator" },
     {
-      label: "Codex 재시작 없는 전환 (프록시)",
+      label: "Codex 한도 자동 전환 (로컬 프록시)",
       type: "checkbox",
       checked: isCodexProxyModeEnabled(),
       click: () => setCodexProxyMode(!isCodexProxyModeEnabled()),

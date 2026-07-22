@@ -165,7 +165,7 @@ Internal reasoning and subagent messages are never shown in the bubble. CodePet 
 
 The right-click and tray menus use the same account structure for Codex, AGY, and Claude. Remove inactive profiles from **Accounts (계정)** in Settings. Switch away from the active profile before deleting it.
 
-- **Codex** stores credentials per profile. The default **Switch without restarting Codex (proxy) (Codex 재시작 없는 전환 (프록시))** mode uses a local `127.0.0.1` proxy to apply credentials per request and rotate accounts after a quota limit. It manages the `# codepet-codex-proxy` block in `~/.codex/config.toml`. Codex may need one restart immediately after the proxy is enabled for the first time.
+- **Codex** stores credentials per profile. When switching accounts while Codex Desktop is running, CodePet requests the app to quit, waits for it to exit, replaces the credential, and launches it again automatically. You do not need to quit Codex manually. **Codex quota rotation (local proxy) (Codex 한도 자동 전환 (로컬 프록시))** applies credentials to new CLI connections through `127.0.0.1` and rotates accounts after a quota limit. It manages the `# codepet-codex-proxy` block in `~/.codex/config.toml`. An already-open CLI session may need to be started again before it uses the selected account.
 - **AGY** stores the current Windows Credential Manager or macOS Keychain credential, switches to the selected profile, and restarts AGY.
 - **Claude** stores the current credential file with the email from `claude auth status`. Existing sessions stay open; new sessions use the selected account.
 
