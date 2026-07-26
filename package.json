@@ -12,6 +12,7 @@
     "dist": "npm run opencodex:verify && npm run opencodex:package-notices && node scripts/build.js",
     "opencodex:package-notices": "node scripts/opencodex/verify-package-notices.js",
     "opencodex:parity": "node scripts/opencodex/parity-report.js",
+    "opencodex:runtime-inventory": "node scripts/opencodex/runtime-inventory.js",
     "opencodex:sync": "node scripts/opencodex/sync.js",
     "opencodex:verify": "node scripts/opencodex/verify-provenance.js"
   },
