@@ -5,38 +5,18 @@ const esbuild = require("esbuild");
 const PROJECT_ROOT = path.resolve(__dirname, "..", "..");
 const DEFAULT_OUTPUT_PATH = path.join(PROJECT_ROOT, "build", "generated", "opencodex-engine.mjs");
 
-const BUN_MODULE_SHIMS = {
-  "bun:ffi": `
-    const unavailable = () => { throw new Error("OpenCodex capability unavailable: FFI"); };
-    export const dlopen = unavailable;
-    export const ptr = unavailable;
-  `,
-  "bun:jsc": `
-    export function heapStats() {
-      return { heapSize: 0, heapCapacity: 0, extraMemorySize: 0 };
-    }
-  `,
-  "bun:sqlite": `
-    export class Database {
-      constructor() {
-        throw new Error("OpenCodex capability unavailable: SQLite");
-      }
-    }
-    export const constants = Object.freeze({});
-  `,
+const BUN_MODULE_ALIASES = {
+  "bun:ffi": "node-ffi.ts",
+  "bun:jsc": "node-jsc.ts",
+  "bun:sqlite": "node-sqlite.ts",
 };
 
-function bunModuleShimPlugin() {
+function bunModuleShimPlugin(projectRoot = PROJECT_ROOT) {
   return {
-    name: "codepet-bun-module-shims",
+    name: "codepet-bun-module-aliases",
     setup(build) {
       build.onResolve({ filter: /^bun:(ffi|jsc|sqlite)$/ }, (args) => ({
-        path: args.path,
-        namespace: "codepet-bun-shim",
-      }));
-      build.onLoad({ filter: /.*/, namespace: "codepet-bun-shim" }, (args) => ({
-        contents: BUN_MODULE_SHIMS[args.path],
-        loader: "js",
+        path: path.join(projectRoot, "src", "open-codex", "runtime", BUN_MODULE_ALIASES[args.path]),
       }));
     },
   };
@@ -60,7 +40,7 @@ async function buildEngine({
     logLevel: "silent",
     outfile: outputPath,
     platform: "node",
-    plugins: [bunModuleShimPlugin()],
+    plugins: [bunModuleShimPlugin(projectRoot)],
     sourcemap: false,
     splitting: false,
     target: "node24",

@@ -1511,6 +1511,7 @@
           "test/claude-account-metadata.test.js",
           "test/codex-account-switch-lifecycle.test.js",
           "test/codex-account-switcher.test.js",
+          "test/open-codex-runtime-aliases.test.js",
           "test/open-codex-runtime-inventory.test.js",
           "test/settings-account-providers.test.js"
         ]
@@ -1845,6 +1846,7 @@
           "src/codex/runtime.ts"
         ],
         "codePetEvidence": [
+          "test/open-codex-runtime-aliases.test.js",
           "test/open-codex-runtime-inventory.test.js"
         ]
       },
@@ -1913,7 +1915,9 @@
         "upstreamEvidence": [
           "src/claude/alias.ts"
         ],
-        "codePetEvidence": []
+        "codePetEvidence": [
+          "test/open-codex-runtime-aliases.test.js"
+        ]
       },
       {
         "id": "claudeIntegration:claude/auth-detect",
@@ -2366,6 +2370,7 @@
           "test/open-codex-node-server.test.js",
           "test/open-codex-package-notices.test.js",
           "test/open-codex-parity-report.test.js",
+          "test/open-codex-runtime-aliases.test.js",
           "test/open-codex-runtime-inventory.test.js",
           "test/open-codex-sync.test.js",
           "test/open-codex-upstream-patches.test.js",
