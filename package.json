@@ -8,8 +8,12 @@
   "scripts": {
     "start": "electron .",
     "dev": "electron .",
-    "test": "node --test",
-    "dist": "node scripts/build.js"
+    "test": "node --test \"test/**/*.test.js\"",
+    "dist": "npm run opencodex:verify && npm run opencodex:package-notices && node scripts/build.js",
+    "opencodex:package-notices": "node scripts/opencodex/verify-package-notices.js",
+    "opencodex:parity": "node scripts/opencodex/parity-report.js",
+    "opencodex:sync": "node scripts/opencodex/sync.js",
+    "opencodex:verify": "node scripts/opencodex/verify-provenance.js"
   },
   "build": {
     "appId": "app.codepet.desktop",
@@ -31,6 +35,18 @@
       {
         "from": "build/icon.png",
         "to": "icon.png"
+      },
+      {
+        "from": "vendor/opencodex/FILES.sha256",
+        "to": "third-party/opencodex/FILES.sha256"
+      },
+      {
+        "from": "vendor/opencodex/LICENSE",
+        "to": "third-party/opencodex/LICENSE"
+      },
+      {
+        "from": "vendor/opencodex/UPSTREAM.json",
+        "to": "third-party/opencodex/UPSTREAM.json"
       }
     ],
     "win": {

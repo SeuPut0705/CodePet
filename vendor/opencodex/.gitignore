@@ -1,0 +1,16 @@
+node_modules/
+dist/
+.env
+*.log
+.DS_Store
+devlog/
+.tmp/
+.opencode/
+
+# Local agent/session artifacts
+.codexclaw/
+.omo/
+
+# Test-generated artifacts
+tests/.tmp-*/
+.claude/

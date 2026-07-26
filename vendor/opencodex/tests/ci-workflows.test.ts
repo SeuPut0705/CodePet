@@ -1,0 +1,390 @@
+import { describe, expect, test } from "bun:test";
+import { fileURLToPath } from "node:url";
+
+const root = new URL("../", import.meta.url);
+const doctorGuiIfChangedScript = fileURLToPath(new URL("../scripts/doctor-gui-if-changed.ts", import.meta.url));
+
+async function readText(path: string): Promise<string> {
+  return await Bun.file(new URL(path, root)).text();
+}
+
+function count(text: string, fragment: string): number {
+  return text.split(fragment).length - 1;
+}
+
+describe("GitHub Actions hardening", () => {
+  test("cross-platform CI keeps bounded jobs and immutable action references", async () => {
+    const workflow = await readText(".github/workflows/ci.yml");
+
+    expect(count(workflow, "timeout-minutes: 12")).toBe(1);
+    expect(count(workflow, "timeout-minutes: 8")).toBe(1);
+    expect(workflow).toContain("actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0");
+    expect(workflow).toContain("oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6");
+    expect(workflow).toContain("actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e");
+    expect(workflow).toContain("bun test --isolate tests");
+    expect(workflow).not.toMatch(/uses:\s+\S+@(?:v\d+|main|master)\b/);
+  });
+
+  test("cross-platform CI keeps the GUI lint and build gates", async () => {
+    // Review finding (PR #97): the GUI build gate was silently dropped once; assert the
+    // enhanced gate (PR #99) stays wired so broken GUI builds cannot merge unnoticed.
+    const workflow = await readText(".github/workflows/ci.yml");
+
+    expect(workflow).toContain("- name: GUI lint");
+    expect(workflow).toContain("bun run lint");
+    expect(workflow).toContain("- name: GUI build");
+    expect(workflow).toContain("bun run build");
+  });
+
+  test("service lifecycle is least-privilege, bounded, and cannot swallow health failures", async () => {
+    const workflow = await readText(".github/workflows/service-lifecycle.yml");
+
+    expect(workflow).toContain("permissions:\n  contents: read");
+    expect(workflow).toContain("group: service-lifecycle-${{ github.ref }}");
+    expect(workflow).toContain("cancel-in-progress: true");
+    expect(count(workflow, "timeout-minutes: 10")).toBe(3);
+    expect(count(workflow, "if: ${{ !cancelled() }}")).toBe(3);
+    expect(workflow).not.toContain("always()");
+    expect(workflow).not.toContain('healthz || echo "healthz not ready yet"');
+    expect(workflow).not.toContain("sleep 8");
+    expect(workflow).toContain("systemd service has no positive MainPID before crash test");
+    expect(workflow).toContain("Get-ScheduledTask -TaskName opencodex-proxy -ErrorAction SilentlyContinue");
+    expect(workflow).toContain("launchd artifact or proxy survived uninstall");
+    expect(workflow).toContain("scheduled task or proxy survived uninstall");
+    expect(workflow).not.toMatch(/uses:\s+\S+@(?:v\d+|main|master)\b/);
+  });
+
+  test("release workflow gates the exact SHA, channel, and service surface without injection", async () => {
+    const workflow = await readText(".github/workflows/release.yml");
+
+    // Least privilege + never cancel a publish mid-flight.
+    expect(workflow).toContain("actions: read");
+    expect(workflow).toContain("id-token: write");
+    expect(workflow).toContain("cancel-in-progress: false");
+    expect(workflow).toContain("timeout-minutes: 15");
+
+    // Dry-run first by default; tokenless trusted publishing only.
+    expect(workflow).toMatch(/dry-run:[\s\S]*?default: true/);
+    expect(workflow).not.toContain("secrets.NPM_TOKEN");
+    expect(workflow).not.toContain("NODE_AUTH_TOKEN:");
+
+    // Immutable action references.
+    expect(workflow).toContain("actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0");
+    expect(workflow).toContain("oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6");
+    expect(workflow).toContain("actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e");
+    expect(workflow).not.toMatch(/uses:\s+\S+@(?:v\d+|main|master)\b/);
+
+    // Workflow-dispatch inputs must reach shell code via env, never by direct
+    // interpolation into run: source (script-injection hardening).
+    const runBlocks = workflow.split(/\n {6,}- name: /).filter(block => block.includes("run: |"));
+    for (const block of runBlocks) {
+      const runSource = block.slice(block.indexOf("run: |"));
+      expect(runSource).not.toContain("${{ inputs.");
+    }
+
+    // The service gate must cover the post-restructure service surface and stay
+    // in sync with every service-lifecycle.yml push trigger path.
+    const gateMatch = workflow.match(/grep -Eq '(\^\([^']+\)\$)'/);
+    expect(gateMatch).not.toBeNull();
+    const gate = new RegExp(gateMatch![1]!);
+    const lifecycle = await readText(".github/workflows/service-lifecycle.yml");
+    const pushPaths = lifecycle
+      .split("push:")[1]!
+      .split("workflow_dispatch:")[0]!
+      .split("\n")
+      .map(line => line.trim())
+      .filter(line => line.startsWith('- "'))
+      .map(line => line.slice(3, -1));
+    expect(pushPaths.length).toBeGreaterThanOrEqual(6);
+    for (const path of pushPaths) {
+      expect(gate.test(path)).toBe(true);
+    }
+    expect(gate.test("src/cli/index.ts")).toBe(true);
+    expect(gate.test("src/lib/bun-runtime.ts")).toBe(true);
+    expect(gate.test("src/cli.ts")).toBe(true);
+
+    // PR and push triggers must stay path-set identical, and both must cover the
+    // pre-restructure compat stub src/cli.ts that the release gate regex checks
+    // (devlog 260716_passthrough_followups/020 — a release whose only service change
+    // is src/cli.ts must auto-trigger service-lifecycle instead of dead-ending the gate).
+    const prPaths = lifecycle
+      .split("pull_request:")[1]!
+      .split("push:")[0]!
+      .split("\n")
+      .map(line => line.trim())
+      .filter(line => line.startsWith('- "'))
+      .map(line => line.slice(3, -1));
+    expect([...prPaths].sort()).toEqual([...pushPaths].sort());
+    expect(prPaths).toContain("src/cli.ts");
+    expect(pushPaths).toContain("src/cli.ts");
+    expect(gate.test("src/router.ts")).toBe(false);
+    expect(gate.test("docs-site/src/pages/index.astro")).toBe(false);
+
+    // Channel guards stay branch-exact.
+    expect(workflow).toContain("Release must run from main or preview");
+    expect(workflow).toContain("main releases must use a stable semver version");
+    expect(workflow).toContain("preview releases must use a preview prerelease version");
+
+    // Release notes must include PR categories and the full channel commit range
+    // (branch merges + direct commits). Preflight forbids an existing release, so
+    // only create (not edit) is wired.
+    expect(workflow).toContain("releases/generate-notes");
+    expect(workflow).toContain("## Commits");
+    expect(workflow).toContain("git log --pretty=format:'- %s (%h)'");
+    expect(workflow).toContain('commit_range="${previous_tag}..${GITHUB_SHA}"');
+    expect(workflow).toContain('previous_tag_name=${previous_tag}');
+    expect(workflow).toContain("skipping generate-notes (commits-only notes)");
+    expect(workflow).toMatch(/gh release create[\s\S]*?--notes-file "\$notes_file"/);
+    expect(workflow).not.toContain("gh release edit");
+    expect(workflow).not.toContain("--generate-notes");
+    // Fail closed when generate-notes fails (no soft skip).
+    expect(workflow).not.toMatch(/generate-notes[\s\S]*?\|\| true/);
+    // Notes must be assembled before tagging so a notes API failure does not leave
+    // a remote tag that blocks release retries at preflight.
+    const createStep = workflow.split("- name: Create GitHub release")[1]!.split(/\n {6}- name:/)[0]!;
+    expect(createStep.indexOf("gh api")).toBeGreaterThan(-1);
+    expect(createStep.indexOf('git tag "$release_tag"')).toBeGreaterThan(-1);
+    expect(createStep.indexOf("gh api")).toBeLessThan(createStep.indexOf('git tag "$release_tag"'));
+    // First-channel releases must not call generate-notes without an explicit channel baseline
+    // (GitHub would otherwise pick the newest repo tag, possibly from the other channel).
+    expect(createStep).toMatch(
+      /if \[ -n "\$previous_tag" \]; then[\s\S]*previous_tag_name=\$\{previous_tag\}[\s\S]*else[\s\S]*skipping generate-notes/,
+    );
+  });
+
+  test("docs deployment is pinned, bounded, and scoped to Pages", async () => {
+    const workflow = await readText(".github/workflows/deploy-docs.yml");
+
+    expect(workflow).toContain("permissions:\n  contents: read\n  pages: write\n  id-token: write");
+    expect(workflow).toContain("cancel-in-progress: false");
+    expect(workflow).toContain("timeout-minutes: 15");
+    expect(workflow).toContain("timeout-minutes: 10");
+    expect(workflow).toContain("actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0");
+    expect(workflow).toContain("withastro/action@e84f40bd8d2caa9e768ec82ad30dd81f0b280853");
+    expect(workflow).toContain("actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128");
+    expect(workflow).not.toMatch(/uses:\s+\S+@(?:v\d+|main|master)\b/);
+  });
+
+  test("issue-quality workflow rejects workflow_dispatch pull request numbers before mutation", async () => {
+    const workflow = await readText(".github/workflows/enforce-issue-quality.yml");
+
+    // Manual dispatch is supported, but only with a positive issue number.
+    expect(workflow).toContain("workflow_dispatch:");
+    expect(workflow).toContain("issue_number:");
+    expect(workflow).toContain("issue-translation.cjs");
+    expect(workflow).toContain("translated_title");
+    expect(workflow).toContain("isPreparedSourceStillCurrent");
+    expect(workflow).toContain("resolveControlState");
+    expect(workflow).toContain("persistTranslationControlState");
+    expect(workflow).toContain("parse-issue-translation-response.cjs");
+    expect(workflow).not.toContain('node -e "');
+    expect(workflow).not.toContain("actions/cache/restore");
+    expect(workflow).not.toContain("actions/cache/save");
+    expect(workflow).not.toContain("actions: write");
+    expect(workflow).not.toContain(".ocx-translation-state");
+    expect(workflow).not.toContain("null language");
+    expect(workflow).toContain('normally "English"');
+    expect(workflow).toContain("rejectsWorkflowDispatchNonDefaultBranch");
+    expect(workflow).toContain("rejectsWorkflowDispatchPullRequest");
+    expect(workflow).toContain("models: read");
+    expect(workflow).toContain("Number.isSafeInteger(parsedIssueNumber)");
+    expect(workflow).toContain("parsedIssueNumber <= 0");
+
+    // Job-scoped permissions only (no top-level issues:write; no actions:write).
+    expect(workflow).toMatch(
+      /jobs:\s*\n\s*translate:[\s\S]*?permissions:\s*\n(?:\s*#.*\n)*\s*contents: read\s*\n(?:\s*#.*\n)*\s*issues: write\s*\n(?:\s*#.*\n)*\s*models: read/,
+    );
+    const translateJob = workflow.split(/\n {2}translate:\n/)[1]!.split(/\n {2}[a-zA-Z]/)[0]!;
+    expect(translateJob).not.toMatch(/actions:\s*write/);
+    expect(workflow).toMatch(
+      /jobs:\s*\n\s*translate:[\s\S]*?validate:[\s\S]*?permissions:\s*\n\s*contents: read\s*\n\s*#.*\n\s*issues: write/,
+    );
+    const beforeJobs = workflow.split(/jobs:\s*\n/)[0]!;
+    expect(beforeJobs).not.toMatch(/^\s*permissions:/m);
+
+    // Non-cancelling per-issue concurrency at workflow and translate-job scope.
+    expect(workflow).toContain("group: issue-quality-${{ github.event.issue.number || inputs.issue_number }}");
+    expect(workflow).toContain("group: issue-translation-${{ github.event.issue.number || inputs.issue_number }}");
+    const workflowConcurrency = workflow.split(/jobs:\s*\n/)[0]!;
+    expect(workflowConcurrency).toMatch(
+      /concurrency:\s*\n\s*group: issue-quality-[^\n]*\n\s*cancel-in-progress:\s*false/,
+    );
+    expect(translateJob).toMatch(
+      /concurrency:\s*\n\s*group: issue-translation-[^\n]*\n\s*cancel-in-progress:\s*false/,
+    );
+    expect(translateJob).toContain("translation-state-degraded");
+    expect(translateJob).toContain("core.summary");
+
+    // Trusted scripts always come from the repository default branch.
+    const checkoutStep = workflow
+      .split("- name: Checkout trusted workflow code")[1]!
+      .split(/\n {6}- name:/)[0]!;
+    expect(checkoutStep).toContain("ref: ${{ github.event.repository.default_branch }}");
+    expect(checkoutStep).toContain("persist-credentials: false");
+    expect(checkoutStep).toContain("sparse-checkout: .github/scripts");
+
+    const script = workflow
+      .split("- name: Validate issue quality")[1]!
+      .split("script: |")[1]!
+      .split(/\n {6}- name:/)[0]!;
+
+    // Invalid issue numbers fail before any issues API call.
+    const invalidNumberIdx = script.indexOf("Invalid workflow_dispatch issue_number:");
+    const firstIssuesGetIdx = script.indexOf("github.rest.issues.get({");
+    expect(invalidNumberIdx).toBeGreaterThan(-1);
+    expect(firstIssuesGetIdx).toBeGreaterThan(-1);
+    expect(invalidNumberIdx).toBeLessThan(firstIssuesGetIdx);
+
+    // Non-default-branch dispatches fail before any issues API mutation.
+    const branchGuardIdx = script.indexOf("const nonDefaultBranchFailure = rejectsWorkflowDispatchNonDefaultBranch(");
+    const firstMutationIdx = script.indexOf("github.rest.issues.update({");
+    expect(branchGuardIdx).toBeGreaterThan(-1);
+    expect(firstMutationIdx).toBeGreaterThan(-1);
+    expect(branchGuardIdx).toBeLessThan(firstMutationIdx);
+    expect(branchGuardIdx).toBeLessThan(firstIssuesGetIdx);
+
+    // Pull-request numbers are rejected after issues.get and before mutations.
+    const prGuardIdx = script.indexOf("const pullRequestFailure = rejectsWorkflowDispatchPullRequest(");
+    const listCommentsIdx = script.indexOf("github.rest.issues.listComments");
+    const addLabelsIdx = script.indexOf("github.rest.issues.addLabels");
+    expect(prGuardIdx).toBeGreaterThan(-1);
+    expect(prGuardIdx).toBeGreaterThan(firstIssuesGetIdx);
+    expect(prGuardIdx).toBeLessThan(listCommentsIdx);
+    expect(prGuardIdx).toBeLessThan(addLabelsIdx);
+    expect(prGuardIdx).toBeLessThan(firstMutationIdx);
+    expect(script).toContain("if (pullRequestFailure) {");
+    expect(script).toContain("core.setFailed(pullRequestFailure);");
+
+    const translateScript = workflow
+      .split("- name: Prepare translation")[1]!
+      .split("- name: Detect and translate")[0]!;
+    const branchGuardIdxTranslate = translateScript.indexOf(
+      "rejectsWorkflowDispatchNonDefaultBranch(",
+    );
+    const issuesGetIdxTranslate = translateScript.indexOf("github.rest.issues.get({");
+    expect(branchGuardIdxTranslate).toBeGreaterThan(-1);
+    expect(issuesGetIdxTranslate).toBeGreaterThan(-1);
+    expect(branchGuardIdxTranslate).toBeLessThan(issuesGetIdxTranslate);
+    expect(translateScript).toContain("resolveControlState");
+    expect(translateScript).toContain("Never trust author-editable issue body markers");
+
+    const applyScript = workflow
+      .split("- name: Apply inline translation")[1]!
+      .split("- name: Persist translation control state")[0]!;
+    const staleGuardIdx = applyScript.indexOf("isPreparedSourceStillCurrent({");
+    const issueUpdateIdx = applyScript.indexOf("github.rest.issues.update(");
+    expect(staleGuardIdx).toBeGreaterThan(-1);
+    expect(issueUpdateIdx).toBeGreaterThan(-1);
+    expect(staleGuardIdx).toBeLessThan(issueUpdateIdx);
+    expect(applyScript).toContain("persistTranslationControlState");
+    expect(applyScript).toContain("Translation control state not persisted");
+
+    const parseStep = workflow
+      .split("- name: Parse AI response")[1]!
+      .split("- name: Apply inline translation")[0]!;
+    expect(parseStep).toContain("parse-issue-translation-response.cjs");
+    expect(parseStep).not.toContain("node -e");
+    expect(parseStep).not.toContain("node <<");
+    // AI output must stay in env, never interpolated into the shell run script.
+    expect(parseStep.split(/\n\s*run:\s*/)[1] || "").not.toContain("${{");
+
+    const persistStep = workflow
+      .split("- name: Persist translation control state")[1]!
+      .split(/\n {2}[a-zA-Z]/)[0]!;
+    expect(persistStep).toContain("always()");
+    expect(persistStep).toContain("requires_translation != 'true'");
+    expect(persistStep).toContain("persistTranslationControlState");
+    expect(persistStep).not.toContain("silent_state");
+    expect(persistStep).not.toContain("cleanup_comment_ids");
+    expect(workflow).not.toContain("Save translation control state cache");
+    expect(workflow).not.toContain("Remove migrated English control comments");
+    expect(workflow).not.toContain("Restore translation control state cache");
+
+    // Helper contract: marker-only English comments; replace-before-cleanup; body non-authoritative.
+    const helperSrc = await readText(".github/scripts/issue-translation.cjs");
+    expect(helperSrc).toContain("shouldOmitVisibleBookkeeping");
+    expect(helperSrc).toContain("Automated translation bookkeeping");
+    expect(helperSrc).toContain("canonical comment first");
+    expect(helperSrc).toContain("Authoritative control state comes only from verified bot-owned comments");
+    expect(helperSrc).not.toContain("writeFileControlState");
+    expect(helperSrc).not.toContain(".ocx-translation-state");
+  });
+
+  test("React Doctor workflow is SHA-pinned, engine-pinned, advisory, and read-only", async () => {
+    const workflow = await readText(".github/workflows/react-doctor.yml");
+
+    expect(workflow).toContain("actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8");
+    expect(workflow).toContain("millionco/react-doctor@938008119a288f2fb47c66a69cd9279a21f31784");
+    expect(workflow).not.toMatch(/uses:\s+\S+@(?:v\d+|main|master)\b/);
+
+    // Engine pin: the action wrapper would fetch react-doctor@latest without it.
+    expect(workflow).toContain('version: "0.9.1"');
+
+    // Action pin must accept CLI JSON schemaVersion 3 (baseline reports from 0.9.1).
+    // v2.1.0's ensure-json-report only knew schemas 1–2 and failed every PR scan.
+    // Advisory + least privilege: read-only token, all write-scoped outputs off.
+    // pull-requests: read is required so the action can list PR files for
+    // --changed-files-from; without it, fork PRs fail with ENOENT on that file.
+    expect(workflow).toContain("contents: read");
+    expect(workflow).toContain("pull-requests: read");
+    expect(workflow).not.toContain(": write");
+    expect(workflow).toContain("blocking: none");
+    expect(workflow).toContain("comment: false");
+    expect(workflow).toContain("review-comments: false");
+    expect(workflow).toContain("commit-status: false");
+    expect(workflow).toContain("timeout-minutes: 10");
+  });
+
+  test("React Doctor package scripts pin the exact engine version with no @latest anywhere", async () => {
+    const guiPkg = await readText("gui/package.json");
+    const rootPkg = await readText("package.json");
+
+    expect(guiPkg).toContain("react-doctor@0.9.1");
+    expect(guiPkg).not.toContain("react-doctor@latest");
+    expect(rootPkg).not.toContain("react-doctor@latest");
+    expect(rootPkg).toContain('"doctor:gui:if-changed": "bun scripts/doctor-gui-if-changed.ts"');
+    expect(rootPkg).toContain('"lint:gui": "cd gui && bun run lint"');
+    // Gating steps (typecheck, eslint, tests, privacy) run before advisory React Doctor.
+    expect(rootPkg).toContain("bun run typecheck && bun run lint:gui && bun run test");
+    expect(rootPkg).toContain("bun run privacy:scan && bun run doctor:gui:if-changed");
+  });
+});
+
+describe("doctor-gui-if-changed", () => {
+  test("guiPathsChanged is a slash-guarded gui/ prefix predicate", async () => {
+    const { guiPathsChanged } = await import("../scripts/doctor-gui-if-changed");
+
+    expect(guiPathsChanged(["gui/src/App.tsx"])).toBe(true);
+    expect(guiPathsChanged(["gui"])).toBe(true);
+    expect(guiPathsChanged(["scripts/foo.ts", "gui/package.json"])).toBe(true);
+    expect(guiPathsChanged(["scripts/foo.ts"])).toBe(false);
+    expect(guiPathsChanged(["guitools/x.ts"])).toBe(false);
+    expect(guiPathsChanged([])).toBe(false);
+  });
+
+  test("DRY_RUN prints the run/skip decision without spawning the doctor", () => {
+    const run = Bun.spawnSync(["bun", doctorGuiIfChangedScript], {
+      env: { ...process.env, DOCTOR_DRY_RUN: "1", DOCTOR_FILES: "gui/src/App.tsx\nscripts/x.ts" },
+    });
+    expect(run.exitCode).toBe(0);
+    expect(run.stdout.toString()).toContain("doctor:run");
+
+    const skip = Bun.spawnSync(["bun", doctorGuiIfChangedScript], {
+      env: { ...process.env, DOCTOR_DRY_RUN: "1", DOCTOR_FILES: "scripts/x.ts\nREADME.md" },
+    });
+    expect(skip.exitCode).toBe(0);
+    expect(skip.stdout.toString()).toContain("doctor:skip");
+  });
+
+  test("degrades gracefully when the doctor engine is unavailable (offline prepush)", () => {
+    const run = Bun.spawnSync(["bun", doctorGuiIfChangedScript], {
+      env: {
+        ...process.env,
+        DOCTOR_FILES: "gui/src/App.tsx",
+        DOCTOR_CMD: "definitely-not-a-real-command-xyz",
+      },
+    });
+    expect(run.exitCode).toBe(0);
+    expect(run.stderr.toString()).toContain("skipping advisory scan");
+  });
+});

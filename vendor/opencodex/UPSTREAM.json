@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "repository": "https://github.com/lidge-jun/opencodex.git",
+  "tag": "v2.7.41",
+  "commit": "ac73f189cf7e3f4ee55690ed8dc7e354b7e6ed10",
+  "tree": "cebc25120b1fa0eaf8a1f5aed95a66c9e8e15dab",
+  "license": "MIT",
+  "licensePath": "LICENSE",
+  "licenseSha256": "34012a5529ad1e574e84457a609f9ea3df03c63d7c42c7e5f74ec14f438ed346",
+  "inventoryPath": "FILES.sha256",
+  "trackedFiles": 2664,
+  "syncedAt": "2026-07-27T00:00:00.000Z",
+  "patches": [
+    "google-antigravity-env-only"
+  ]
+}

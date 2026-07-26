@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "patches": [
+    {
+      "id": "google-antigravity-env-only",
+      "module": "google-antigravity-env-only.js",
+      "reason": "Remove static OAuth credential defaults blocked by GitHub Push Protection and require environment injection."
+    }
+  ]
+}

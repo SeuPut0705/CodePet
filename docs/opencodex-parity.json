@@ -1,0 +1,2477 @@
+{
+  "schemaVersion": 1,
+  "upstream": {
+    "repository": "https://github.com/lidge-jun/opencodex.git",
+    "tag": "v2.7.41",
+    "commit": "ac73f189cf7e3f4ee55690ed8dc7e354b7e6ed10",
+    "tree": "cebc25120b1fa0eaf8a1f5aed95a66c9e8e15dab"
+  },
+  "summary": {
+    "total": 251,
+    "statusCounts": {
+      "imported": 251,
+      "contract-tested": 0,
+      "runtime-verified": 0
+    }
+  },
+  "categories": {
+    "providers": [
+      {
+        "id": "providers:providers/alibaba-region-backup",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/providers/alibaba-region-backup.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "providers:providers/alibaba-region-migration",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/providers/alibaba-region-migration.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "providers:providers/alibaba-region-startup",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/providers/alibaba-region-startup.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "providers:providers/antigravity-models",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/providers/antigravity-models.ts"
+        ],
+        "codePetEvidence": [
+          "src/antigravity-account-switcher.js",
+          "src/antigravity-watcher.js"
+        ]
+      },
+      {
+        "id": "providers:providers/api-keys",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/providers/api-keys.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "providers:providers/base-url-choices",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/providers/base-url-choices.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "providers:providers/context-cap",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/providers/context-cap.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "providers:providers/derive",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/providers/derive.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "providers:providers/free-directory",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/providers/free-directory.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "providers:providers/github-copilot-transport",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/providers/github-copilot-transport.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "providers:providers/key-failover",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/providers/key-failover.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "providers:providers/kiro-models",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/providers/kiro-models.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "providers:providers/label",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/providers/label.ts"
+        ],
+        "codePetEvidence": [
+          "src/activity-labels.js",
+          "src/codex-usage-label.js"
+        ]
+      },
+      {
+        "id": "providers:providers/openai-sidecar",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/providers/openai-sidecar.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "providers:providers/openai-tier-startup",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/providers/openai-tier-startup.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "providers:providers/openai-tiers",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/providers/openai-tiers.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "providers:providers/openai-virtual-models",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/providers/openai-virtual-models.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "providers:providers/openrouter-routing",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/providers/openrouter-routing.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "providers:providers/provider-id-rewrite",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/providers/provider-id-rewrite.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "providers:providers/quota",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/providers/quota.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "providers:providers/registry",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/providers/registry.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "providers:providers/slug-codec",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/providers/slug-codec.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "providers:providers/xai-transport",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/providers/xai-transport.ts"
+        ],
+        "codePetEvidence": []
+      }
+    ],
+    "adapters": [
+      {
+        "id": "adapters:adapters/anthropic-image-guard",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/adapters/anthropic-image-guard.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "adapters:adapters/anthropic-image-normalize",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/adapters/anthropic-image-normalize.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "adapters:adapters/anthropic",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/adapters/anthropic.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "adapters:adapters/azure",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/adapters/azure.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "adapters:adapters/base",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/adapters/base.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "adapters:adapters/client-fingerprint",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/adapters/client-fingerprint.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "adapters:adapters/cursor",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/adapters/cursor.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "adapters:adapters/cursor/arg-codec",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/adapters/cursor/arg-codec.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "adapters:adapters/cursor/arg-normalize",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/adapters/cursor/arg-normalize.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "adapters:adapters/cursor/cursor-errors",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/adapters/cursor/cursor-errors.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "adapters:adapters/cursor/discovery",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/adapters/cursor/discovery.ts"
+        ],
+        "codePetEvidence": [
+          "src/provider-client-discovery.js",
+          "test/provider-client-discovery.test.js"
+        ]
+      },
+      {
+        "id": "adapters:adapters/cursor/effort-map",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/adapters/cursor/effort-map.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "adapters:adapters/cursor/exec-policy",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/adapters/cursor/exec-policy.ts"
+        ],
+        "codePetEvidence": [
+          "src/movement-policy.js",
+          "test/movement-policy.test.js"
+        ]
+      },
+      {
+        "id": "adapters:adapters/cursor/framing",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/adapters/cursor/framing.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "adapters:adapters/cursor/gen/agent_pb",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/adapters/cursor/gen/agent_pb.ts"
+        ],
+        "codePetEvidence": [
+          "src/subagent-activity-tracker.js",
+          "test/subagent-activity-tracker.test.js"
+        ]
+      },
+      {
+        "id": "adapters:adapters/cursor/kv-store",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/adapters/cursor/kv-store.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "adapters:adapters/cursor/live-models",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/adapters/cursor/live-models.ts"
+        ],
+        "codePetEvidence": [
+          "src/claude-live-credentials.js"
+        ]
+      },
+      {
+        "id": "adapters:adapters/cursor/live-smoke-gate",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/adapters/cursor/live-smoke-gate.ts"
+        ],
+        "codePetEvidence": [
+          "src/claude-live-credentials.js"
+        ]
+      },
+      {
+        "id": "adapters:adapters/cursor/live-transport",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/adapters/cursor/live-transport.ts"
+        ],
+        "codePetEvidence": [
+          "src/claude-live-credentials.js"
+        ]
+      },
+      {
+        "id": "adapters:adapters/cursor/mcp-config",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/adapters/cursor/mcp-config.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "adapters:adapters/cursor/mcp-manager",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/adapters/cursor/mcp-manager.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "adapters:adapters/cursor/message-mapper",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/adapters/cursor/message-mapper.ts"
+        ],
+        "codePetEvidence": [
+          "src/activity-message.js",
+          "test/activity-message.test.js"
+        ]
+      },
+      {
+        "id": "adapters:adapters/cursor/native-exec-common",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/adapters/cursor/native-exec-common.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "adapters:adapters/cursor/native-exec-desktop",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/adapters/cursor/native-exec-desktop.ts"
+        ],
+        "codePetEvidence": [
+          "src/codex-desktop-launch.js",
+          "test/codex-desktop-launch.test.js"
+        ]
+      },
+      {
+        "id": "adapters:adapters/cursor/native-exec-fs",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/adapters/cursor/native-exec-fs.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "adapters:adapters/cursor/native-exec-mcp",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/adapters/cursor/native-exec-mcp.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "adapters:adapters/cursor/native-exec-network",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/adapters/cursor/native-exec-network.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "adapters:adapters/cursor/native-exec-shell",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/adapters/cursor/native-exec-shell.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "adapters:adapters/cursor/native-exec-tools",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/adapters/cursor/native-exec-tools.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "adapters:adapters/cursor/native-exec",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/adapters/cursor/native-exec.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "adapters:adapters/cursor/protobuf-events",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/adapters/cursor/protobuf-events.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "adapters:adapters/cursor/protobuf-request",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/adapters/cursor/protobuf-request.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "adapters:adapters/cursor/request-builder",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/adapters/cursor/request-builder.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "adapters:adapters/cursor/thread-continuity",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/adapters/cursor/thread-continuity.ts"
+        ],
+        "codePetEvidence": [
+          "src/codex-thread-title.js",
+          "test/codex-thread-title.test.js"
+        ]
+      },
+      {
+        "id": "adapters:adapters/cursor/tool-definitions",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/adapters/cursor/tool-definitions.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "adapters:adapters/cursor/transport-retry",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/adapters/cursor/transport-retry.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "adapters:adapters/cursor/transport",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/adapters/cursor/transport.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "adapters:adapters/cursor/types",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/adapters/cursor/types.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "adapters:adapters/google-antigravity-replay",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/adapters/google-antigravity-replay.ts"
+        ],
+        "codePetEvidence": [
+          "src/antigravity-account-switcher.js",
+          "src/antigravity-watcher.js"
+        ]
+      },
+      {
+        "id": "adapters:adapters/google-antigravity-wire",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/adapters/google-antigravity-wire.ts"
+        ],
+        "codePetEvidence": [
+          "src/antigravity-account-switcher.js",
+          "src/antigravity-watcher.js"
+        ]
+      },
+      {
+        "id": "adapters:adapters/google-errors",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/adapters/google-errors.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "adapters:adapters/google-http",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/adapters/google-http.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "adapters:adapters/google-tool-schema",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/adapters/google-tool-schema.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "adapters:adapters/google-truncation",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/adapters/google-truncation.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "adapters:adapters/google-wire-compiler",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/adapters/google-wire-compiler.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "adapters:adapters/google",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/adapters/google.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "adapters:adapters/identity",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/adapters/identity.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "adapters:adapters/image",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/adapters/image.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "adapters:adapters/kiro-constants",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/adapters/kiro-constants.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "adapters:adapters/kiro-errors",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/adapters/kiro-errors.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "adapters:adapters/kiro-events",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/adapters/kiro-events.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "adapters:adapters/kiro-images",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/adapters/kiro-images.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "adapters:adapters/kiro-retry",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/adapters/kiro-retry.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "adapters:adapters/kiro-thinking",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/adapters/kiro-thinking.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "adapters:adapters/kiro-tool-fallback",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/adapters/kiro-tool-fallback.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "adapters:adapters/kiro-tools",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/adapters/kiro-tools.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "adapters:adapters/kiro-truncation",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/adapters/kiro-truncation.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "adapters:adapters/kiro-wire",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/adapters/kiro-wire.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "adapters:adapters/kiro",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/adapters/kiro.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "adapters:adapters/mimo-free",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/adapters/mimo-free.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "adapters:adapters/openai-chat",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/adapters/openai-chat.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "adapters:adapters/openai-responses",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/adapters/openai-responses.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "adapters:adapters/run-turn-queue",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/adapters/run-turn-queue.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "adapters:adapters/tool-catalog-nudge",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/adapters/tool-catalog-nudge.ts"
+        ],
+        "codePetEvidence": [
+          "src/codex-model-catalog.js",
+          "src/provider-catalog.js",
+          "test/codex-model-catalog.test.js",
+          "test/provider-catalog.test.js"
+        ]
+      },
+      {
+        "id": "adapters:adapters/upstream-http-error",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/adapters/upstream-http-error.ts"
+        ],
+        "codePetEvidence": [
+          "src/open-codex/upstream-provenance.js",
+          "test/open-codex-upstream-provenance.test.js"
+        ]
+      }
+    ],
+    "oauth": [
+      {
+        "id": "oauth:oauth/anthropic",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/oauth/anthropic.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "oauth:oauth/callback-server",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/oauth/callback-server.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "oauth:oauth/chatgpt",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/oauth/chatgpt.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "oauth:oauth/cursor",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/oauth/cursor.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "oauth:oauth/github-copilot",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/oauth/github-copilot.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "oauth:oauth/google-antigravity",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/oauth/google-antigravity.ts"
+        ],
+        "codePetEvidence": [
+          "src/antigravity-account-switcher.js",
+          "src/antigravity-watcher.js"
+        ]
+      },
+      {
+        "id": "oauth:oauth/health",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/oauth/health.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "oauth:oauth/index",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/oauth/index.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "oauth:oauth/key-providers",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/oauth/key-providers.ts"
+        ],
+        "codePetEvidence": [
+          "src/settings-account-providers.js",
+          "test/settings-account-providers.test.js"
+        ]
+      },
+      {
+        "id": "oauth:oauth/kimi",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/oauth/kimi.ts"
+        ],
+        "codePetEvidence": [
+          "src/kimi-codex-adapter.js",
+          "src/kimi-codex-models.js",
+          "src/kimi-usage-client.js",
+          "src/kimi-usage-controller.js",
+          "src/kimi-usage.js",
+          "src/kimi-watcher.js",
+          "test/kimi-codex-adapter.test.js",
+          "test/kimi-codex-models.test.js",
+          "test/kimi-usage-client.test.js",
+          "test/kimi-usage-controller.test.js",
+          "test/kimi-usage.test.js",
+          "test/kimi-watcher.test.js"
+        ]
+      },
+      {
+        "id": "oauth:oauth/kiro-credentials",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/oauth/kiro-credentials.ts"
+        ],
+        "codePetEvidence": [
+          "src/claude-live-credentials.js"
+        ]
+      },
+      {
+        "id": "oauth:oauth/kiro",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/oauth/kiro.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "oauth:oauth/local-token-detect",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/oauth/local-token-detect.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "oauth:oauth/log",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/oauth/log.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "oauth:oauth/login-cli",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/oauth/login-cli.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "oauth:oauth/pkce",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/oauth/pkce.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "oauth:oauth/store",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/oauth/store.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "oauth:oauth/token-guardian",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/oauth/token-guardian.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "oauth:oauth/types",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/oauth/types.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "oauth:oauth/xai",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/oauth/xai.ts"
+        ],
+        "codePetEvidence": []
+      }
+    ],
+    "transports": [
+      {
+        "id": "transports:responses/compaction",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/responses/compaction.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "transports:responses/parser",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/responses/parser.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "transports:responses/reasoning-envelope",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/responses/reasoning-envelope.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "transports:responses/schema",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/responses/schema.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "transports:responses/state",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/responses/state.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "transports:server/adapter-resolve",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/server/adapter-resolve.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "transports:server/auth-cors",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/server/auth-cors.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "transports:server/chat-completions",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/server/chat-completions.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "transports:server/claude-messages",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/server/claude-messages.ts"
+        ],
+        "codePetEvidence": [
+          "src/claude-account-metadata.js",
+          "src/claude-account-switcher.js",
+          "src/claude-live-credentials.js",
+          "src/claude-watcher.js",
+          "test/claude-account-metadata.test.js"
+        ]
+      },
+      {
+        "id": "transports:server/effort-policy",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/server/effort-policy.ts"
+        ],
+        "codePetEvidence": [
+          "src/movement-policy.js",
+          "test/movement-policy.test.js"
+        ]
+      },
+      {
+        "id": "transports:server/gui-static",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/server/gui-static.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "transports:server/image-retry",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/server/image-retry.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "transports:server/images",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/server/images.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "transports:server/index",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/server/index.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "transports:server/lifecycle",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/server/lifecycle.ts"
+        ],
+        "codePetEvidence": [
+          "test/codex-account-switch-lifecycle.test.js"
+        ]
+      },
+      {
+        "id": "transports:server/live",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/server/live.ts"
+        ],
+        "codePetEvidence": [
+          "src/claude-live-credentials.js"
+        ]
+      },
+      {
+        "id": "transports:server/management-api",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/server/management-api.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "transports:server/management/agent-settings-routes",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/server/management/agent-settings-routes.ts"
+        ],
+        "codePetEvidence": [
+          "src/appearance-settings.js",
+          "src/settings-account-providers.js",
+          "src/settings-i18n.js",
+          "src/settings-preload.js",
+          "src/settings.js",
+          "src/subagent-activity-tracker.js",
+          "test/appearance-settings.test.js",
+          "test/settings-account-providers.test.js",
+          "test/settings-i18n.test.js",
+          "test/settings-ui.test.js",
+          "test/subagent-activity-tracker.test.js"
+        ]
+      },
+      {
+        "id": "transports:server/management/api-access",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/server/management/api-access.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "transports:server/management/combo-routes",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/server/management/combo-routes.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "transports:server/management/config-routes",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/server/management/config-routes.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "transports:server/management/context",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/server/management/context.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "transports:server/management/logs-usage-routes",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/server/management/logs-usage-routes.ts"
+        ],
+        "codePetEvidence": [
+          "src/account-usage.js",
+          "src/activity-usage.js",
+          "src/codex-usage-label.js",
+          "src/kimi-usage-client.js",
+          "src/kimi-usage-controller.js",
+          "src/kimi-usage.js",
+          "src/provider-usage.js",
+          "test/account-usage.test.js",
+          "test/activity-usage.test.js",
+          "test/codex-usage.test.js",
+          "test/kimi-usage-client.test.js",
+          "test/kimi-usage-controller.test.js",
+          "test/kimi-usage.test.js",
+          "test/provider-usage.test.js"
+        ]
+      },
+      {
+        "id": "transports:server/management/model-routes",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/server/management/model-routes.ts"
+        ],
+        "codePetEvidence": [
+          "src/codex-model-catalog.js",
+          "src/kimi-codex-models.js",
+          "test/codex-model-catalog.test.js",
+          "test/kimi-codex-models.test.js"
+        ]
+      },
+      {
+        "id": "transports:server/management/oauth-account-routes",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/server/management/oauth-account-routes.ts"
+        ],
+        "codePetEvidence": [
+          "src/account-submenu.js",
+          "src/account-usage.js",
+          "src/antigravity-account-switcher.js",
+          "src/claude-account-metadata.js",
+          "src/claude-account-switcher.js",
+          "src/codex-account-switcher.js",
+          "src/settings-account-providers.js",
+          "test/account-submenu.test.js",
+          "test/account-usage.test.js",
+          "test/claude-account-metadata.test.js",
+          "test/codex-account-switch-lifecycle.test.js",
+          "test/codex-account-switcher.test.js",
+          "test/settings-account-providers.test.js"
+        ]
+      },
+      {
+        "id": "transports:server/management/provider-routes",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/server/management/provider-routes.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "transports:server/management/shared",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/server/management/shared.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "transports:server/management/system-routes",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/server/management/system-routes.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "transports:server/memory-watchdog",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/server/memory-watchdog.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "transports:server/port-reclaim",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/server/port-reclaim.ts"
+        ],
+        "codePetEvidence": [
+          "test/open-codex-parity-report.test.js"
+        ]
+      },
+      {
+        "id": "transports:server/ports",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/server/ports.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "transports:server/proxy-liveness",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/server/proxy-liveness.ts"
+        ],
+        "codePetEvidence": [
+          "src/codex-proxy-shutdown.js",
+          "src/codex-proxy.js",
+          "test/codex-proxy-shutdown.test.js",
+          "test/codex-proxy.test.js"
+        ]
+      },
+      {
+        "id": "transports:server/relay-eager",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/server/relay-eager.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "transports:server/relay",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/server/relay.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "transports:server/request-decompress",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/server/request-decompress.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "transports:server/request-log",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/server/request-log.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "transports:server/responses-item-id-repair",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/server/responses-item-id-repair.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "transports:server/responses",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/server/responses.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "transports:server/responses/collaboration",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/server/responses/collaboration.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "transports:server/responses/compact",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/server/responses/compact.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "transports:server/responses/core",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/server/responses/core.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "transports:server/responses/encrypted-payload",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/server/responses/encrypted-payload.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "transports:server/responses/fetch-helpers",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/server/responses/fetch-helpers.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "transports:server/responses/passthrough-error",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/server/responses/passthrough-error.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "transports:server/responses/terminal-guard",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/server/responses/terminal-guard.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "transports:server/search",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/server/search.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "transports:server/startup-action-control",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/server/startup-action-control.ts"
+        ],
+        "codePetEvidence": [
+          "src/activity-redaction.js",
+          "test/activity-redaction.test.js"
+        ]
+      },
+      {
+        "id": "transports:server/startup-health-cache",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/server/startup-health-cache.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "transports:server/system-env",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/server/system-env.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "transports:server/windows-tcp-drop",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/server/windows-tcp-drop.ts"
+        ],
+        "codePetEvidence": [
+          "src/windows-credential.js"
+        ]
+      },
+      {
+        "id": "transports:server/windows-tray-control",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/server/windows-tray-control.ts"
+        ],
+        "codePetEvidence": [
+          "src/windows-credential.js"
+        ]
+      },
+      {
+        "id": "transports:server/ws-bridge",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/server/ws-bridge.ts"
+        ],
+        "codePetEvidence": [
+          "src/provider-hook-bridge.js",
+          "test/provider-hook-bridge.test.js"
+        ]
+      }
+    ],
+    "codexIntegration": [
+      {
+        "id": "codexIntegration:codex/account-label",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/codex/account-label.ts"
+        ],
+        "codePetEvidence": [
+          "src/account-submenu.js",
+          "src/account-usage.js",
+          "src/activity-labels.js",
+          "src/antigravity-account-switcher.js",
+          "src/claude-account-metadata.js",
+          "src/claude-account-switcher.js",
+          "src/codex-account-switcher.js",
+          "src/codex-usage-label.js",
+          "src/settings-account-providers.js",
+          "test/account-submenu.test.js",
+          "test/account-usage.test.js",
+          "test/claude-account-metadata.test.js",
+          "test/codex-account-switch-lifecycle.test.js",
+          "test/codex-account-switcher.test.js",
+          "test/settings-account-providers.test.js"
+        ]
+      },
+      {
+        "id": "codexIntegration:codex/account-lifecycle",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/codex/account-lifecycle.ts"
+        ],
+        "codePetEvidence": [
+          "src/account-submenu.js",
+          "src/account-usage.js",
+          "src/antigravity-account-switcher.js",
+          "src/claude-account-metadata.js",
+          "src/claude-account-switcher.js",
+          "src/codex-account-switcher.js",
+          "src/settings-account-providers.js",
+          "test/account-submenu.test.js",
+          "test/account-usage.test.js",
+          "test/claude-account-metadata.test.js",
+          "test/codex-account-switch-lifecycle.test.js",
+          "test/codex-account-switcher.test.js",
+          "test/settings-account-providers.test.js"
+        ]
+      },
+      {
+        "id": "codexIntegration:codex/account-runtime-state",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/codex/account-runtime-state.ts"
+        ],
+        "codePetEvidence": [
+          "src/account-submenu.js",
+          "src/account-usage.js",
+          "src/antigravity-account-switcher.js",
+          "src/claude-account-metadata.js",
+          "src/claude-account-switcher.js",
+          "src/codex-account-switcher.js",
+          "src/settings-account-providers.js",
+          "test/account-submenu.test.js",
+          "test/account-usage.test.js",
+          "test/claude-account-metadata.test.js",
+          "test/codex-account-switch-lifecycle.test.js",
+          "test/codex-account-switcher.test.js",
+          "test/settings-account-providers.test.js"
+        ]
+      },
+      {
+        "id": "codexIntegration:codex/account-store",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/codex/account-store.ts"
+        ],
+        "codePetEvidence": [
+          "src/account-submenu.js",
+          "src/account-usage.js",
+          "src/antigravity-account-switcher.js",
+          "src/claude-account-metadata.js",
+          "src/claude-account-switcher.js",
+          "src/codex-account-switcher.js",
+          "src/settings-account-providers.js",
+          "test/account-submenu.test.js",
+          "test/account-usage.test.js",
+          "test/claude-account-metadata.test.js",
+          "test/codex-account-switch-lifecycle.test.js",
+          "test/codex-account-switcher.test.js",
+          "test/settings-account-providers.test.js"
+        ]
+      },
+      {
+        "id": "codexIntegration:codex/account-usability",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/codex/account-usability.ts"
+        ],
+        "codePetEvidence": [
+          "src/account-submenu.js",
+          "src/account-usage.js",
+          "src/antigravity-account-switcher.js",
+          "src/claude-account-metadata.js",
+          "src/claude-account-switcher.js",
+          "src/codex-account-switcher.js",
+          "src/settings-account-providers.js",
+          "test/account-submenu.test.js",
+          "test/account-usage.test.js",
+          "test/claude-account-metadata.test.js",
+          "test/codex-account-switch-lifecycle.test.js",
+          "test/codex-account-switcher.test.js",
+          "test/settings-account-providers.test.js"
+        ]
+      },
+      {
+        "id": "codexIntegration:codex/auth-api",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/codex/auth-api.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "codexIntegration:codex/auth-collision",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/codex/auth-collision.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "codexIntegration:codex/auth-context",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/codex/auth-context.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "codexIntegration:codex/autostart-health",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/codex/autostart-health.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "codexIntegration:codex/catalog",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/codex/catalog.ts"
+        ],
+        "codePetEvidence": [
+          "src/codex-model-catalog.js",
+          "src/provider-catalog.js",
+          "test/codex-model-catalog.test.js",
+          "test/provider-catalog.test.js"
+        ]
+      },
+      {
+        "id": "codexIntegration:codex/catalog/aggregation",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/codex/catalog/aggregation.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "codexIntegration:codex/catalog/bundled",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/codex/catalog/bundled.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "codexIntegration:codex/catalog/effort",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/codex/catalog/effort.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "codexIntegration:codex/catalog/metadata",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/codex/catalog/metadata.ts"
+        ],
+        "codePetEvidence": [
+          "src/claude-account-metadata.js",
+          "test/claude-account-metadata.test.js"
+        ]
+      },
+      {
+        "id": "codexIntegration:codex/catalog/parsing",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/codex/catalog/parsing.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "codexIntegration:codex/catalog/provider-fetch",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/codex/catalog/provider-fetch.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "codexIntegration:codex/catalog/sync",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/codex/catalog/sync.ts"
+        ],
+        "codePetEvidence": [
+          "test/open-codex-sync.test.js"
+        ]
+      },
+      {
+        "id": "codexIntegration:codex/exec-invocation",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/codex/exec-invocation.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "codexIntegration:codex/features",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/codex/features.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "codexIntegration:codex/history-migration-guardian",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/codex/history-migration-guardian.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "codexIntegration:codex/history-provider",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/codex/history-provider.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "codexIntegration:codex/home",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/codex/home.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "codexIntegration:codex/inject",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/codex/inject.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "codexIntegration:codex/injected-marker",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/codex/injected-marker.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "codexIntegration:codex/journal",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/codex/journal.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "codexIntegration:codex/main-account-cache",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/codex/main-account-cache.ts"
+        ],
+        "codePetEvidence": [
+          "src/account-submenu.js",
+          "src/account-usage.js",
+          "src/antigravity-account-switcher.js",
+          "src/claude-account-metadata.js",
+          "src/claude-account-switcher.js",
+          "src/codex-account-switcher.js",
+          "src/main.js",
+          "src/settings-account-providers.js",
+          "test/account-submenu.test.js",
+          "test/account-usage.test.js",
+          "test/claude-account-metadata.test.js",
+          "test/codex-account-switch-lifecycle.test.js",
+          "test/codex-account-switcher.test.js",
+          "test/provider-main-integration.test.js",
+          "test/settings-account-providers.test.js"
+        ]
+      },
+      {
+        "id": "codexIntegration:codex/main-account",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/codex/main-account.ts"
+        ],
+        "codePetEvidence": [
+          "src/account-submenu.js",
+          "src/account-usage.js",
+          "src/antigravity-account-switcher.js",
+          "src/claude-account-metadata.js",
+          "src/claude-account-switcher.js",
+          "src/codex-account-switcher.js",
+          "src/main.js",
+          "src/settings-account-providers.js",
+          "test/account-submenu.test.js",
+          "test/account-usage.test.js",
+          "test/claude-account-metadata.test.js",
+          "test/codex-account-switch-lifecycle.test.js",
+          "test/codex-account-switcher.test.js",
+          "test/provider-main-integration.test.js",
+          "test/settings-account-providers.test.js"
+        ]
+      },
+      {
+        "id": "codexIntegration:codex/model-cache",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/codex/model-cache.ts"
+        ],
+        "codePetEvidence": [
+          "src/codex-model-catalog.js",
+          "src/kimi-codex-models.js",
+          "test/codex-model-catalog.test.js",
+          "test/kimi-codex-models.test.js"
+        ]
+      },
+      {
+        "id": "codexIntegration:codex/paths",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/codex/paths.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "codexIntegration:codex/plugins-doctor",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/codex/plugins-doctor.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "codexIntegration:codex/project-config-warnings",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/codex/project-config-warnings.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "codexIntegration:codex/quota",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/codex/quota.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "codexIntegration:codex/refresh",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/codex/refresh.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "codexIntegration:codex/routing",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/codex/routing.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "codexIntegration:codex/runtime",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/codex/runtime.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "codexIntegration:codex/shim",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/codex/shim.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "codexIntegration:codex/subagent-model-fallback",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/codex/subagent-model-fallback.ts"
+        ],
+        "codePetEvidence": [
+          "src/codex-model-catalog.js",
+          "src/kimi-codex-models.js",
+          "src/subagent-activity-tracker.js",
+          "test/codex-model-catalog.test.js",
+          "test/kimi-codex-models.test.js",
+          "test/subagent-activity-tracker.test.js"
+        ]
+      },
+      {
+        "id": "codexIntegration:codex/sync",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/codex/sync.ts"
+        ],
+        "codePetEvidence": [
+          "test/open-codex-sync.test.js"
+        ]
+      },
+      {
+        "id": "codexIntegration:codex/warmup",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/codex/warmup.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "codexIntegration:codex/websocket-registry",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/codex/websocket-registry.ts"
+        ],
+        "codePetEvidence": []
+      }
+    ],
+    "claudeIntegration": [
+      {
+        "id": "claudeIntegration:claude/agents-inject",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/claude/agents-inject.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "claudeIntegration:claude/alias",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/claude/alias.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "claudeIntegration:claude/auth-detect",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/claude/auth-detect.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "claudeIntegration:claude/auth-mode-migration",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/claude/auth-mode-migration.ts"
+        ],
+        "codePetEvidence": [
+          "src/codex-model-catalog.js",
+          "src/kimi-codex-models.js",
+          "test/codex-model-catalog.test.js",
+          "test/kimi-codex-models.test.js"
+        ]
+      },
+      {
+        "id": "claudeIntegration:claude/auth-mode",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/claude/auth-mode.ts"
+        ],
+        "codePetEvidence": [
+          "src/codex-model-catalog.js",
+          "src/kimi-codex-models.js",
+          "test/codex-model-catalog.test.js",
+          "test/kimi-codex-models.test.js"
+        ]
+      },
+      {
+        "id": "claudeIntegration:claude/context-windows",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/claude/context-windows.ts"
+        ],
+        "codePetEvidence": [
+          "src/windows-credential.js"
+        ]
+      },
+      {
+        "id": "claudeIntegration:claude/desktop-3p-guard",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/claude/desktop-3p-guard.ts"
+        ],
+        "codePetEvidence": [
+          "src/codex-desktop-launch.js",
+          "test/codex-desktop-launch.test.js"
+        ]
+      },
+      {
+        "id": "claudeIntegration:claude/desktop-3p",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/claude/desktop-3p.ts"
+        ],
+        "codePetEvidence": [
+          "src/codex-desktop-launch.js",
+          "test/codex-desktop-launch.test.js"
+        ]
+      },
+      {
+        "id": "claudeIntegration:claude/desktop-health",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/claude/desktop-health.ts"
+        ],
+        "codePetEvidence": [
+          "src/codex-desktop-launch.js",
+          "test/codex-desktop-launch.test.js"
+        ]
+      },
+      {
+        "id": "claudeIntegration:claude/desktop-profile",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/claude/desktop-profile.ts"
+        ],
+        "codePetEvidence": [
+          "src/codex-desktop-launch.js",
+          "src/provider-profile-store.js",
+          "test/codex-desktop-launch.test.js"
+        ]
+      },
+      {
+        "id": "claudeIntegration:claude/gateway-cache",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/claude/gateway-cache.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "claudeIntegration:claude/inbound-debug",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/claude/inbound-debug.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "claudeIntegration:claude/inbound",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/claude/inbound.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "claudeIntegration:claude/model-info",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/claude/model-info.ts"
+        ],
+        "codePetEvidence": [
+          "src/codex-model-catalog.js",
+          "src/kimi-codex-models.js",
+          "test/codex-model-catalog.test.js",
+          "test/kimi-codex-models.test.js"
+        ]
+      },
+      {
+        "id": "claudeIntegration:claude/outbound",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/claude/outbound.ts"
+        ],
+        "codePetEvidence": []
+      }
+    ],
+    "usage": [
+      {
+        "id": "usage:usage/cost",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/usage/cost.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "usage:usage/debug",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/usage/debug.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "usage:usage/expected-prices",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/usage/expected-prices.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "usage:usage/log",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/usage/log.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "usage:usage/summary",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/usage/summary.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "usage:usage/totals",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/usage/totals.ts"
+        ],
+        "codePetEvidence": []
+      }
+    ],
+    "management": [
+      {
+        "id": "management:server/management/agent-settings-routes",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/server/management/agent-settings-routes.ts"
+        ],
+        "codePetEvidence": [
+          "src/appearance-settings.js",
+          "src/settings-account-providers.js",
+          "src/settings-i18n.js",
+          "src/settings-preload.js",
+          "src/settings.js",
+          "src/subagent-activity-tracker.js",
+          "test/appearance-settings.test.js",
+          "test/settings-account-providers.test.js",
+          "test/settings-i18n.test.js",
+          "test/settings-ui.test.js",
+          "test/subagent-activity-tracker.test.js"
+        ]
+      },
+      {
+        "id": "management:server/management/api-access",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/server/management/api-access.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "management:server/management/combo-routes",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/server/management/combo-routes.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "management:server/management/config-routes",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/server/management/config-routes.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "management:server/management/context",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/server/management/context.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "management:server/management/logs-usage-routes",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/server/management/logs-usage-routes.ts"
+        ],
+        "codePetEvidence": [
+          "src/account-usage.js",
+          "src/activity-usage.js",
+          "src/codex-usage-label.js",
+          "src/kimi-usage-client.js",
+          "src/kimi-usage-controller.js",
+          "src/kimi-usage.js",
+          "src/provider-usage.js",
+          "test/account-usage.test.js",
+          "test/activity-usage.test.js",
+          "test/codex-usage.test.js",
+          "test/kimi-usage-client.test.js",
+          "test/kimi-usage-controller.test.js",
+          "test/kimi-usage.test.js",
+          "test/provider-usage.test.js"
+        ]
+      },
+      {
+        "id": "management:server/management/model-routes",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/server/management/model-routes.ts"
+        ],
+        "codePetEvidence": [
+          "src/codex-model-catalog.js",
+          "src/kimi-codex-models.js",
+          "test/codex-model-catalog.test.js",
+          "test/kimi-codex-models.test.js"
+        ]
+      },
+      {
+        "id": "management:server/management/oauth-account-routes",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/server/management/oauth-account-routes.ts"
+        ],
+        "codePetEvidence": [
+          "src/account-submenu.js",
+          "src/account-usage.js",
+          "src/antigravity-account-switcher.js",
+          "src/claude-account-metadata.js",
+          "src/claude-account-switcher.js",
+          "src/codex-account-switcher.js",
+          "src/settings-account-providers.js",
+          "test/account-submenu.test.js",
+          "test/account-usage.test.js",
+          "test/claude-account-metadata.test.js",
+          "test/codex-account-switch-lifecycle.test.js",
+          "test/codex-account-switcher.test.js",
+          "test/settings-account-providers.test.js"
+        ]
+      },
+      {
+        "id": "management:server/management/provider-routes",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/server/management/provider-routes.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "management:server/management/shared",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/server/management/shared.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "management:server/management/system-routes",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/server/management/system-routes.ts"
+        ],
+        "codePetEvidence": []
+      }
+    ],
+    "cliRuntime": [
+      {
+        "id": "cliRuntime:cli/account-api",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/cli/account-api.ts"
+        ],
+        "codePetEvidence": [
+          "src/account-submenu.js",
+          "src/account-usage.js",
+          "src/antigravity-account-switcher.js",
+          "src/claude-account-metadata.js",
+          "src/claude-account-switcher.js",
+          "src/codex-account-switcher.js",
+          "src/settings-account-providers.js",
+          "test/account-submenu.test.js",
+          "test/account-usage.test.js",
+          "test/claude-account-metadata.test.js",
+          "test/codex-account-switch-lifecycle.test.js",
+          "test/codex-account-switcher.test.js",
+          "test/settings-account-providers.test.js"
+        ]
+      },
+      {
+        "id": "cliRuntime:cli/account-extended",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/cli/account-extended.ts"
+        ],
+        "codePetEvidence": [
+          "src/account-submenu.js",
+          "src/account-usage.js",
+          "src/antigravity-account-switcher.js",
+          "src/claude-account-metadata.js",
+          "src/claude-account-switcher.js",
+          "src/codex-account-switcher.js",
+          "src/settings-account-providers.js",
+          "test/account-submenu.test.js",
+          "test/account-usage.test.js",
+          "test/claude-account-metadata.test.js",
+          "test/codex-account-switch-lifecycle.test.js",
+          "test/codex-account-switcher.test.js",
+          "test/settings-account-providers.test.js"
+        ]
+      },
+      {
+        "id": "cliRuntime:cli/account",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/cli/account.ts"
+        ],
+        "codePetEvidence": [
+          "src/account-submenu.js",
+          "src/account-usage.js",
+          "src/antigravity-account-switcher.js",
+          "src/claude-account-metadata.js",
+          "src/claude-account-switcher.js",
+          "src/codex-account-switcher.js",
+          "src/settings-account-providers.js",
+          "test/account-submenu.test.js",
+          "test/account-usage.test.js",
+          "test/claude-account-metadata.test.js",
+          "test/codex-account-switch-lifecycle.test.js",
+          "test/codex-account-switcher.test.js",
+          "test/settings-account-providers.test.js"
+        ]
+      },
+      {
+        "id": "cliRuntime:cli/claude-desktop",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/cli/claude-desktop.ts"
+        ],
+        "codePetEvidence": [
+          "src/claude-account-metadata.js",
+          "src/claude-account-switcher.js",
+          "src/claude-live-credentials.js",
+          "src/claude-watcher.js",
+          "src/codex-desktop-launch.js",
+          "test/claude-account-metadata.test.js",
+          "test/codex-desktop-launch.test.js"
+        ]
+      },
+      {
+        "id": "cliRuntime:cli/claude",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/cli/claude.ts"
+        ],
+        "codePetEvidence": [
+          "src/claude-account-metadata.js",
+          "src/claude-account-switcher.js",
+          "src/claude-live-credentials.js",
+          "src/claude-watcher.js",
+          "test/claude-account-metadata.test.js"
+        ]
+      },
+      {
+        "id": "cliRuntime:cli/codex-shim-autorestore",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/cli/codex-shim-autorestore.ts"
+        ],
+        "codePetEvidence": [
+          "src/codex-account-switcher.js",
+          "src/codex-desktop-launch.js",
+          "src/codex-model-catalog.js",
+          "src/codex-proxy-shutdown.js",
+          "src/codex-proxy.js",
+          "src/codex-thread-title.js",
+          "src/codex-usage-label.js",
+          "src/codex-watcher.js",
+          "src/kimi-codex-adapter.js",
+          "src/kimi-codex-models.js",
+          "test/codex-account-switch-lifecycle.test.js",
+          "test/codex-account-switcher.test.js",
+          "test/codex-desktop-launch.test.js",
+          "test/codex-model-catalog.test.js",
+          "test/codex-proxy-shutdown.test.js",
+          "test/codex-proxy.test.js",
+          "test/codex-thread-title.test.js",
+          "test/codex-usage.test.js",
+          "test/codex-watcher.test.js",
+          "test/kimi-codex-adapter.test.js",
+          "test/kimi-codex-models.test.js",
+          "test/open-codex-package-notices.test.js",
+          "test/open-codex-parity-report.test.js",
+          "test/open-codex-sync.test.js",
+          "test/open-codex-upstream-provenance.test.js"
+        ]
+      },
+      {
+        "id": "cliRuntime:cli/debug",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/cli/debug.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "cliRuntime:cli/doctor",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/cli/doctor.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "cliRuntime:cli/help",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/cli/help.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "cliRuntime:cli/index",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/cli/index.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "cliRuntime:cli/init",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/cli/init.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "cliRuntime:cli/internal-dispatch",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/cli/internal-dispatch.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "cliRuntime:cli/models",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/cli/models.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "cliRuntime:cli/provider",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/cli/provider.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "cliRuntime:cli/star-prompt",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/cli/star-prompt.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "cliRuntime:cli/status-oauth",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/cli/status-oauth.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "cliRuntime:cli/status",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/cli/status.ts"
+        ],
+        "codePetEvidence": []
+      },
+      {
+        "id": "cliRuntime:cli/tray-proxy",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/cli/tray-proxy.ts"
+        ],
+        "codePetEvidence": [
+          "src/codex-proxy-shutdown.js",
+          "src/codex-proxy.js",
+          "test/codex-proxy-shutdown.test.js",
+          "test/codex-proxy.test.js"
+        ]
+      },
+      {
+        "id": "cliRuntime:cli/v2",
+        "status": "imported",
+        "upstreamEvidence": [
+          "src/cli/v2.ts"
+        ],
+        "codePetEvidence": []
+      }
+    ]
+  }
+}
