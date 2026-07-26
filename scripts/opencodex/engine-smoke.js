@@ -4,6 +4,7 @@ const os = require("node:os");
 const path = require("node:path");
 
 const { createEngineHost } = require("../../src/open-codex/engine-host");
+const { syncKimiCliCredential } = require("../../src/open-codex/kimi-credential-adapter");
 const { buildEngine } = require("./build-engine");
 
 function delay(milliseconds) {
@@ -35,12 +36,25 @@ function fixtureChunk({ content, finishReason = null }) {
   })}\n\n`;
 }
 
+function fixtureJwt(payload) {
+  return [
+    Buffer.from(JSON.stringify({ alg: "none" })).toString("base64url"),
+    Buffer.from(JSON.stringify(payload)).toString("base64url"),
+    "fixture",
+  ].join(".");
+}
+
 function createHeldUpstream() {
   let release;
   const released = new Promise((resolve) => { release = resolve; });
   const server = http.createServer(async (request, response) => {
     for await (const _chunk of request) {
       // Drain the synthetic request body before streaming the fixture response.
+    }
+    if (request.url === "/v1/models") {
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(JSON.stringify({ data: [{ id: "fixture-model", owned_by: "codepet" }] }));
+      return;
     }
     response.writeHead(200, {
       "content-type": "text/event-stream",
@@ -68,8 +82,24 @@ async function runEngineSmoke({ enginePath, projectRoot = path.resolve(__dirname
   const smokeRoot = fs.mkdtempSync(path.join(os.tmpdir(), "codepet-opencodex-engine-smoke-"));
   const codexHome = path.join(smokeRoot, "codex");
   const openCodexHome = path.join(smokeRoot, "opencodex");
+  const kimiHome = path.join(smokeRoot, "kimi");
   fs.mkdirSync(codexHome, { recursive: true });
   fs.mkdirSync(openCodexHome, { recursive: true });
+  fs.mkdirSync(path.join(kimiHome, "credentials"), { recursive: true });
+
+  const kimiAccessToken = fixtureJwt({ user_id: "codepet-smoke-user", email: "smoke@example.com" });
+  const kimiRefreshToken = fixtureJwt({ user_id: "codepet-smoke-user" });
+  fs.writeFileSync(path.join(kimiHome, "credentials", "kimi-code.json"), `${JSON.stringify({
+    access_token: kimiAccessToken,
+    refresh_token: kimiRefreshToken,
+    expires_at: Math.floor(Date.now() / 1000) + 3600,
+    expires_in: 3600,
+    scope: "openid",
+    token_type: "Bearer",
+  })}\n`, { mode: 0o600 });
+  fs.writeFileSync(path.join(kimiHome, "device_id"), "codepet-smoke-device\n", { mode: 0o600 });
+  const credentialSync = syncKimiCliCredential({ kimiHome, openCodexHome });
+  if (credentialSync.status !== "synced") throw new Error("OpenCodex smoke Kimi credential sync failed");
 
   const upstream = createHeldUpstream();
   const upstreamPort = await listen(upstream.server);
@@ -86,6 +116,14 @@ async function runEngineSmoke({ enginePath, projectRoot = path.resolve(__dirname
         apiKey: "fixture",
         models: ["fixture-model"],
         defaultModel: "fixture-model",
+      },
+      kimi: {
+        adapter: "openai-chat",
+        baseUrl: "https://api.kimi.com/coding/v1",
+        authMode: "oauth",
+        liveModels: false,
+        models: ["k3"],
+        defaultModel: "k3",
       },
     },
   }, null, 2)}\n`, { mode: 0o600 });
@@ -105,6 +143,21 @@ async function runEngineSmoke({ enginePath, projectRoot = path.resolve(__dirname
   try {
     const status = await host.start({ port: 0 });
     const healthPayload = await fetch(`http://127.0.0.1:${status.port}/healthz`).then((response) => response.json());
+    const kimiStatusResponse = await fetch(`http://127.0.0.1:${status.port}/api/oauth/status?provider=kimi`);
+    const kimiStatus = await kimiStatusResponse.json();
+    if (!kimiStatusResponse.ok || kimiStatus.loggedIn !== true || kimiStatus.source !== "local-cli") {
+      throw new Error("OpenCodex smoke did not load the imported Kimi credential");
+    }
+    const serializedKimiStatus = JSON.stringify(kimiStatus);
+    if (serializedKimiStatus.includes(kimiAccessToken) || serializedKimiStatus.includes(kimiRefreshToken)) {
+      throw new Error("OpenCodex smoke OAuth status exposed a Kimi token");
+    }
+    const modelsResponse = await fetch(`http://127.0.0.1:${status.port}/v1/models`);
+    const modelsPayload = await modelsResponse.json();
+    const kimiK3Selectable = modelsResponse.ok
+      && Array.isArray(modelsPayload.data)
+      && modelsPayload.data.some((model) => model?.id === "kimi/k3");
+    if (!kimiK3Selectable) throw new Error("OpenCodex smoke catalog did not expose kimi/k3");
     const response = await fetch(`http://127.0.0.1:${status.port}/v1/responses`, {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -151,6 +204,11 @@ async function runEngineSmoke({ enginePath, projectRoot = path.resolve(__dirname
         pidMatches: healthPayload.pid === process.pid,
         portMatches: healthPayload.port === status.port,
         service: healthPayload.service,
+      },
+      kimi: {
+        credentialLoaded: kimiStatus.loggedIn === true,
+        modelSelectable: kimiK3Selectable,
+        statusTokenSafe: true,
       },
       listenerClosed,
       streamHeldDrain,

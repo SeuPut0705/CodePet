@@ -4,6 +4,7 @@ function createOpenCodexShadowLifecycle({
   enabled = false,
   createHost,
   log = () => {},
+  prepare = async () => undefined,
   stopTimeoutMs = 30_000,
 } = {}) {
   let host = null;
@@ -17,7 +18,8 @@ function createOpenCodexShadowLifecycle({
     status = { state: "starting" };
     startPromise = (async () => {
       try {
-        host = createHost();
+        const preparation = await prepare();
+        host = createHost(preparation);
         status = await host.start({ port: 0 });
         log(`OpenCodex shadow engine ready on 127.0.0.1:${status.port}`);
       } catch (error) {

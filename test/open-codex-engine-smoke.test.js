@@ -20,6 +20,11 @@ test("내장 OpenCodex worker는 실제 health port와 stream drain을 보존한
   assert.equal(result.health.service, "opencodex");
   assert.equal(result.health.pidMatches, true);
   assert.equal(result.health.portMatches, true);
+  assert.deepEqual(result.kimi, {
+    credentialLoaded: true,
+    modelSelectable: true,
+    statusTokenSafe: true,
+  });
   assert.equal(result.streamHeldDrain, true);
   assert.equal(result.listenerClosed, true);
 });

@@ -62,6 +62,7 @@ const {
 } = require("./codex-proxy-shutdown");
 const { createEngineHost } = require("./open-codex/engine-host");
 const { createOpenCodexShadowLifecycle } = require("./open-codex/shadow-lifecycle");
+const { syncKimiCliCredential } = require("./open-codex/kimi-credential-adapter");
 const { createActivityHeading: activityHeading } = require("./activity-title");
 const { formatActivityMessage } = require("./activity-message");
 const {
@@ -786,11 +787,22 @@ function openCodexShadowEnvironment() {
   };
 }
 
+function prepareOpenCodexShadow() {
+  const workerEnv = openCodexShadowEnvironment();
+  const credentialStatus = syncKimiCliCredential({
+    kimiHome: process.env.KIMI_CODE_HOME || path.join(os.homedir(), ".kimi-code"),
+    openCodexHome: workerEnv.OPENCODEX_HOME,
+  });
+  appendDebugLog(`OpenCodex Kimi credential sync: ${credentialStatus.status}`);
+  return { workerEnv };
+}
+
 const openCodexShadowLifecycle = createOpenCodexShadowLifecycle({
   enabled: OPEN_CODEX_SHADOW_ENABLED,
-  createHost: () => createEngineHost({
+  prepare: prepareOpenCodexShadow,
+  createHost: ({ workerEnv }) => createEngineHost({
     workerData: { enginePath: openCodexEngineBundlePath() },
-    workerEnv: openCodexShadowEnvironment(),
+    workerEnv,
   }),
   log: appendDebugLog,
 });

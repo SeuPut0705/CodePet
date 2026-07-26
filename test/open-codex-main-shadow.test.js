@@ -48,6 +48,29 @@ test("shadow lifecycle은 ready 진단을 남기고 drain 뒤 worker를 멈춘�
   ]);
 });
 
+test("shadow lifecycle은 인증 준비가 끝난 뒤 worker를 만든다", async () => {
+  const events = [];
+  const lifecycle = createOpenCodexShadowLifecycle({
+    enabled: true,
+    prepare: async () => {
+      events.push("prepare");
+      return { workerEnv: { OPENCODEX_HOME: "/fixture" } };
+    },
+    createHost: (preparation) => {
+      events.push(["create", preparation]);
+      return {
+        start: async () => ({ state: "ready", running: true, port: 43123 }),
+      };
+    },
+  });
+
+  await lifecycle.start();
+  assert.deepEqual(events, [
+    "prepare",
+    ["create", { workerEnv: { OPENCODEX_HOME: "/fixture" } }],
+  ]);
+});
+
 test("shadow 시작 실패는 앱 시작을 막지 않고 failed 진단으로 격리한다", async () => {
   const lifecycle = createOpenCodexShadowLifecycle({
     enabled: true,
@@ -74,7 +97,9 @@ test("Electron main은 shadow를 flag 뒤에서 시작하고 안전 종료 준�
 
   assert.match(mainSource, /process\.env\.CODEPET_OPENCODEX_SHADOW === "1"/);
   assert.match(mainSource, /path\.join\(app\.getPath\("userData"\), "opencodex-shadow"\)/);
-  assert.match(mainSource, /workerEnv: openCodexShadowEnvironment\(\)/);
+  assert.match(mainSource, /syncKimiCliCredential\(\{/);
+  assert.match(mainSource, /prepare: prepareOpenCodexShadow/);
+  assert.match(mainSource, /createHost: \(\{ workerEnv \}\)/);
   assert.match(readyLifecycle, /openCodexShadowLifecycle\.start\(\)/);
   assert.match(coordinator, /await openCodexShadowLifecycle\.stop\(\)/);
   assert.doesNotMatch(coordinator, /enableProxyInConfig[^]*openCodexShadowLifecycle/);
