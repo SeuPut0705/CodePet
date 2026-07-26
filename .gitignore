@@ -3,5 +3,6 @@
 /dist
 /release
 /artifacts
+/build/generated
 /.worktrees
 /.design-preview
