@@ -763,6 +763,7 @@
         ],
         "codePetEvidence": [
           "src/open-codex/upstream-provenance.js",
+          "test/open-codex-upstream-patches.test.js",
           "test/open-codex-upstream-provenance.test.js"
         ]
       }
@@ -2360,6 +2361,7 @@
           "test/open-codex-package-notices.test.js",
           "test/open-codex-parity-report.test.js",
           "test/open-codex-sync.test.js",
+          "test/open-codex-upstream-patches.test.js",
           "test/open-codex-upstream-provenance.test.js"
         ]
       },
