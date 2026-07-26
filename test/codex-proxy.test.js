@@ -23,13 +23,20 @@ function fakeJwt(payload) {
 }
 
 // 테스트용 계정 풀: authPath를 실제 파일 대신 토큰 문자열 자체로 씁니다.
-function poolProxy({ upstreamPort, accounts, notifySwitch, port }) {
+function poolProxy({
+  upstreamPort,
+  accounts,
+  notifySwitch,
+  isAccountQuotaExhausted,
+  port,
+}) {
   return new CodexProxy({
     upstreamBase: `http://127.0.0.1:${upstreamPort}/backend-api/codex`,
     port,
     resolveAccounts: async () => accounts,
     readAuth: (authPath) => ({ accessToken: authPath, accountId: `id-${authPath}` }),
     notifySwitch,
+    isAccountQuotaExhausted,
   });
 }
 
@@ -214,6 +221,200 @@ test("한도(429)를 맞으면 다음 계정으로 자동 로테이션하고 쿨
     });
     assert.equal(second.status, 200);
     assert.deepEqual(hits, ["Bearer token-b"]);
+    assert.deepEqual(switched, [{ key: "b", reason: "quota" }]);
+  } finally {
+    proxy.stop();
+    upstream.close();
+  }
+});
+
+test("남은 한도가 명시된 일시적 429는 계정 전체 소진으로 오판하지 않는다", async () => {
+  const hits = [];
+  const switched = [];
+  const upstream = await startUpstream((request, response) => {
+    hits.push(request.headers.authorization);
+    if (request.headers.authorization === "Bearer token-a") {
+      response.writeHead(429, {
+        "content-type": "application/json",
+        "retry-after": "2",
+      });
+      response.end(JSON.stringify({
+        error: {
+          type: "rate_limit_error",
+          code: "rate_limit_exceeded",
+        },
+        rate_limits: {
+          primary: {
+            used_percent: 53,
+            window_minutes: 10080,
+          },
+        },
+        resets_in_seconds: 3600,
+      }));
+      return;
+    }
+    response.writeHead(200, { "content-type": "application/json" });
+    response.end('{"ok":"b"}');
+  });
+
+  const proxy = poolProxy({
+    upstreamPort: upstream.address().port,
+    accounts: [
+      { key: "a", label: "A", authPath: "token-a" },
+      { key: "b", label: "B", authPath: "token-b" },
+    ],
+    notifySwitch: (account, reason) => switched.push({ key: account.key, reason }),
+    port: 19184,
+  });
+  const proxyPort = await proxy.start();
+
+  try {
+    const response = await fetch(`http://127.0.0.1:${proxyPort}/v1/responses`, {
+      method: "POST",
+      body: "{}",
+    });
+    assert.equal(response.status, 429);
+    assert.deepEqual(hits, ["Bearer token-a"]);
+    assert.deepEqual(switched, []);
+    assert.equal(proxy.isCoolingDown("a"), false);
+  } finally {
+    proxy.stop();
+    upstream.close();
+  }
+});
+
+test("usage API에 main 한도가 남아 있으면 quota 429도 계정 전체를 전환하지 않는다", async () => {
+  const hits = [];
+  const switched = [];
+  const inspected = [];
+  const upstream = await startUpstream((request, response) => {
+    hits.push(request.headers.authorization);
+    if (request.headers.authorization === "Bearer token-a") {
+      response.writeHead(429, { "content-type": "application/json" });
+      response.end(JSON.stringify({
+        error: { code: "usage_limit_reached" },
+        resets_in_seconds: 2_332_920,
+      }));
+      return;
+    }
+    response.writeHead(200, { "content-type": "application/json" });
+    response.end('{"ok":"b"}');
+  });
+
+  const proxy = poolProxy({
+    upstreamPort: upstream.address().port,
+    accounts: [
+      { key: "a", label: "A", authPath: "token-a" },
+      { key: "b", label: "B", authPath: "token-b" },
+    ],
+    isAccountQuotaExhausted: async (account) => {
+      inspected.push(account.key);
+      return false;
+    },
+    notifySwitch: (account, reason) => switched.push({ key: account.key, reason }),
+    port: 19185,
+  });
+  const proxyPort = await proxy.start();
+
+  try {
+    const response = await fetch(`http://127.0.0.1:${proxyPort}/v1/responses`, {
+      method: "POST",
+      body: "{}",
+    });
+    assert.equal(response.status, 429);
+    assert.deepEqual(inspected, ["a"]);
+    assert.deepEqual(hits, ["Bearer token-a"]);
+    assert.deepEqual(switched, []);
+    assert.equal(proxy.isCoolingDown("a"), false);
+  } finally {
+    proxy.stop();
+    upstream.close();
+  }
+});
+
+test("usage API 확인이 실패하면 quota 429도 자동 전환하지 않는다", async () => {
+  const hits = [];
+  const switched = [];
+  const upstream = await startUpstream((request, response) => {
+    hits.push(request.headers.authorization);
+    if (request.headers.authorization === "Bearer token-a") {
+      response.writeHead(429, { "content-type": "application/json" });
+      response.end('{"error":{"code":"usage_limit_reached"},"resets_in_seconds":3600}');
+      return;
+    }
+    response.writeHead(200, { "content-type": "application/json" });
+    response.end('{"ok":"b"}');
+  });
+
+  const proxy = poolProxy({
+    upstreamPort: upstream.address().port,
+    accounts: [
+      { key: "a", label: "A", authPath: "token-a" },
+      { key: "b", label: "B", authPath: "token-b" },
+    ],
+    isAccountQuotaExhausted: async () => {
+      throw new Error("usage unavailable");
+    },
+    notifySwitch: (account, reason) => switched.push({ key: account.key, reason }),
+    port: 19187,
+  });
+  const proxyPort = await proxy.start();
+
+  try {
+    const response = await fetch(`http://127.0.0.1:${proxyPort}/v1/responses`, {
+      method: "POST",
+      body: "{}",
+    });
+    assert.equal(response.status, 429);
+    assert.deepEqual(hits, ["Bearer token-a"]);
+    assert.deepEqual(switched, []);
+    assert.equal(proxy.isCoolingDown("a"), false);
+  } finally {
+    proxy.stop();
+    upstream.close();
+  }
+});
+
+test("동시 429 요청이 같은 다음 계정으로 성공해도 자동 전환은 한 번만 알린다", async () => {
+  const pendingQuotaResponses = [];
+  const switched = [];
+  const upstream = await startUpstream((request, response) => {
+    if (request.headers.authorization === "Bearer token-a") {
+      pendingQuotaResponses.push(response);
+      if (pendingQuotaResponses.length === 2) {
+        for (const pending of pendingQuotaResponses) {
+          pending.writeHead(429, { "content-type": "application/json" });
+          pending.end('{"error":{"code":"usage_limit_reached"},"resets_in_seconds":3600}');
+        }
+      }
+      return;
+    }
+    response.writeHead(200, { "content-type": "application/json" });
+    response.end('{"ok":"b"}');
+  });
+
+  const proxy = poolProxy({
+    upstreamPort: upstream.address().port,
+    accounts: [
+      { key: "a", label: "A", authPath: "token-a" },
+      { key: "b", label: "B", authPath: "token-b" },
+    ],
+    isAccountQuotaExhausted: async () => true,
+    notifySwitch: (account, reason) => switched.push({ key: account.key, reason }),
+    port: 19188,
+  });
+  const proxyPort = await proxy.start();
+
+  try {
+    const requests = [1, 2].map(() =>
+      fetch(`http://127.0.0.1:${proxyPort}/v1/responses`, {
+        method: "POST",
+        body: "{}",
+      })
+    );
+    const responses = await Promise.all(requests);
+    assert.deepEqual(responses.map((response) => response.status), [200, 200]);
+    assert.deepEqual(switched, [{ key: "b", reason: "quota" }]);
   } finally {
     proxy.stop();
     upstream.close();
@@ -262,7 +463,7 @@ test("인증 실패(401)를 맞으면 같은 요청을 다음 계정으로 재�
 test("모든 계정이 한도 초과면 마지막 429 응답을 그대로 전달한다", async () => {
   const upstream = await startUpstream((request, response) => {
     response.writeHead(429, { "content-type": "application/json" });
-    response.end('{"error":"limit"}');
+    response.end('{"error":{"code":"usage_limit_reached"},"resets_in_seconds":3600}');
   });
 
   const proxy = poolProxy({
@@ -376,6 +577,125 @@ test("WebSocket 업그레이드는 인증을 갈아끼운 원시 터널로 중�
     assert.match(result, /echo:ping/);
     assert.equal(upgradeHeaders.authorization, "Bearer token-a");
     assert.equal(upgradeHeaders["chatgpt-account-id"], "id-token-a");
+  } finally {
+    proxy.stop();
+    upstream.close();
+  }
+});
+
+test("WebSocket 429도 main 한도가 남아 있으면 본문까지 보존하고 전환하지 않는다", async () => {
+  const net = require("node:net");
+  const hits = [];
+  const switched = [];
+  const upstream = http.createServer();
+  upstream.on("upgrade", (request, socket) => {
+    hits.push(request.headers.authorization);
+    if (request.headers.authorization === "Bearer token-a") {
+      const body = '{"error":{"code":"usage_limit_reached"},"retry":2}';
+      socket.write(
+        "HTTP/1.1 429 Too Many Requests\r\n" +
+        "Content-Type: application/json\r\n" +
+        `Content-Length: ${Buffer.byteLength(body)}\r\n\r\n`
+      );
+      setTimeout(() => socket.end(body), 20);
+      return;
+    }
+    socket.end("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\n\r\n");
+  });
+  await new Promise((resolve) => upstream.listen(0, "127.0.0.1", resolve));
+
+  const proxy = poolProxy({
+    upstreamPort: upstream.address().port,
+    accounts: [
+      { key: "a", label: "A", authPath: "token-a" },
+      { key: "b", label: "B", authPath: "token-b" },
+    ],
+    isAccountQuotaExhausted: async () => false,
+    notifySwitch: (account, reason) => switched.push({ key: account.key, reason }),
+    port: 19205,
+  });
+  const proxyPort = await proxy.start();
+
+  try {
+    const rawResponse = await new Promise((resolve, reject) => {
+      const socket = net.connect(proxyPort, "127.0.0.1", () => {
+        socket.write(
+          "GET /v1/responses HTTP/1.1\r\n" +
+          "Host: x\r\n" +
+          "Connection: Upgrade\r\n" +
+          "Upgrade: websocket\r\n\r\n"
+        );
+      });
+      let data = "";
+      socket.on("data", (chunk) => {
+        data += chunk;
+      });
+      socket.once("end", () => resolve(data));
+      socket.once("error", reject);
+    });
+
+    assert.match(rawResponse.split("\r\n")[0], /429/);
+    assert.match(rawResponse, /\r\n\r\n\{"error":\{"code":"usage_limit_reached"\},"retry":2\}$/);
+    assert.deepEqual(hits, ["Bearer token-a"]);
+    assert.deepEqual(switched, []);
+    assert.equal(proxy.isCoolingDown("a"), false);
+  } finally {
+    proxy.stop();
+    upstream.close();
+  }
+});
+
+test("WebSocket의 일시적 429도 계정 한도 소진으로 오판하지 않는다", async () => {
+  const net = require("node:net");
+  const hits = [];
+  const upstream = http.createServer();
+  upstream.on("upgrade", (request, socket) => {
+    hits.push(request.headers.authorization);
+    const body = JSON.stringify({
+      error: { code: "rate_limit_exceeded" },
+      rate_limits: { primary: { used_percent: 42 } },
+      resets_in_seconds: 10,
+    });
+    socket.end(
+      "HTTP/1.1 429 Too Many Requests\r\n" +
+      `Content-Length: ${Buffer.byteLength(body)}\r\n\r\n` +
+      body
+    );
+  });
+  await new Promise((resolve) => upstream.listen(0, "127.0.0.1", resolve));
+
+  const proxy = poolProxy({
+    upstreamPort: upstream.address().port,
+    accounts: [
+      { key: "a", label: "A", authPath: "token-a" },
+      { key: "b", label: "B", authPath: "token-b" },
+    ],
+    isAccountQuotaExhausted: async () => true,
+    port: 19206,
+  });
+  const proxyPort = await proxy.start();
+
+  try {
+    const statusLine = await new Promise((resolve, reject) => {
+      const socket = net.connect(proxyPort, "127.0.0.1", () => {
+        socket.write(
+          "GET /v1/responses HTTP/1.1\r\n" +
+          "Host: x\r\n" +
+          "Connection: Upgrade\r\n" +
+          "Upgrade: websocket\r\n\r\n"
+        );
+      });
+      let data = "";
+      socket.on("data", (chunk) => {
+        data += chunk;
+      });
+      socket.once("end", () => resolve(data.split("\r\n")[0]));
+      socket.once("error", reject);
+    });
+
+    assert.match(statusLine, /429/);
+    assert.deepEqual(hits, ["Bearer token-a"]);
+    assert.equal(proxy.isCoolingDown("a"), false);
   } finally {
     proxy.stop();
     upstream.close();

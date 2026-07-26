@@ -130,10 +130,26 @@ test("각 언어는 Codex Desktop 계정 전환의 자동 재실행 계약을 �
 
 test("각 언어는 계정과 사용량을 한 화면의 컴팩트한 계정 행으로 설명한다", () => {
   const expectations = {
-    "README.md": [/계정과 사용량을 한 화면/, /계정 행.*잔여율 칩/],
-    "docs/i18n/README.en.md": [/Accounts and quota in one view/i, /remaining-quota chips.*account row/i],
-    "docs/i18n/README.ja.md": [/アカウントと利用上限を一つの画面/, /各行.*コンパクトな残量チップ/],
-    "docs/i18n/README.zh-CN.md": [/在一个页面管理账户与额度/, /账户行.*紧凑的剩余额度标签/],
+    "README.md": [
+      /계정과 사용량을 한 화면/,
+      /계정 행.*잔여율 칩/,
+      /GPT-5\.3-Codex 모델 전용 한도는 숨김/,
+    ],
+    "docs/i18n/README.en.md": [
+      /Accounts and quota in one view/i,
+      /remaining-quota chips.*account row/i,
+      /GPT-5\.3-Codex model-specific quota is hidden/i,
+    ],
+    "docs/i18n/README.ja.md": [
+      /アカウントと利用上限を一つの画面/,
+      /各行.*コンパクトな残量チップ/,
+      /GPT-5\.3-Codex のモデル専用上限は表示しません/,
+    ],
+    "docs/i18n/README.zh-CN.md": [
+      /在一个页面管理账户与额度/,
+      /账户行.*紧凑的剩余额度标签/,
+      /不显示 GPT-5\.3-Codex 模型专属额度/,
+    ],
   };
 
   for (const [file, patterns] of Object.entries(expectations)) {

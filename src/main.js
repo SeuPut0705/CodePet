@@ -51,6 +51,10 @@ const {
   disableProxyInConfig,
   enableProxyInConfig,
 } = require("./codex-proxy");
+const {
+  CodexProxyShutdownCoordinator,
+  prepareCodexProxyForQuit,
+} = require("./codex-proxy-shutdown");
 const { createActivityHeading: activityHeading } = require("./activity-title");
 const { formatActivityMessage } = require("./activity-message");
 const {
@@ -75,7 +79,10 @@ const {
 } = require("./bubble-window-geometry");
 const { normalizeFontFamily } = require("./appearance-settings");
 const { buildAccountSubmenu } = require("./account-submenu");
-const { rateWindowLabel } = require("./codex-usage-label");
+const {
+  rateWindowLabel,
+  shouldDisplayCodexUsageWindow,
+} = require("./codex-usage-label");
 const { commandNeedsShell, selectCommandPath } = require("./command-resolution");
 const { buildWindowsCodexLaunchScript } = require("./codex-desktop-launch");
 const { getInstalledFonts } = require("./installed-fonts");
@@ -608,6 +615,15 @@ const codexProxy = new CodexProxy({
     const summary = codexAccountSwitcher.readAuthSummaryFromFile(authPath);
     return summary.hasAuth ? { accessToken: summary.accessToken, accountId: summary.accountId } : null;
   },
+  isAccountQuotaExhausted: async (account) => {
+    const summary = codexAccountSwitcher.readAuthSummaryFromFile(account.authPath);
+    if (!summary.hasAuth) return null;
+
+    const usage = await codexAccountSwitcher.fetchUsageForSummary(summary);
+    const mainWindows = usage.rateLimits.windows.filter((window) => window.source === "main");
+    if (mainWindows.length === 0) return null;
+    return mainWindows.some((window) => Number(window.used_percent) >= 100);
+  },
   notifySwitch: (account, reason) => {
     // 프록시는 이미 이 계정으로 응답을 스트리밍하는 중입니다. 활성 프로필 영속화(디스크 백업 복사 등
     // 무거운 동기 작업)와 UI 갱신은 응답 중계를 지연시키지 않도록 다음 tick으로 미룹니다.
@@ -717,6 +733,48 @@ function teardownCodexProxyOnQuit() {
 codexAccountSwitcher.cleanupLegacyCodePetState();
 codexAccountSwitcher.ensureCurrentAccountProfile();
 const codexWatcher = new CodexWatcher();
+const codexProxyShutdownCoordinator = new CodexProxyShutdownCoordinator({
+  isCodexWorking: () =>
+    codexProxyActive &&
+    (codexWatcher.working || codexProxy.activeConnectionCount > 0),
+  // idle 전환 직후 새 요청이 붙는 경합을 흡수한 뒤 한 번 더 실제 상태를 확인합니다.
+  waitForIdleConfirmation: () =>
+    new Promise((resolve) => setTimeout(resolve, 250)),
+  prepareForQuit: () => prepareCodexProxyForQuit({
+    proxyActive: codexProxyActive,
+    isDesktopRunning: isCodexDesktopAppRunning,
+    disableProxyConfig: disableProxyInConfig,
+    stopDesktop: stopCodexDesktopApp,
+    waitForDesktopExit: waitForCodexDesktopExit,
+    launchDesktop: launchCodexDesktopApp,
+    stopProxy: () => {
+      codexProxy.stop();
+      codexProxyActive = false;
+    },
+    restoreProxyConfig: () => {
+      if (!codexProxy.running || !codexProxy.port) {
+        throw new Error("Codex 프록시를 복구할 수 없습니다.");
+      }
+      enableProxyInConfig(codexProxy.port);
+      codexProxyActive = true;
+    },
+  }),
+  finishQuit: finishCodePetQuit,
+  notifyWaiting: () => {
+    showCodexAccountBubble(
+      "진행 중인 Codex 작업이 끝나면 안전하게 종료합니다.\n프록시는 작업 완료 전까지 유지됩니다."
+    );
+  },
+  notifyError: (error) => {
+    appendDebugLog(`safe quit failed: ${error.message || String(error)}`);
+    showCodexAccountBubble(
+      `CodePet 종료를 취소했습니다.\nCodex 직접 연결 복구에 실패했습니다.\n${error.message || String(error)}`
+    );
+  },
+});
+codexProxy.onIdle(() => {
+  void codexProxyShutdownCoordinator.handleWorkingChanged(codexWatcher.working);
+});
 const codexThreadTitles = new CodexThreadTitleResolver({
   loadTitle: (threadId) => {
     const command = codexThreadTitleCommand();
@@ -2153,6 +2211,7 @@ async function switchCodexAccount(profileKey) {
     }
 
     const result = codexAccountSwitcher.switchToProfile(profileKey);
+    codexProxy.selectAccount(result.profile.key);
     invalidateProxyAccountsCache();
     refreshTrayMenu();
 
@@ -2317,11 +2376,10 @@ function showPetWindowFromTray() {
 
 // 실제 앱 종료는 이 함수만 통하게 합니다.
 // 일반 close는 트레이로 숨기고, "완전 종료"만 프로세스를 끝내도록 분리합니다.
-function quitApp() {
+function finishCodePetQuit() {
   isQuitting = true;
   stopMovementLoop();
   clearTimeout(bubbleHideTimer);
-  codexWatcher.stop();
 
   if (tray) {
     tray.destroy();
@@ -2329,6 +2387,10 @@ function quitApp() {
   }
 
   app.quit();
+}
+
+function quitApp() {
+  void codexProxyShutdownCoordinator.requestQuit();
 }
 
 // 마우스 따라가기 토글은 펫 메뉴와 트레이 메뉴가 같은 상태를 공유합니다.
@@ -2798,6 +2860,7 @@ function buildUsageBubbleData(usage) {
 
   for (const window of rateLimits.windows || [rateLimits.primary, rateLimits.secondary]) {
     if (!window) continue;
+    if (!shouldDisplayCodexUsageWindow(window)) continue;
 
     // 기록 이후 초기화 시각이 이미 지났으면 실제 사용량은 0으로 리셋된 상태입니다.
     // 오래된 used_percent를 그대로 보여주면 오해를 부르므로 초기화된 것으로 표시합니다.
@@ -2919,6 +2982,7 @@ function registerCodexWatcher() {
   });
 
   codexWatcher.on("working-changed", (isWorking, result, context) => {
+    void codexProxyShutdownCoordinator.handleWorkingChanged(isWorking);
     if (isWorking) {
       // 요청을 처음 받으면 검토 모션으로 시작하고, 뒤의 세부 이벤트에서 읽기/쓰기를 구분합니다.
       pauseAutoMovement("codex", "review");
@@ -3850,7 +3914,13 @@ app.on("second-instance", (_event, argv) => {
   showPetWindowFromTray();
 });
 
-app.on("before-quit", () => {
+app.on("before-quit", (event) => {
+  if (!codexProxyShutdownCoordinator.readyToQuit) {
+    event.preventDefault();
+    void codexProxyShutdownCoordinator.requestQuit();
+    return;
+  }
+
   isQuitting = true;
   unregisterBubbleDisplayListeners();
   activityUsageController.dispose();

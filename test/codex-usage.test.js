@@ -4,7 +4,10 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const { CodexAccountSwitcher } = require("../src/codex-account-switcher");
-const { rateWindowLabel } = require("../src/codex-usage-label");
+const {
+  rateWindowLabel,
+  shouldDisplayCodexUsageWindow,
+} = require("../src/codex-usage-label");
 
 function primary(seconds) {
   return { used_percent: 7, limit_window_seconds: seconds, reset_after_seconds: 30 };
@@ -41,6 +44,20 @@ test("추가 및 코드 리뷰 한도는 scope를 보존하고 알 수 없는 �
   assert.equal(rateWindowLabel(windows[0]), "GPT-5.3-Codex-Spark · 주간 한도");
   assert.equal(rateWindowLabel(windows[1]), "코드 리뷰 · 사용 한도");
   assert.equal(windows[1].window_minutes, null);
+});
+
+test("GPT-5.3-Codex 모델 전용 한도만 화면에서 숨긴다", () => {
+  assert.equal(typeof shouldDisplayCodexUsageWindow, "function");
+  assert.equal(shouldDisplayCodexUsageWindow({ scope: "GPT-5.3-Codex" }), false);
+  assert.equal(shouldDisplayCodexUsageWindow({ scope: "GPT-5.3-Codex-Spark" }), false);
+  assert.equal(shouldDisplayCodexUsageWindow({ scope: "gpt-5.3-codex mini" }), false);
+  assert.equal(
+    shouldDisplayCodexUsageWindow({ label: "GPT-5.3-Codex-Spark · 주간 한도" }),
+    false
+  );
+  assert.equal(shouldDisplayCodexUsageWindow({ scope: "GPT-5.4-Codex" }), true);
+  assert.equal(shouldDisplayCodexUsageWindow({ scope: "코드 리뷰" }), true);
+  assert.equal(shouldDisplayCodexUsageWindow({ window_minutes: 300 }), true);
 });
 
 test("새 이름의 기간 창도 기간 값으로 분류한다", () => {

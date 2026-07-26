@@ -147,6 +147,55 @@ function parseRetryDelayMs(bodyText, headers = {}) {
   return null;
 }
 
+function isQuotaExhaustionResponse(bodyText) {
+  let body;
+  try {
+    body = JSON.parse(String(bodyText ?? ""));
+  } catch {
+    return false;
+  }
+
+  const rateLimits = body?.rate_limits ?? body?.rateLimits;
+  const reachedType =
+    rateLimits?.rate_limit_reached_type ??
+    rateLimits?.rateLimitReachedType ??
+    body?.rate_limit_reached_type ??
+    body?.rateLimitReachedType;
+  const windows = [
+    rateLimits?.primary,
+    rateLimits?.secondary,
+    ...(Array.isArray(rateLimits?.windows) ? rateLimits.windows : []),
+  ].filter(Boolean);
+  const hasRemainingWindow = windows.some((window) => {
+    const usedPercent = Number(window?.used_percent ?? window?.usedPercent);
+    return Number.isFinite(usedPercent) && usedPercent < 100;
+  });
+  if (
+    (reachedType === null || typeof reachedType === "undefined" || reachedType === "") &&
+    hasRemainingWindow
+  ) {
+    return false;
+  }
+
+  const errorCode = [
+    body?.code,
+    body?.type,
+    body?.error?.code,
+    body?.error?.type,
+  ]
+    .filter((value) => typeof value === "string")
+    .join(" ")
+    .toLowerCase();
+  if (/(?:requests?|tokens?)[_-]?rate|too[_-]?many[_-]?requests|concurr|overload/.test(errorCode)) {
+    return false;
+  }
+  if (/usage[_-]?limit|quota|insufficient[_-]?quota|rate[_-]?limit[_-]?reached/.test(errorCode)) {
+    return true;
+  }
+
+  return parseRetryDelayMs(String(bodyText ?? "")) !== null;
+}
+
 const DEFAULT_COOLDOWN_MS = 15 * 60 * 1000;
 const AUTH_FAIL_COOLDOWN_MS = 10 * 60 * 1000;
 // responses 요청 본문 버퍼 상한입니다. 자동 재시도(계정 로테이션)에 필요합니다.
@@ -160,6 +209,7 @@ class CodexProxy {
     resolveAccounts,
     readAuth,
     notifySwitch = () => {},
+    isAccountQuotaExhausted = null,
     upstreamBase = UPSTREAM_BASE,
     port = DEFAULT_PORT,
     log = () => {},
@@ -167,6 +217,7 @@ class CodexProxy {
     this.resolveAccounts = resolveAccounts || (async () => []);
     this.readAuth = readAuth || (() => null);
     this.notifySwitch = notifySwitch;
+    this.isAccountQuotaExhausted = isAccountQuotaExhausted;
     this.upstreamBase = upstreamBase;
     this.preferredPort = port;
     this.log = log;
@@ -174,6 +225,11 @@ class CodexProxy {
     this.port = null;
     // key -> 쿨다운 해제 시각(ms). 429/401을 맞은 계정은 잠시 후보에서 제외합니다.
     this.cooldowns = new Map();
+    // 자동 전환 직후 resolver 캐시가 아직 이전 순서를 돌려줘도 새 계정을 즉시 선호합니다.
+    this.selectedAccountKey = null;
+    // 종료 시 polling watcher보다 정확하게 실제 중계 중인 HTTP/WS 연결을 기다립니다.
+    this.activeConnectionCount = 0;
+    this.idleListeners = new Set();
   }
 
   isCoolingDown(key) {
@@ -194,23 +250,51 @@ class CodexProxy {
     return Boolean(this.server && this.server.listening);
   }
 
+  beginConnection() {
+    this.activeConnectionCount += 1;
+    let finished = false;
+    return () => {
+      if (finished) return;
+      finished = true;
+      this.activeConnectionCount = Math.max(0, this.activeConnectionCount - 1);
+      if (this.activeConnectionCount !== 0) return;
+      for (const listener of this.idleListeners) {
+        try {
+          listener();
+        } catch {
+          // 종료 관찰자 실패가 프록시 응답을 막으면 안 됩니다.
+        }
+      }
+    };
+  }
+
+  onIdle(listener) {
+    this.idleListeners.add(listener);
+    return () => this.idleListeners.delete(listener);
+  }
+
   async start() {
     if (this.running) return this.port;
 
     const server = http.createServer((request, response) => {
+      const finishConnection = this.beginConnection();
       this.handleRequest(request, response).catch((error) => {
         this.log(`proxy request failed: ${error.message || error}`);
         if (!response.headersSent) {
           response.writeHead(502, { "content-type": "application/json" });
         }
         response.end(JSON.stringify({ error: { message: `codepet proxy error: ${error.message || error}` } }));
-      });
+      }).finally(finishConnection);
     });
     // Codex 데스크톱 앱은 responses를 WebSocket으로 보냅니다. 업그레이드 요청은 원시 터널로 중계합니다.
     server.on("upgrade", (request, socket, head) => {
+      const finishConnection = this.beginConnection();
+      socket.once("close", finishConnection);
       this.handleUpgrade(request, socket, head).catch((error) => {
         this.log(`proxy websocket failed: ${error.message || error}`);
         socket.destroy();
+      }).finally(() => {
+        if (socket.destroyed) finishConnection();
       });
     });
     server.keepAliveTimeout = 75000;
@@ -242,6 +326,17 @@ class CodexProxy {
     this.server.close();
     this.server = null;
     this.port = null;
+    this.selectedAccountKey = null;
+  }
+
+  selectAccount(key) {
+    this.selectedAccountKey = key || null;
+  }
+
+  selectAccountAndShouldNotify(key) {
+    if (!key || this.selectedAccountKey === key) return false;
+    this.selectAccount(key);
+    return true;
   }
 
   // 요청 본문을 메모리에 모읍니다. 계정 로테이션 재시도에 같은 본문이 필요하기 때문입니다.
@@ -302,10 +397,22 @@ class CodexProxy {
 
   streamToClient(upstreamResponse, response) {
     return new Promise((resolve, reject) => {
+      let settled = false;
+      const finish = (callback, value) => {
+        if (settled) return;
+        settled = true;
+        callback(value);
+      };
       response.writeHead(upstreamResponse.statusCode || 502, upstreamResponse.headers);
       upstreamResponse.pipe(response);
-      upstreamResponse.once("end", resolve);
-      upstreamResponse.once("error", reject);
+      response.once("finish", () => finish(resolve));
+      response.once("error", (error) => finish(reject, error));
+      response.once("close", () => {
+        if (settled) return;
+        upstreamResponse.destroy();
+        finish(resolve);
+      });
+      upstreamResponse.once("error", (error) => finish(reject, error));
     });
   }
 
@@ -313,9 +420,17 @@ class CodexProxy {
     return new Promise((resolve) => {
       const chunks = [];
       upstreamResponse.on("data", (chunk) => chunks.push(chunk));
-      upstreamResponse.once("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
-      upstreamResponse.once("error", () => resolve(""));
+      upstreamResponse.once("end", () => resolve(Buffer.concat(chunks)));
+      upstreamResponse.once("error", () => resolve(Buffer.alloc(0)));
     });
+  }
+
+  sendBufferedResponse(upstreamResponse, body, response) {
+    const headers = { ...upstreamResponse.headers };
+    delete headers["transfer-encoding"];
+    headers["content-length"] = body.length;
+    response.writeHead(upstreamResponse.statusCode || 502, headers);
+    response.end(body);
   }
 
   async candidateAccounts() {
@@ -325,7 +440,23 @@ class CodexProxy {
     } catch (error) {
       this.log(`resolveAccounts failed: ${error.message || error}`);
     }
-    return accounts.filter((account) => account?.authPath);
+    const candidates = accounts.filter((account) => account?.authPath);
+    if (!this.selectedAccountKey) return candidates;
+
+    const selectedIndex = candidates.findIndex(
+      (account) => account.key === this.selectedAccountKey
+    );
+    if (selectedIndex === -1) {
+      this.selectedAccountKey = null;
+      return candidates;
+    }
+    if (selectedIndex === 0) return candidates;
+
+    return [
+      candidates[selectedIndex],
+      ...candidates.slice(0, selectedIndex),
+      ...candidates.slice(selectedIndex + 1),
+    ];
   }
 
   async authFor(account) {
@@ -338,6 +469,25 @@ class CodexProxy {
       return this.readAuth(account.authPath);
     } catch {
       return null;
+    }
+  }
+
+  async shouldRotateForQuota(account, bodyText) {
+    if (!isQuotaExhaustionResponse(bodyText)) return false;
+    return this.verifyAccountQuotaExhausted(account, true);
+  }
+
+  async verifyAccountQuotaExhausted(account, fallback) {
+    if (typeof this.isAccountQuotaExhausted !== "function") return fallback;
+
+    try {
+      const exhausted = await this.isAccountQuotaExhausted(account);
+      // live usage가 연결된 실행 경로에서는 확인 불가도 "소진 아님"으로 처리합니다.
+      // 429 하나만으로 다른 계정과 장시간 cooldown을 선택하면 오판 복구가 어렵습니다.
+      return typeof exhausted === "boolean" ? exhausted : false;
+    } catch (error) {
+      this.log(`quota verification failed for ${account.key}: ${error.message || error}`);
+      return false;
     }
   }
 
@@ -396,9 +546,18 @@ class CodexProxy {
 
       let buffer = Buffer.alloc(0);
       let settled = false;
+      let headerEnd = -1;
+      let status = 0;
+      let expectedBytes = null;
+      const finish = (raw = buffer) => {
+        cleanup();
+        resolve({ status, raw });
+      };
       const onData = (chunk) => {
         buffer = Buffer.concat([buffer, chunk]);
-        const headerEnd = buffer.indexOf("\r\n\r\n");
+        if (headerEnd === -1) {
+          headerEnd = buffer.indexOf("\r\n\r\n");
+        }
         if (headerEnd === -1) {
           if (buffer.length > 64 * 1024) {
             cleanup();
@@ -406,10 +565,23 @@ class CodexProxy {
           }
           return;
         }
-        cleanup();
         const statusLine = buffer.subarray(0, buffer.indexOf("\r\n")).toString("utf8");
-        const status = Number(statusLine.split(" ")[1]) || 0;
-        resolve({ status, raw: buffer });
+        status = Number(statusLine.split(" ")[1]) || 0;
+        if (status === 101) {
+          finish();
+          return;
+        }
+
+        if (expectedBytes === null) {
+          const headerText = buffer.subarray(0, headerEnd).toString("latin1");
+          const contentLengthMatch = headerText.match(/(?:^|\r\n)content-length:\s*(\d+)/i);
+          if (contentLengthMatch) {
+            expectedBytes = headerEnd + 4 + Number(contentLengthMatch[1]);
+          }
+        }
+        if (expectedBytes !== null && buffer.length >= expectedBytes) {
+          finish(buffer.subarray(0, expectedBytes));
+        }
       };
       const onError = (error) => {
         cleanup();
@@ -418,6 +590,10 @@ class CodexProxy {
       // upstream이 헤더 블록을 다 보내기 전에 연결을 닫으면(FIN) data/error가 아니라 close/end가 옵니다.
       // 이 경우를 잡지 않으면 promise가 영원히 pending 상태로 남아 클라이언트가 무한 대기합니다.
       const onClose = () => {
+        if (headerEnd !== -1) {
+          finish();
+          return;
+        }
         cleanup();
         reject(new Error("upstream closed during websocket handshake"));
       };
@@ -502,7 +678,11 @@ class CodexProxy {
           socket.once(eventName, teardown);
           upstreamSocket.once(eventName, teardown);
         }
-        if (account && account.key !== preferredKey) {
+        if (
+          account &&
+          account.key !== preferredKey &&
+          this.selectAccountAndShouldNotify(account.key)
+        ) {
           try {
             this.notifySwitch(account, "quota");
           } catch {
@@ -513,6 +693,19 @@ class CodexProxy {
       }
 
       upstreamSocket.destroy();
+      if (account && status === 429) {
+        const bodyStart = raw.indexOf("\r\n\r\n");
+        const bodyText = bodyStart === -1
+          ? ""
+          : raw.subarray(bodyStart + 4).toString("utf8");
+        const quotaExhausted = await this.shouldRotateForQuota(account, bodyText);
+        if (!quotaExhausted) {
+          socket.removeListener("error", earlyGuard);
+          socket.removeListener("close", earlyGuard);
+          if (clientAlive) socket.end(raw);
+          return;
+        }
+      }
       if (account && (status === 429 || status === 401)) {
         this.setCooldown(account.key, status === 429 ? DEFAULT_COOLDOWN_MS : AUTH_FAIL_COOLDOWN_MS);
         this.log(`websocket account ${account.key} got ${status}; rotating`);
@@ -576,24 +769,45 @@ class CodexProxy {
         upstreamResponse = await this.forwardStream(target, request.method, headers, request);
       }
       const status = upstreamResponse.statusCode || 0;
-      const retryable = canRotate && (status === 429 || status === 401) && index < ordered.length - 1;
+      const hasNextCandidate = canRotate && index < ordered.length - 1;
 
-      if (status === 429 || status === 401) {
-        const bodyText = retryable ? await this.readWholeResponse(upstreamResponse) : "";
-        const cooldownMs = status === 429
-          ? parseRetryDelayMs(bodyText, upstreamResponse.headers) || DEFAULT_COOLDOWN_MS
-          : AUTH_FAIL_COOLDOWN_MS;
+      if (status === 429) {
+        const responseBody = await this.readWholeResponse(upstreamResponse);
+        const bodyText = responseBody.toString("utf8");
+        if (!(await this.shouldRotateForQuota(account, bodyText))) {
+          this.log(`account ${account.key} got transient 429; keeping account`);
+          this.sendBufferedResponse(upstreamResponse, responseBody, response);
+          return;
+        }
+
+        const cooldownMs =
+          parseRetryDelayMs(bodyText, upstreamResponse.headers) || DEFAULT_COOLDOWN_MS;
         this.setCooldown(account.key, cooldownMs);
         this.log(`account ${account.key} got ${status}; cooldown ${Math.round(cooldownMs / 60000)}m`);
 
-        if (retryable) continue;
-        // 더 시도할 계정이 없으면 읽지 않은 원본 응답을 그대로 넘깁니다.
+        if (hasNextCandidate) continue;
+        this.sendBufferedResponse(upstreamResponse, responseBody, response);
+        return;
+      }
+
+      if (status === 401) {
+        this.setCooldown(account.key, AUTH_FAIL_COOLDOWN_MS);
+        this.log(`account ${account.key} got ${status}; cooldown ${Math.round(AUTH_FAIL_COOLDOWN_MS / 60000)}m`);
+
+        if (hasNextCandidate) {
+          await this.readWholeResponse(upstreamResponse);
+          continue;
+        }
         await this.streamToClient(upstreamResponse, response);
         return;
       }
 
       // 성공: 선호 계정이 아니면 자동 전환 사실을 알립니다.
-      if (isRotatable && account.key !== preferredKey) {
+      if (
+        isRotatable &&
+        account.key !== preferredKey &&
+        this.selectAccountAndShouldNotify(account.key)
+      ) {
         try {
           this.notifySwitch(account, "quota");
         } catch {
@@ -661,6 +875,7 @@ module.exports = {
   CodexProxy,
   DEFAULT_COOLDOWN_MS,
   DEFAULT_PORT,
+  isQuotaExhaustionResponse,
   parseRetryDelayMs,
   accessTokenExpiresAtMs,
   buildBaseUrlLine,

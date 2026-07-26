@@ -1060,6 +1060,9 @@ test("계정 행은 한도를 컴팩트하게 결합하고 별도 사용량 탭�
   );
   assert.match(settingsJs, /function createAccountUsage/);
   assert.match(settingsJs, /account\?\.usage/);
+  assert.match(settingsHtml, /src="\.\/codex-usage-label\.js"/);
+  assert.match(settingsJs, /shouldDisplayCodexUsageWindow/);
+  assert.match(settingsJs, /usage\.gauges\.filter\(shouldDisplayCodexUsageWindow\)/);
   assert.match(settingsJs, /--usage-remaining/);
   assert.match(settingsCss, /\.account-usage-chip/);
   assert.doesNotMatch(settingsHtml, /data-account=/);
@@ -1071,6 +1074,8 @@ test("provider별 모든 계정 사용량을 계정 데이터에 결합해 한 �
   assert.match(mainJs, /loadAccountUsageCards/);
   assert.match(mainJs, /usage = \[\.\.\.codexUsage, \.\.\.agy\.usage, \.\.\.claude\.usage, \.\.\.kimiUsage\]/);
   assert.match(mainJs, /attachAccountUsage\(providers, usage\)/);
+  assert.match(mainJs, /shouldDisplayCodexUsageWindow/);
+  assert.match(mainJs, /if \(!shouldDisplayCodexUsageWindow\(window\)\) continue/);
   assert.doesNotMatch(settingsJs, /function renderUsage/);
   assert.match(settingsJs, /const response = await api\.usage\(\)/);
   assert.match(mainJs, /\["general", "bubble", "accounts"\]\.includes\(section\)/);

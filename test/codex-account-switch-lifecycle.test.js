@@ -59,6 +59,9 @@ function switchHarness({
           return { profile: { label: "두 번째 계정" } };
         },
       },
+      codexProxy: {
+        selectAccount() {},
+      },
       launchCodexDesktopApp: async () => {
         events.push(codexRunning ? "launch-while-running" : "launch-after-exit");
         codexRunning = true;

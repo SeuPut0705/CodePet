@@ -115,7 +115,7 @@ The **Accounts (계정)** view combines connection, switching, deletion, and rem
 
 - Compact remaining-quota chips appear inside every connected Codex, AGY, and Claude account row, plus the managed Kimi login
 - A failed account lookup never hides the other account rows or quotas
-- Codex windows use the actual server duration for five-hour, weekly, monthly, and model-specific limits
+- Codex windows use the actual server duration for five-hour, weekly, and monthly limits; GPT-5.3-Codex model-specific quota is hidden
 - Remaining quota at 30% or less turns yellow; 10% or less turns red
 - Codex warns once per reset window after usage exceeds 90%
 - The first active managed Kimi Code section shows remaining **`5h` and `7d` quota**

@@ -14,6 +14,7 @@ const {
   accountProviderMenuItems,
   connectedAccountProviders,
 } = window.settingsAccountProviders;
+const { shouldDisplayCodexUsageWindow } = window.codexUsageLabel;
 let currentLanguage = "ko";
 
 function t(key, vars) {
@@ -323,7 +324,10 @@ function createAccountUsage(account) {
     return container;
   }
 
-  for (const gauge of usage.gauges) {
+  const gauges = usage.gauges.filter(shouldDisplayCodexUsageWindow);
+  if (!gauges.length) return null;
+
+  for (const gauge of gauges) {
     const used = clampPercent(gauge.usedPercent);
     const remaining = Math.round(100 - used);
     const reset = resetLabel(gauge.resetText);
