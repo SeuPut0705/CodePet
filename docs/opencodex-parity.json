@@ -2361,6 +2361,7 @@
           "test/codex-watcher.test.js",
           "test/kimi-codex-adapter.test.js",
           "test/kimi-codex-models.test.js",
+          "test/open-codex-bun-compat.test.js",
           "test/open-codex-engine-build.test.js",
           "test/open-codex-package-notices.test.js",
           "test/open-codex-parity-report.test.js",

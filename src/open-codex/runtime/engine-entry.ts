@@ -1,11 +1,7 @@
-import {
-  drainAndShutdown,
-  getActiveTurnCount,
-  isDraining,
-  startServer,
-} from "../../../vendor/opencodex/src/server/index";
+import { installBunCompatibility } from "./bun-compat";
 
-type EmbeddedServer = ReturnType<typeof startServer>;
+type ServerModule = typeof import("../../../vendor/opencodex/src/server/index");
+type EmbeddedServer = ReturnType<ServerModule["startServer"]>;
 
 export interface EmbeddedEngineOptions {
   port?: number;
@@ -23,18 +19,35 @@ export interface EmbeddedEngineStatus {
 }
 
 let server: EmbeddedServer | undefined;
+let serverModule: ServerModule | undefined;
+let serverModulePromise: Promise<ServerModule> | undefined;
+
+installBunCompatibility();
+
+function loadServerModule(): Promise<ServerModule> {
+  if (!serverModulePromise) {
+    serverModulePromise = import("../../../vendor/opencodex/src/server/index").then((module) => {
+      serverModule = module;
+      return module;
+    });
+  }
+  return serverModulePromise;
+}
 
 export function getEmbeddedEngineStatus(): EmbeddedEngineStatus {
   return {
-    activeTurns: getActiveTurnCount(),
-    draining: isDraining(),
+    activeTurns: serverModule?.getActiveTurnCount() ?? 0,
+    draining: serverModule?.isDraining() ?? false,
     port: server?.port ?? null,
     running: server !== undefined,
   };
 }
 
-export function startEmbeddedEngine(options: EmbeddedEngineOptions = {}): EmbeddedEngineStatus {
-  if (!server) server = startServer(options.port);
+export async function startEmbeddedEngine(
+  options: EmbeddedEngineOptions = {},
+): Promise<EmbeddedEngineStatus> {
+  const runtime = await loadServerModule();
+  if (!server) server = runtime.startServer(options.port);
   return getEmbeddedEngineStatus();
 }
 
@@ -42,8 +55,9 @@ export async function stopEmbeddedEngine(
   options: EmbeddedEngineStopOptions = {},
 ): Promise<EmbeddedEngineStatus> {
   if (!server) return getEmbeddedEngineStatus();
+  const runtime = await loadServerModule();
   const runningServer = server;
-  await drainAndShutdown(runningServer, options.timeoutMs ?? 30_000);
+  await runtime.drainAndShutdown(runningServer, options.timeoutMs ?? 30_000);
   server = undefined;
   return getEmbeddedEngineStatus();
 }
