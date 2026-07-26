@@ -62,12 +62,13 @@ function snapshotEntryHash({
   filePath,
   expectedMode,
   allowExecutableMaterialization = false,
+  materializedSymlinkTarget,
 } = {}) {
   const actualMode = snapshotEntryMode(filePath);
   if (expectedMode === "120000") {
     const target = actualMode === "120000"
       ? fs.readlinkSync(filePath)
-      : fs.readFileSync(filePath, "utf8");
+      : materializedSymlinkTarget ?? fs.readFileSync(filePath, "utf8");
     if (internalSymlinkTarget(rootDir, filePath, target) === null) return null;
     return sha256Value(`symlink:${target}`);
   }
@@ -150,7 +151,7 @@ function lstatOrNull(filePath) {
   }
 }
 
-function verifyVendoredSnapshot({ vendorDir, platform = process.platform }) {
+function verifyVendoredSnapshot({ vendorDir, platform = process.platform, readMaterializedSymlinkTarget }) {
   try {
     const manifestPath = path.join(vendorDir, "UPSTREAM.json");
     const manifest = validateManifest(JSON.parse(fs.readFileSync(manifestPath, "utf8")));
@@ -183,6 +184,9 @@ function verifyVendoredSnapshot({ vendorDir, platform = process.platform }) {
             filePath,
             expectedMode: mode,
             allowExecutableMaterialization: materializedWindowsExecutable,
+            materializedSymlinkTarget: materializedWindowsSymlink
+              ? readMaterializedSymlinkTarget?.(relativePath)
+              : undefined,
           });
           if (actualHash === null && mode === "120000") {
             errors.push(`unsafe symbolic link: ${relativePath}`);
