@@ -2,6 +2,7 @@ import { spawnSync as nodeSpawnSync } from "node:child_process";
 import { createHash, type BinaryLike } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { inspect as nodeInspect } from "node:util";
+import { createNodeBunServer } from "./node-bun-server.ts";
 
 type HashInput = string | ArrayBuffer | ArrayBufferView;
 
@@ -112,6 +113,7 @@ export interface BunCompatibility {
   hash: typeof deterministicHash;
   inspect: typeof nodeInspect;
   revision: string;
+  serve: typeof createNodeBunServer;
   sleep: typeof sleep;
   sleepSync: typeof sleepSync;
   spawnSync: typeof spawnSync;
@@ -126,6 +128,7 @@ export function installBunCompatibility(): BunCompatibility {
     hash: deterministicHash,
     inspect: nodeInspect,
     revision: `node-${process.version}`,
+    serve: createNodeBunServer,
     sleep,
     sleepSync,
     spawnSync,
