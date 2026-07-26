@@ -9,8 +9,8 @@
   "summary": {
     "total": 251,
     "statusCounts": {
-      "imported": 251,
-      "contract-tested": 0,
+      "imported": 249,
+      "contract-tested": 2,
       "runtime-verified": 0
     }
   },
@@ -362,7 +362,8 @@
           "src/adapters/cursor/live-smoke-gate.ts"
         ],
         "codePetEvidence": [
-          "src/claude-live-credentials.js"
+          "src/claude-live-credentials.js",
+          "test/open-codex-engine-smoke.test.js"
         ]
       },
       {
@@ -1067,20 +1068,26 @@
       },
       {
         "id": "transports:server/index",
-        "status": "imported",
+        "status": "contract-tested",
         "upstreamEvidence": [
           "src/server/index.ts"
         ],
-        "codePetEvidence": []
+        "codePetEvidence": [
+          "scripts/opencodex/engine-smoke.js",
+          "test/open-codex-engine-smoke.test.js"
+        ]
       },
       {
         "id": "transports:server/lifecycle",
-        "status": "imported",
+        "status": "contract-tested",
         "upstreamEvidence": [
           "src/server/lifecycle.ts"
         ],
         "codePetEvidence": [
-          "test/codex-account-switch-lifecycle.test.js"
+          "scripts/opencodex/engine-smoke.js",
+          "test/codex-account-switch-lifecycle.test.js",
+          "test/open-codex-engine-host.test.js",
+          "test/open-codex-engine-smoke.test.js"
         ]
       },
       {
@@ -2363,10 +2370,13 @@
           "test/codex-thread-title.test.js",
           "test/codex-usage.test.js",
           "test/codex-watcher.test.js",
+          "test/fixtures/open-codex-engine-worker-fixture.js",
           "test/kimi-codex-adapter.test.js",
           "test/kimi-codex-models.test.js",
           "test/open-codex-bun-compat.test.js",
           "test/open-codex-engine-build.test.js",
+          "test/open-codex-engine-host.test.js",
+          "test/open-codex-engine-smoke.test.js",
           "test/open-codex-node-server.test.js",
           "test/open-codex-package-notices.test.js",
           "test/open-codex-parity-report.test.js",

@@ -10,6 +10,9 @@ const {
 const {
   applyUpstreamCredentialRedaction,
 } = require("../patches/opencodex/redact-upstream-credential-literals");
+const {
+  applyDynamicHealthPort,
+} = require("../patches/opencodex/dynamic-health-port");
 const { applyPatchSeries } = require("../scripts/opencodex/sync");
 
 const sourceFixture = `
@@ -87,6 +90,31 @@ test("credential redaction patch는 문서의 token-looking literal을 값 노�
   assert.match(patched, /\[REDACTED_(?:OPENAI_KEY|GOOGLE_CLIENT_SECRET)\]/);
   assert.equal(second.changed, false);
   assert.equal(fs.readFileSync(filePath, "utf8"), patched);
+});
+
+test("dynamic health port patch는 요청 시점의 실제 listener port를 보고한다", (t) => {
+  const vendorDir = fs.mkdtempSync(path.join(os.tmpdir(), "codepet-opencodex-health-port-"));
+  t.after(() => fs.rmSync(vendorDir, { recursive: true, force: true }));
+  const filePath = path.join(vendorDir, "src", "server", "index.ts");
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(filePath, [
+    "  const listenPort = 0;",
+    "    async fetch(req, requestServer): Promise<Response> {",
+    "      const url = new URL(req.url);",
+    "      return jsonResponse({ status: \"ok\", port: listenPort }, 200, req, config);",
+    "    }",
+    "",
+  ].join("\n"));
+
+  const first = applyDynamicHealthPort({ vendorDir });
+  const patched = fs.readFileSync(filePath, "utf8");
+  const second = applyDynamicHealthPort({ vendorDir });
+
+  assert.equal(first.changed, true);
+  assert.match(patched, /const actualRequestPort = requestServer\.port \?\? listenPort/);
+  assert.match(patched, /setCorsOrigin\(actualRequestPort\)/);
+  assert.match(patched, /port: actualRequestPort/);
+  assert.equal(second.changed, false);
 });
 
 test("sync patch series는 선언 순서대로 transformer를 적용하고 ID를 반환한다", (t) => {

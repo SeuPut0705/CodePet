@@ -35,6 +35,17 @@ const GENERIC_TOKENS = new Set([
   "store",
   "types",
 ]);
+const CONTRACT_EVIDENCE = Object.freeze({
+  "transports:server/index": [
+    "scripts/opencodex/engine-smoke.js",
+    "test/open-codex-engine-smoke.test.js",
+  ],
+  "transports:server/lifecycle": [
+    "scripts/opencodex/engine-smoke.js",
+    "test/open-codex-engine-host.test.js",
+    "test/open-codex-engine-smoke.test.js",
+  ],
+});
 
 function listFiles(rootDir, relativeDir, extension) {
   const absoluteDir = path.join(rootDir, ...relativeDir.split("/"));
@@ -77,12 +88,19 @@ function entryId(categoryName, upstreamPath) {
 
 function buildCategory({ categoryName, roots, vendorDir, candidates }) {
   const upstreamFiles = [...new Set(roots.flatMap((root) => listFiles(vendorDir, root, ".ts")))].sort();
-  return upstreamFiles.map((upstreamPath) => ({
-    id: entryId(categoryName, upstreamPath),
-    status: "imported",
-    upstreamEvidence: [upstreamPath],
-    codePetEvidence: matchingCodePetEvidence(upstreamPath, candidates),
-  }));
+  return upstreamFiles.map((upstreamPath) => {
+    const id = entryId(categoryName, upstreamPath);
+    const contractEvidence = CONTRACT_EVIDENCE[id] || [];
+    return {
+      id,
+      status: contractEvidence.length > 0 ? "contract-tested" : "imported",
+      upstreamEvidence: [upstreamPath],
+      codePetEvidence: [...new Set([
+        ...matchingCodePetEvidence(upstreamPath, candidates),
+        ...contractEvidence,
+      ])].sort(),
+    };
+  });
 }
 
 function buildParityReport({ vendorDir = DEFAULT_VENDOR_DIR, codePetRoot = PROJECT_ROOT } = {}) {
@@ -97,7 +115,9 @@ function buildParityReport({ vendorDir = DEFAULT_VENDOR_DIR, codePetRoot = PROJE
       candidates,
     });
   }
-  const total = Object.values(categories).reduce((sum, entries) => sum + entries.length, 0);
+  const entries = Object.values(categories).flat();
+  const total = entries.length;
+  const contractTested = entries.filter((entry) => entry.status === "contract-tested").length;
   return {
     schemaVersion: 1,
     upstream: {
@@ -109,8 +129,8 @@ function buildParityReport({ vendorDir = DEFAULT_VENDOR_DIR, codePetRoot = PROJE
     summary: {
       total,
       statusCounts: {
-        imported: total,
-        "contract-tested": 0,
+        imported: total - contractTested,
+        "contract-tested": contractTested,
         "runtime-verified": 0,
       },
     },
@@ -132,7 +152,7 @@ function writeParityReport({
 function main() {
   const report = writeParityReport();
   process.stdout.write(
-    `OpenCodex parity baseline generated (${report.summary.total} imported capabilities)\n`
+    `OpenCodex parity baseline generated (${report.summary.total} capabilities)\n`
   );
 }
 

@@ -21,6 +21,10 @@ const categoryNames = [
   "management",
   "cliRuntime",
 ];
+const contractTestedIds = new Set([
+  "transports:server/index",
+  "transports:server/lifecycle",
+]);
 
 test("동등성 보고서는 OpenCodex 런타임 범주와 실제 upstream evidence를 목록화한다", () => {
   const report = buildParityReport({ vendorDir, codePetRoot });
@@ -30,13 +34,14 @@ test("동등성 보고서는 OpenCodex 런타임 범주와 실제 upstream evide
     const entries = report.categories[categoryName];
     assert.ok(entries.length > 0, `${categoryName} must not be empty`);
     for (const entry of entries) {
-      assert.equal(entry.status, "imported");
+      assert.equal(entry.status, contractTestedIds.has(entry.id) ? "contract-tested" : "imported");
       assert.ok(entry.upstreamEvidence.length > 0);
       for (const evidence of entry.upstreamEvidence) {
         assert.equal(fs.existsSync(path.join(vendorDir, evidence)), true, evidence);
       }
     }
   }
+  assert.equal(report.summary.statusCounts["contract-tested"], contractTestedIds.size);
   assert.equal(report.summary.statusCounts["runtime-verified"], 0);
   assert.equal(
     report.summary.total,

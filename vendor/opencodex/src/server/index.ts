@@ -315,6 +315,8 @@ export function startServer(port?: number) {
     hostname: bindHost,
     idleTimeout: 255,
     async fetch(req, requestServer): Promise<Response> {
+      const actualRequestPort = requestServer.port ?? listenPort;
+      if (actualRequestPort !== listenPort) setCorsOrigin(actualRequestPort);
       const url = new URL(req.url);
       markActivity(`${req.method} ${url.pathname}`);
 
@@ -354,7 +356,7 @@ export function startServer(port?: number) {
 
       if (url.pathname === "/healthz" && req.method === "GET") {
         // service/pid/port let CLI liveness reject foreign 200s and verify pid identity.
-        return jsonResponse({ status: "ok", service: "opencodex", version: VERSION, uptime: process.uptime(), pid: process.pid, port: listenPort }, 200, req, config);
+        return jsonResponse({ status: "ok", service: "opencodex", version: VERSION, uptime: process.uptime(), pid: process.pid, port: actualRequestPort }, 200, req, config);
       }
 
       if (url.pathname.startsWith("/api/")) {

@@ -7,6 +7,11 @@
       "reason": "Remove static OAuth credential defaults blocked by GitHub Push Protection and require environment injection."
     },
     {
+      "id": "dynamic-health-port",
+      "module": "dynamic-health-port.js",
+      "reason": "Report the actual listener port in health checks when the embedded Node engine binds an ephemeral port."
+    },
+    {
       "id": "redact-upstream-credential-literals",
       "module": "redact-upstream-credential-literals.js",
       "reason": "Redact credential-shaped literals from vendored source and documentation before public repository publication."

@@ -24,6 +24,7 @@ function createEngineHost({
   startupTimeoutMs = DEFAULT_STARTUP_TIMEOUT_MS,
   requestTimeoutMs = DEFAULT_REQUEST_TIMEOUT_MS,
   workerData,
+  workerEnv,
 } = {}) {
   if (typeof workerPath !== "string" || workerPath.length === 0) {
     throw new EngineHostError("ENGINE_INVALID_ARGUMENT", "workerPath must be a non-empty string");
@@ -91,7 +92,7 @@ function createEngineHost({
   function spawnWorker() {
     let target;
     try {
-      target = new Worker(workerPath, { workerData });
+      target = new Worker(workerPath, { workerData, env: workerEnv });
     } catch {
       state = "failed";
       throw new EngineHostError("ENGINE_WORKER_START_FAILED", "OpenCodex engine worker could not start");

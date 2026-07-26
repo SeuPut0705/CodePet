@@ -11,6 +11,7 @@
     "test": "node --test \"test/**/*.test.js\"",
     "dist": "npm run opencodex:verify && npm run opencodex:package-notices && node scripts/build.js",
     "opencodex:build-engine": "node scripts/opencodex/build-engine.js",
+    "opencodex:engine-smoke": "node scripts/opencodex/engine-smoke.js",
     "opencodex:package-notices": "node scripts/opencodex/verify-package-notices.js",
     "opencodex:parity": "node scripts/opencodex/parity-report.js",
     "opencodex:runtime-inventory": "node scripts/opencodex/runtime-inventory.js",
