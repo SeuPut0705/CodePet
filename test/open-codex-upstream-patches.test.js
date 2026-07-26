@@ -7,6 +7,9 @@ const test = require("node:test");
 const {
   applyGoogleAntigravityEnvOnly,
 } = require("../patches/opencodex/google-antigravity-env-only");
+const {
+  applyUpstreamCredentialRedaction,
+} = require("../patches/opencodex/redact-upstream-credential-literals");
 const { applyPatchSeries } = require("../scripts/opencodex/sync");
 
 const sourceFixture = `
@@ -61,6 +64,29 @@ test("Google Antigravity patch는 이미 적용된 파일에서 멱등이다", (
 
   assert.equal(result.changed, false);
   assert.equal(fs.readFileSync(filePath, "utf8"), once);
+});
+
+test("credential redaction patch는 문서의 token-looking literal을 값 노출 없이 제거한다", (t) => {
+  const vendorDir = fs.mkdtempSync(path.join(os.tmpdir(), "codepet-opencodex-redaction-"));
+  t.after(() => fs.rmSync(vendorDir, { recursive: true, force: true }));
+  const docsDir = path.join(vendorDir, "devlog");
+  fs.mkdirSync(docsDir, { recursive: true });
+  const filePath = path.join(docsDir, "security.md");
+  const openAiFixture = `sk-${"a".repeat(24)}`;
+  const googleFixture = `GOCSPX-${"b".repeat(24)}`;
+  fs.writeFileSync(filePath, `fixtures ${openAiFixture} ${googleFixture}\n`);
+
+  const first = applyUpstreamCredentialRedaction({ vendorDir });
+  const patched = fs.readFileSync(filePath, "utf8");
+  const second = applyUpstreamCredentialRedaction({ vendorDir });
+
+  assert.equal(first.changed, true);
+  assert.equal(first.filesChanged, 1);
+  assert.doesNotMatch(patched, /sk-[A-Za-z0-9_-]{20,}/);
+  assert.doesNotMatch(patched, /GOCSPX-[A-Za-z0-9_-]{10,}/);
+  assert.match(patched, /\[REDACTED_(?:OPENAI_KEY|GOOGLE_CLIENT_SECRET)\]/);
+  assert.equal(second.changed, false);
+  assert.equal(fs.readFileSync(filePath, "utf8"), patched);
 });
 
 test("sync patch series는 선언 순서대로 transformer를 적용하고 ID를 반환한다", (t) => {

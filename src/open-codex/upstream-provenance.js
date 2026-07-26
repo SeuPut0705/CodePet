@@ -57,7 +57,12 @@ function internalSymlinkTarget(rootDir, filePath, target) {
   return null;
 }
 
-function snapshotEntryHash({ rootDir, filePath, expectedMode } = {}) {
+function snapshotEntryHash({
+  rootDir,
+  filePath,
+  expectedMode,
+  allowExecutableMaterialization = false,
+} = {}) {
   const actualMode = snapshotEntryMode(filePath);
   if (expectedMode === "120000") {
     const target = actualMode === "120000"
@@ -66,7 +71,10 @@ function snapshotEntryHash({ rootDir, filePath, expectedMode } = {}) {
     if (internalSymlinkTarget(rootDir, filePath, target) === null) return null;
     return sha256Value(`symlink:${target}`);
   }
-  return actualMode === expectedMode ? sha256File(filePath) : null;
+  const materializedExecutable = allowExecutableMaterialization
+    && expectedMode === "100755"
+    && actualMode === "100644";
+  return actualMode === expectedMode || materializedExecutable ? sha256File(filePath) : null;
 }
 
 function requireString(manifest, field) {
@@ -142,7 +150,7 @@ function lstatOrNull(filePath) {
   }
 }
 
-function verifyVendoredSnapshot({ vendorDir }) {
+function verifyVendoredSnapshot({ vendorDir, platform = process.platform }) {
   try {
     const manifestPath = path.join(vendorDir, "UPSTREAM.json");
     const manifest = validateManifest(JSON.parse(fs.readFileSync(manifestPath, "utf8")));
@@ -164,10 +172,18 @@ function verifyVendoredSnapshot({ vendorDir }) {
       } else {
         const actualMode = snapshotEntryMode(filePath);
         const materializedWindowsSymlink = mode === "120000" && actualMode === "100644";
-        if (actualMode !== mode && !materializedWindowsSymlink) {
+        const materializedWindowsExecutable = platform === "win32"
+          && mode === "100755"
+          && actualMode === "100644";
+        if (actualMode !== mode && !materializedWindowsSymlink && !materializedWindowsExecutable) {
           errors.push(`mode mismatch: ${relativePath}`);
         } else {
-          const actualHash = snapshotEntryHash({ rootDir: vendorDir, filePath, expectedMode: mode });
+          const actualHash = snapshotEntryHash({
+            rootDir: vendorDir,
+            filePath,
+            expectedMode: mode,
+            allowExecutableMaterialization: materializedWindowsExecutable,
+          });
           if (actualHash === null && mode === "120000") {
             errors.push(`unsafe symbolic link: ${relativePath}`);
           } else if (actualHash !== hash) {

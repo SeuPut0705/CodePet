@@ -133,3 +133,19 @@ test("검증기는 snapshot 내부를 가리키는 symlink의 대상까지 검�
   assert.equal(result.ok, false);
   assert.ok(result.errors.includes("unsafe symbolic link: src/entry.ts"));
 });
+
+test("Windows checkout은 실행 비트를 일반 파일로 materialize해도 content를 검증한다", (t) => {
+  const vendorDir = writeFixture(t);
+  const sourcePath = path.join(vendorDir, "src", "index.ts");
+  const source = fs.readFileSync(sourcePath);
+  fs.chmodSync(sourcePath, 0o644);
+  fs.writeFileSync(
+    path.join(vendorDir, "FILES.sha256"),
+    `${sha256("MIT License\nfixture\n")}  100644  LICENSE\n${sha256(source)}  100755  src/index.ts\n`
+  );
+
+  assert.equal(verifyVendoredSnapshot({ vendorDir, platform: "win32" }).ok, true);
+  const linuxResult = verifyVendoredSnapshot({ vendorDir, platform: "linux" });
+  assert.equal(linuxResult.ok, false);
+  assert.ok(linuxResult.errors.includes("mode mismatch: src/index.ts"));
+});

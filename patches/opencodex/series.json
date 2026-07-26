@@ -5,6 +5,11 @@
       "id": "google-antigravity-env-only",
       "module": "google-antigravity-env-only.js",
       "reason": "Remove static OAuth credential defaults blocked by GitHub Push Protection and require environment injection."
+    },
+    {
+      "id": "redact-upstream-credential-literals",
+      "module": "redact-upstream-credential-literals.js",
+      "reason": "Redact credential-shaped literals from vendored source and documentation before public repository publication."
     }
   ]
 }
