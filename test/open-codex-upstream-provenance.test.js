@@ -173,4 +173,31 @@ test("Windows checkout의 materialized symlink는 Git index target으로 검증�
     readMaterializedSymlinkTarget: (relativePath) => relativePath === "src/entry.ts" ? "index.ts" : null,
   });
   assert.equal(result.ok, true);
+  const linuxResult = verifyVendoredSnapshot({ vendorDir, platform: "linux" });
+  assert.ok(linuxResult.errors.includes("mode mismatch: src/entry.ts"));
+});
+
+test("Windows 실제 symlink도 OS 표현 대신 Git index target으로 검증한다", (t) => {
+  const vendorDir = writeFixture(t);
+  const entryPath = path.join(vendorDir, "src", "entry.ts");
+  fs.symlinkSync(".\\index.ts", entryPath);
+  fs.writeFileSync(
+    path.join(vendorDir, "FILES.sha256"),
+    [
+      `${sha256("MIT License\nfixture\n")}  100644  LICENSE`,
+      `${sha256("symlink:index.ts")}  120000  src/entry.ts`,
+      `${sha256("export const value = 1;\n")}  100644  src/index.ts`,
+      "",
+    ].join("\n")
+  );
+  fs.writeFileSync(path.join(vendorDir, "UPSTREAM.json"), `${JSON.stringify(manifest({
+    licenseSha256: sha256("MIT License\nfixture\n"), trackedFiles: 3,
+  }), null, 2)}\n`);
+
+  const result = verifyVendoredSnapshot({
+    vendorDir,
+    platform: "win32",
+    readMaterializedSymlinkTarget: (relativePath) => relativePath === "src/entry.ts" ? "index.ts" : null,
+  });
+  assert.equal(result.ok, true);
 });

@@ -66,9 +66,8 @@ function snapshotEntryHash({
 } = {}) {
   const actualMode = snapshotEntryMode(filePath);
   if (expectedMode === "120000") {
-    const target = actualMode === "120000"
-      ? fs.readlinkSync(filePath)
-      : materializedSymlinkTarget ?? fs.readFileSync(filePath, "utf8");
+    const target = materializedSymlinkTarget
+      ?? (actualMode === "120000" ? fs.readlinkSync(filePath) : fs.readFileSync(filePath, "utf8"));
     if (internalSymlinkTarget(rootDir, filePath, target) === null) return null;
     return sha256Value(`symlink:${target}`);
   }
@@ -172,7 +171,10 @@ function verifyVendoredSnapshot({ vendorDir, platform = process.platform, readMa
         errors.push(`not a regular file: ${relativePath}`);
       } else {
         const actualMode = snapshotEntryMode(filePath);
-        const materializedWindowsSymlink = mode === "120000" && actualMode === "100644";
+        const materializedWindowsSymlink = platform === "win32"
+          && mode === "120000"
+          && actualMode === "100644";
+        const windowsSymlink = platform === "win32" && mode === "120000";
         const materializedWindowsExecutable = platform === "win32"
           && mode === "100755"
           && actualMode === "100644";
@@ -184,7 +186,7 @@ function verifyVendoredSnapshot({ vendorDir, platform = process.platform, readMa
             filePath,
             expectedMode: mode,
             allowExecutableMaterialization: materializedWindowsExecutable,
-            materializedSymlinkTarget: materializedWindowsSymlink
+            materializedSymlinkTarget: windowsSymlink
               ? readMaterializedSymlinkTarget?.(relativePath)
               : undefined,
           });
