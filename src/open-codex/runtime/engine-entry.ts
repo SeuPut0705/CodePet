@@ -1,7 +1,7 @@
 import { installBunCompatibility } from "./bun-compat";
 
 type ServerModule = typeof import("../../../vendor/opencodex/src/server/index");
-type EmbeddedServer = ReturnType<ServerModule["startServer"]>;
+type EmbeddedServer = ReturnType<ServerModule["startServer"]> & { ready?: Promise<void> };
 
 export interface EmbeddedEngineOptions {
   port?: number;
@@ -19,6 +19,7 @@ export interface EmbeddedEngineStatus {
 }
 
 let server: EmbeddedServer | undefined;
+let serverReadyPromise: Promise<void> | undefined;
 let serverModule: ServerModule | undefined;
 let serverModulePromise: Promise<ServerModule> | undefined;
 
@@ -47,7 +48,22 @@ export async function startEmbeddedEngine(
   options: EmbeddedEngineOptions = {},
 ): Promise<EmbeddedEngineStatus> {
   const runtime = await loadServerModule();
-  if (!server) server = runtime.startServer(options.port);
+  if (!server) {
+    const startingServer = runtime.startServer(options.port) as EmbeddedServer;
+    server = startingServer;
+    serverReadyPromise = (async () => {
+      try {
+        await startingServer.ready;
+      } catch (error) {
+        if (server === startingServer) server = undefined;
+        await startingServer.stop(true);
+        throw error;
+      } finally {
+        serverReadyPromise = undefined;
+      }
+    })();
+  }
+  await serverReadyPromise;
   return getEmbeddedEngineStatus();
 }
 
