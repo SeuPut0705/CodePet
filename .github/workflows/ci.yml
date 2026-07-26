@@ -48,6 +48,12 @@ jobs:
           npm run opencodex:parity
           git diff --exit-code -- docs/opencodex-parity.json
 
+      - name: Build embedded OpenCodex engine
+        run: npm run opencodex:build-engine
+
+      - name: Smoke test embedded OpenCodex engine
+        run: npm run opencodex:engine-smoke
+
       - name: Run tests
         run: npm test
 

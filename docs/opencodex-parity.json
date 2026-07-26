@@ -1085,6 +1085,7 @@
         ],
         "codePetEvidence": [
           "scripts/opencodex/engine-smoke.js",
+          "src/open-codex/shadow-lifecycle.js",
           "test/codex-account-switch-lifecycle.test.js",
           "test/open-codex-engine-host.test.js",
           "test/open-codex-engine-smoke.test.js"
@@ -1490,6 +1491,7 @@
           "src/claude-account-metadata.js",
           "src/claude-account-switcher.js",
           "src/codex-account-switcher.js",
+          "src/open-codex/shadow-lifecycle.js",
           "src/settings-account-providers.js",
           "test/account-submenu.test.js",
           "test/account-usage.test.js",
@@ -1757,6 +1759,7 @@
           "test/claude-account-metadata.test.js",
           "test/codex-account-switch-lifecycle.test.js",
           "test/codex-account-switcher.test.js",
+          "test/open-codex-main-shadow.test.js",
           "test/provider-main-integration.test.js",
           "test/settings-account-providers.test.js"
         ]
@@ -1781,6 +1784,7 @@
           "test/claude-account-metadata.test.js",
           "test/codex-account-switch-lifecycle.test.js",
           "test/codex-account-switcher.test.js",
+          "test/open-codex-main-shadow.test.js",
           "test/provider-main-integration.test.js",
           "test/settings-account-providers.test.js"
         ]
@@ -2377,6 +2381,7 @@
           "test/open-codex-engine-build.test.js",
           "test/open-codex-engine-host.test.js",
           "test/open-codex-engine-smoke.test.js",
+          "test/open-codex-main-shadow.test.js",
           "test/open-codex-node-server.test.js",
           "test/open-codex-package-notices.test.js",
           "test/open-codex-parity-report.test.js",

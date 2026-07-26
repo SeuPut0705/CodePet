@@ -1,6 +1,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const { build, Platform } = require("electron-builder");
+const { buildEngine } = require("./opencodex/build-engine");
 
 const projectDir = path.resolve(__dirname, "..");
 const outputDir = path.join(projectDir, "artifacts");
@@ -31,6 +32,10 @@ function resolveTargetPlatform() {
 
 async function main() {
   try {
+    await buildEngine({
+      projectRoot: projectDir,
+      outputPath: path.join(projectDir, "build", "generated", "opencodex-engine.mjs"),
+    });
     await build({
       projectDir,
       targets: resolveTargetPlatform().createTarget(),

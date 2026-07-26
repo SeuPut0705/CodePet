@@ -26,9 +26,13 @@
     },
     "files": [
       "src/**/*",
+      "build/generated/opencodex-engine.mjs",
       "build/icon.ico",
       "build/icon.png",
       "package.json"
+    ],
+    "asarUnpack": [
+      "build/generated/opencodex-engine.mjs"
     ],
     "extraResources": [
       {
@@ -55,8 +59,14 @@
     "win": {
       "icon": "build/icon.ico",
       "target": [
+        "nsis",
         "portable"
       ]
+    },
+    "nsis": {
+      "artifactName": "CodePet-Setup-${version}.exe",
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
     },
     "portable": {
       "artifactName": "CodePet-${version}.exe"

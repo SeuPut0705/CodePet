@@ -60,6 +60,8 @@ const {
   CodexProxyShutdownCoordinator,
   prepareCodexProxyForQuit,
 } = require("./codex-proxy-shutdown");
+const { createEngineHost } = require("./open-codex/engine-host");
+const { createOpenCodexShadowLifecycle } = require("./open-codex/shadow-lifecycle");
 const { createActivityHeading: activityHeading } = require("./activity-title");
 const { formatActivityMessage } = require("./activity-message");
 const {
@@ -176,6 +178,7 @@ const WINDOW_CONFIG = Object.freeze({
 // 운영처럼 조용히 확인하려면 환경변수를 비워 두면 됩니다.
 const OPEN_DEVTOOLS =
   process.env.PET_DEVTOOLS === "1" || process.argv.includes("--devtools");
+const OPEN_CODEX_SHADOW_ENABLED = process.env.CODEPET_OPENCODEX_SHADOW === "1";
 
 // 이동 관련 값은 여기만 바꾸면 됩니다.
 // speedPxPerTick은 16ms마다 이동하는 픽셀 수라서 값을 키우면 펫이 더 빨리 걸어갑니다.
@@ -756,6 +759,41 @@ function teardownCodexProxyOnQuit() {
   codexProxy.stop();
   codexProxyActive = false;
 }
+
+function openCodexEngineBundlePath() {
+  if (app.isPackaged) {
+    return path.join(
+      process.resourcesPath,
+      "app.asar.unpacked",
+      "build",
+      "generated",
+      "opencodex-engine.mjs"
+    );
+  }
+  return path.join(__dirname, "..", "build", "generated", "opencodex-engine.mjs");
+}
+
+function openCodexShadowEnvironment() {
+  const shadowRoot = path.join(app.getPath("userData"), "opencodex-shadow");
+  const codexHome = path.join(shadowRoot, "codex");
+  const openCodexHome = path.join(shadowRoot, "opencodex");
+  fs.mkdirSync(codexHome, { recursive: true });
+  fs.mkdirSync(openCodexHome, { recursive: true });
+  return {
+    ...process.env,
+    CODEX_HOME: codexHome,
+    OPENCODEX_HOME: openCodexHome,
+  };
+}
+
+const openCodexShadowLifecycle = createOpenCodexShadowLifecycle({
+  enabled: OPEN_CODEX_SHADOW_ENABLED,
+  createHost: () => createEngineHost({
+    workerData: { enginePath: openCodexEngineBundlePath() },
+    workerEnv: openCodexShadowEnvironment(),
+  }),
+  log: appendDebugLog,
+});
 codexAccountSwitcher.cleanupLegacyCodePetState();
 codexAccountSwitcher.ensureCurrentAccountProfile();
 const codexWatcher = new CodexWatcher();
@@ -766,28 +804,31 @@ const codexProxyShutdownCoordinator = new CodexProxyShutdownCoordinator({
   // idle 전환 직후 새 요청이 붙는 경합을 흡수한 뒤 한 번 더 실제 상태를 확인합니다.
   waitForIdleConfirmation: () =>
     new Promise((resolve) => setTimeout(resolve, 250)),
-  prepareForQuit: () => prepareCodexProxyForQuit({
-    proxyActive: codexProxyActive,
-    isDesktopRunning: isCodexDesktopAppRunning,
-    disableProxyConfig: disableProxyInConfig,
-    stopDesktop: stopCodexDesktopApp,
-    waitForDesktopExit: waitForCodexDesktopExit,
-    launchDesktop: launchCodexDesktopApp,
-    stopProxy: () => {
-      codexProxy.stop();
-      codexProxyActive = false;
-    },
-    restoreProxyConfig: () => {
-      if (!codexProxy.running || !codexProxy.port) {
-        throw new Error("Codex 프록시를 복구할 수 없습니다.");
-      }
-      if (!codexProxyCatalogPath) {
-        throw new Error("Codex 모델 카탈로그를 복구할 수 없습니다.");
-      }
-      enableProxyInConfig(codexProxy.port, { catalogPath: codexProxyCatalogPath });
-      codexProxyActive = true;
-    },
-  }),
+  prepareForQuit: async () => {
+    await openCodexShadowLifecycle.stop();
+    await prepareCodexProxyForQuit({
+      proxyActive: codexProxyActive,
+      isDesktopRunning: isCodexDesktopAppRunning,
+      disableProxyConfig: disableProxyInConfig,
+      stopDesktop: stopCodexDesktopApp,
+      waitForDesktopExit: waitForCodexDesktopExit,
+      launchDesktop: launchCodexDesktopApp,
+      stopProxy: () => {
+        codexProxy.stop();
+        codexProxyActive = false;
+      },
+      restoreProxyConfig: () => {
+        if (!codexProxy.running || !codexProxy.port) {
+          throw new Error("Codex 프록시를 복구할 수 없습니다.");
+        }
+        if (!codexProxyCatalogPath) {
+          throw new Error("Codex 모델 카탈로그를 복구할 수 없습니다.");
+        }
+        enableProxyInConfig(codexProxy.port, { catalogPath: codexProxyCatalogPath });
+        codexProxyActive = true;
+      },
+    });
+  },
   finishQuit: finishCodePetQuit,
   notifyWaiting: () => {
     showCodexAccountBubble(
@@ -3922,6 +3963,7 @@ app.whenReady().then(() => {
   });
   codexProxyStartupPromise = restoreCodexProxyMode();
   void codexProxyStartupPromise;
+  void openCodexShadowLifecycle.start();
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) {
