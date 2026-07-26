@@ -4,15 +4,19 @@ const fs = require("node:fs");
 const http = require("node:http");
 const os = require("node:os");
 const path = require("node:path");
+const { Readable } = require("node:stream");
 
 const {
+  CODEPET_PROVIDER_MARKER,
   CONFIG_MARKER,
   CodexProxy,
   accessTokenExpiresAtMs,
   buildBaseUrlLine,
+  injectCodePetProvider,
   injectBaseUrl,
   parseRetryDelayMs,
   refreshAuthFileIfStale,
+  stripCodePetProvider,
   stripCodePetProxyLines,
 } = require("../src/codex-proxy");
 
@@ -77,6 +81,90 @@ test("config 제거는 marker와 그 다음 base_url 줄만 걷어낸다", () =>
   assert.doesNotMatch(stripped, /codepet-codex-proxy|openai_base_url/);
   assert.match(stripped, /model = "gpt-5"/);
   assert.match(stripped, /\[a\]/);
+});
+
+test("CodePet 공급자 설정은 루트 키와 HTTP Responses 공급자 테이블을 소유 블록으로 넣는다", () => {
+  const result = injectCodePetProvider(
+    ['model = "gpt-5"', "", "[plugins.chrome]", 'x = "y"'].join("\n"),
+    { port: 10161, catalogPath: "/tmp/codepet models.json" }
+  );
+
+  assert.equal(result.conflict, null);
+  assert.match(result.content, new RegExp(CODEPET_PROVIDER_MARKER));
+  assert.match(result.content, /model_provider = "codepet"/);
+  assert.match(result.content, /model_catalog_json = "\/tmp\/codepet models\.json"/);
+  assert.match(result.content, /\[model_providers\.codepet\]/);
+  assert.match(result.content, /base_url = "http:\/\/127\.0\.0\.1:10161\/v1"/);
+  assert.match(result.content, /wire_api = "responses"/);
+  assert.match(result.content, /requires_openai_auth = true/);
+  assert.match(result.content, /supports_websockets = false/);
+  assert.ok(result.content.indexOf('model_provider = "codepet"') < result.content.indexOf("[plugins.chrome]"));
+});
+
+test("CodePet 공급자 설정은 멱등이고 제거 시 자기 블록만 걷어낸다", () => {
+  const original = ['model = "gpt-5"', "[plugins.chrome]", 'x = "y"'].join("\n");
+  const first = injectCodePetProvider(original, {
+    port: 10161,
+    catalogPath: "/tmp/one.json",
+  }).content;
+  const second = injectCodePetProvider(first, {
+    port: 10162,
+    catalogPath: "/tmp/two.json",
+  }).content;
+
+  assert.equal(second.split(CODEPET_PROVIDER_MARKER).length - 1, 1);
+  assert.match(second, /10162/);
+  assert.match(second, /\/tmp\/two\.json/);
+  assert.doesNotMatch(second, /10161|\/tmp\/one\.json/);
+  assert.equal(stripCodePetProvider(second).trim(), original.trim());
+});
+
+test("끝 마커가 없는 손상된 CodePet 공급자 블록은 사용자 설정과 함께 보존한다", () => {
+  const damaged = [
+    'model = "gpt-test"',
+    CODEPET_PROVIDER_MARKER,
+    'model_provider = "codepet"',
+    "[plugins.chrome]",
+    'enabled = true',
+  ].join("\n");
+  assert.equal(stripCodePetProvider(damaged), damaged);
+});
+
+test("CodePet 공급자 설정은 사용자 소유 충돌을 덮어쓰지 않는다", () => {
+  const cases = [
+    ['model_provider = "custom"', "model_provider"],
+    ['model_catalog_json = "/tmp/custom.json"', "model_catalog_json"],
+    ['[model_providers.codepet]\nbase_url = "http://custom"', "model_providers.codepet"],
+  ];
+
+  for (const [content, conflict] of cases) {
+    const result = injectCodePetProvider(content, {
+      port: 10161,
+      catalogPath: "/tmp/codepet.json",
+    });
+    assert.equal(result.conflict, conflict);
+    assert.equal(result.content, content);
+  }
+});
+
+test("enableProxyInConfig는 카탈로그 경로가 있으면 CodePet HTTP 공급자를 원자 저장한다", (t) => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "codepet-provider-config-"));
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const configPath = path.join(directory, "config.toml");
+  fs.writeFileSync(configPath, 'model = "gpt-test"\n', "utf8");
+
+  const { enableProxyInConfig, disableProxyInConfig } = require("../src/codex-proxy");
+  enableProxyInConfig(19401, {
+    configPath,
+    catalogPath: "/tmp/codepet-catalog.json",
+  });
+  const enabled = fs.readFileSync(configPath, "utf8");
+  assert.match(enabled, /model_provider = "codepet"/);
+  assert.match(enabled, /model_catalog_json = "\/tmp\/codepet-catalog\.json"/);
+  assert.match(enabled, /supports_websockets = false/);
+
+  disableProxyInConfig(configPath);
+  assert.equal(fs.readFileSync(configPath, "utf8").trim(), 'model = "gpt-test"');
 });
 
 test("JWT exp 클레임으로 만료 시각을 계산하고 형식이 다르면 null을 준다", () => {
@@ -173,6 +261,142 @@ test("프록시는 /v1 경로를 벗기고 활성 계정 인증 헤더를 주입
   } finally {
     proxy.stop();
     upstream.close();
+  }
+});
+
+test("Kimi 모델 요청은 OpenAI 계정을 읽지 않고 Kimi Responses 스트림으로 보낸다", async () => {
+  let accountReads = 0;
+  let adapterCall = null;
+  const tokenCalls = [];
+  const proxy = new CodexProxy({
+    port: 19321,
+    resolveAccounts: async () => {
+      accountReads += 1;
+      return [{ key: "openai", authPath: "openai-token" }];
+    },
+    kimiClient: {
+      async getAccessToken(options) {
+        tokenCalls.push(options || {});
+        return "kimi-token";
+      },
+      async getInferenceHeaders() {
+        return { "X-Msh-Device-Id": "device-a" };
+      },
+    },
+    resolveKimiModel: (slug) => slug === "codepet-kimi-k3"
+      ? { slug, upstreamModel: "k3", reasoningEfforts: ["low", "high", "max"] }
+      : null,
+    createKimiStream: async (options) => {
+      adapterCall = options;
+      return {
+        status: 200,
+        headers: { "content-type": "text/event-stream" },
+        body: Readable.from(['event: response.completed\ndata: {"ok":true}\n\ndata: [DONE]\n\n']),
+      };
+    },
+  });
+  const proxyPort = await proxy.start();
+
+  try {
+    const response = await fetch(`http://127.0.0.1:${proxyPort}/v1/responses`, {
+      method: "POST",
+      headers: { authorization: "Bearer stale-openai-token", "content-type": "application/json" },
+      body: JSON.stringify({ model: "codepet-kimi-k3", input: "hi", stream: true }),
+    });
+    assert.equal(response.status, 200);
+    assert.match(await response.text(), /response\.completed/);
+    assert.equal(accountReads, 0);
+    assert.deepEqual(tokenCalls, [{}]);
+    assert.equal(adapterCall.accessToken, "kimi-token");
+    assert.equal(adapterCall.headers["X-Msh-Device-Id"], "device-a");
+    assert.equal(adapterCall.requestBody.model, "codepet-kimi-k3");
+    assert.equal(adapterCall.modelConfig.upstreamModel, "k3");
+  } finally {
+    proxy.stop();
+  }
+});
+
+test("Kimi 401은 Kimi OAuth만 한 번 갱신하고 OpenAI 계정 전환 없이 재시도한다", async () => {
+  let accountReads = 0;
+  const tokenCalls = [];
+  let attempts = 0;
+  const proxy = new CodexProxy({
+    port: 19322,
+    resolveAccounts: async () => { accountReads += 1; return []; },
+    kimiClient: {
+      async getAccessToken(options = {}) {
+        tokenCalls.push(options);
+        return options.forceRefresh ? "fresh" : "old";
+      },
+      async getInferenceHeaders() { return {}; },
+    },
+    resolveKimiModel: (slug) => ({ slug, upstreamModel: "k3", reasoningEfforts: ["low"] }),
+    createKimiStream: async ({ accessToken }) => {
+      attempts += 1;
+      return accessToken === "old"
+        ? { status: 401, headers: {}, body: Readable.from(["rejected"]) }
+        : { status: 200, headers: { "content-type": "text/event-stream" }, body: Readable.from(["data: [DONE]\n\n"]) };
+    },
+  });
+  const proxyPort = await proxy.start();
+
+  try {
+    const response = await fetch(`http://127.0.0.1:${proxyPort}/v1/responses`, {
+      method: "POST",
+      body: JSON.stringify({ model: "codepet-kimi-k3", input: "hi" }),
+    });
+    assert.equal(response.status, 200);
+    assert.equal(attempts, 2);
+    assert.equal(accountReads, 0);
+    assert.deepEqual(tokenCalls, [
+      {},
+      { forceRefresh: true, rejectedAccessToken: "old" },
+    ]);
+  } finally {
+    proxy.stop();
+  }
+});
+
+test("Kimi 429와 알 수 없는 Kimi 모델은 OpenAI 쿨다운이나 전환을 건드리지 않는다", async () => {
+  let accountReads = 0;
+  let switched = 0;
+  const proxy = new CodexProxy({
+    port: 19323,
+    resolveAccounts: async () => { accountReads += 1; return []; },
+    notifySwitch: () => { switched += 1; },
+    kimiClient: {
+      async getAccessToken() { return "token"; },
+      async getInferenceHeaders() { return {}; },
+    },
+    resolveKimiModel: (slug) => slug === "codepet-kimi-k3"
+      ? { slug, upstreamModel: "k3", reasoningEfforts: ["low"] }
+      : null,
+    createKimiStream: async () => ({
+      status: 429,
+      headers: { "content-type": "application/json" },
+      body: Readable.from(['{"error":{"code":"KIMI_HTTP_429"}}']),
+    }),
+  });
+  const proxyPort = await proxy.start();
+
+  try {
+    const limited = await fetch(`http://127.0.0.1:${proxyPort}/v1/responses`, {
+      method: "POST",
+      body: JSON.stringify({ model: "codepet-kimi-k3", input: "hi" }),
+    });
+    assert.equal(limited.status, 429);
+    assert.equal(proxy.cooldowns.size, 0);
+
+    const unknown = await fetch(`http://127.0.0.1:${proxyPort}/v1/responses`, {
+      method: "POST",
+      body: JSON.stringify({ model: "codepet-kimi-unknown", input: "hi" }),
+    });
+    assert.equal(unknown.status, 400);
+    assert.match(await unknown.text(), /지원하지 않는 Kimi 모델/);
+    assert.equal(accountReads, 0);
+    assert.equal(switched, 0);
+  } finally {
+    proxy.stop();
   }
 });
 

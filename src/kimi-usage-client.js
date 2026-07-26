@@ -101,6 +101,46 @@ class KimiUsageClient {
     this.credentialFile = path.join(homeDir, "credentials", "kimi-code.json");
     this.deviceFile = path.join(homeDir, "device_id");
     this.lockDir = path.join(homeDir, "oauth", "kimi-code.lock");
+    this.accessTokenRefresh = null;
+  }
+
+  async getAccessToken({ forceRefresh = false, rejectedAccessToken = null } = {}) {
+    const credentials = await this.readCredentials();
+    if (!forceRefresh && !this.shouldRefresh(credentials)) return credentials.access_token;
+    if (this.accessTokenRefresh) return this.accessTokenRefresh;
+
+    this.accessTokenRefresh = (async () => {
+      const fresh = forceRefresh
+        ? await this.recoverFromAuthFailure({
+          access_token: rejectedAccessToken || credentials.access_token,
+        })
+        : await this.ensureFresh(credentials);
+      return fresh.access_token;
+    })();
+    try {
+      return await this.accessTokenRefresh;
+    } finally {
+      this.accessTokenRefresh = null;
+    }
+  }
+
+  async getInferenceHeaders({ version = "0.0.0" } = {}) {
+    const ascii = (value, fallback = "unknown") => {
+      const cleaned = String(value ?? "").replaceAll(/[^\u0020-\u007E]/g, "").trim();
+      return cleaned || fallback;
+    };
+    const safeVersion = ascii(version, "0.0.0");
+    const headers = {
+      "User-Agent": `CodePet/${safeVersion}`,
+      "X-Msh-Platform": "kimi_code_cli",
+      "X-Msh-Version": safeVersion,
+      "X-Msh-Device-Name": ascii(os.hostname()),
+      "X-Msh-Device-Model": ascii(`${os.type()} ${os.release()} ${os.arch()}`),
+      "X-Msh-Os-Version": ascii(os.release()),
+    };
+    const deviceId = await this.readDeviceId();
+    if (deviceId) headers["X-Msh-Device-Id"] = ascii(deviceId);
+    return headers;
   }
 
   async fetchPayload() {

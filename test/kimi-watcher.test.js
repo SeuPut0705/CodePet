@@ -950,6 +950,17 @@ test("main은 KIMI_CODE_HOME을 공유하는 기본 생성자로 Kimi watcher와
   assert.match(main, /activityHeading\(completionTitle, result\)/);
 });
 
+test("main은 Codex 카탈로그와 Kimi 라우터를 같은 프록시 시작 경로에 연결한다", () => {
+  const main = fs.readFileSync(path.join(__dirname, "..", "src", "main.js"), "utf8");
+  assert.match(main, /require\("\.\/codex-model-catalog"\)/);
+  assert.match(main, /require\("\.\/kimi-codex-models"\)/);
+  assert.match(main, /kimiClient:\s*kimiUsageClient/);
+  assert.match(main, /prepareCodexProxyCatalog\(\)/);
+  assert.match(main, /app\.getPath\("userData"\)/);
+  assert.match(main, /enableProxyInConfig\(port,\s*\{[\s\S]*catalogPath:/);
+  assert.match(main, /enableProxyInConfig\(codexProxy\.port,\s*\{[\s\S]*catalogPath:/);
+});
+
 test("제품 설명과 README가 Kimi CLI 지원을 명시한다", () => {
   const packageJson = require("../package.json");
   const readme = fs.readFileSync(path.join(__dirname, "..", "README.md"), "utf8");

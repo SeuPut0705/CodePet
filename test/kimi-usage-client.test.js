@@ -40,6 +40,72 @@ function jsonResponse(value, status = 200) {
   };
 }
 
+test("추론 토큰은 유효한 기존 Kimi access token을 파일 수정 없이 재사용한다", async (t) => {
+  const fixture = credentialFixture(t);
+  const client = new KimiUsageClient({
+    homeDir: fixture.home,
+    nowSeconds: () => 1000,
+    fetchImpl: async () => assert.fail("유효한 추론 토큰은 네트워크를 사용하지 않아야 합니다."),
+  });
+
+  assert.equal(await client.getAccessToken(), "access-a");
+  assert.equal(fs.readFileSync(fixture.file, "utf8"), fixture.original);
+});
+
+test("추론 토큰 강제 갱신은 거부된 토큰 뒤 회전된 파일을 우선 재사용한다", async (t) => {
+  const fixture = credentialFixture(t);
+  fs.writeFileSync(fixture.file, `${JSON.stringify({
+    ...COMPLETE_CREDENTIALS,
+    access_token: "access-b",
+  })}\n`, { mode: 0o600 });
+  const client = new KimiUsageClient({
+    homeDir: fixture.home,
+    nowSeconds: () => 1000,
+    fetchImpl: async () => assert.fail("다른 프로세스가 회전한 토큰이 있으면 갱신하지 않아야 합니다."),
+  });
+
+  assert.equal(await client.getAccessToken({
+    forceRefresh: true,
+    rejectedAccessToken: "access-a",
+  }), "access-b");
+});
+
+test("동시 추론 토큰 요청은 하나의 OAuth 갱신을 공유한다", async (t) => {
+  const fixture = credentialFixture(t, { access_token: "old", expires_at: 1001 });
+  let refreshCalls = 0;
+  const client = new KimiUsageClient({
+    homeDir: fixture.home,
+    nowSeconds: () => 1000,
+    fetchImpl: async (url) => {
+      assert.match(url, /\/api\/oauth\/token$/);
+      refreshCalls += 1;
+      await new Promise((resolve) => setImmediate(resolve));
+      return jsonResponse({ access_token: "new", expires_in: 3600 });
+    },
+  });
+
+  assert.deepEqual(await Promise.all([
+    client.getAccessToken(),
+    client.getAccessToken(),
+  ]), ["new", "new"]);
+  assert.equal(refreshCalls, 1);
+});
+
+test("추론 헤더는 기존 Kimi device_id와 CodePet 버전을 사용하고 토큰은 포함하지 않는다", async (t) => {
+  const fixture = credentialFixture(t, {}, { deviceId: "device-a" });
+  const client = new KimiUsageClient({ homeDir: fixture.home });
+
+  const headers = await client.getInferenceHeaders({ version: "0.3.2" });
+  assert.equal(headers["X-Msh-Platform"], "kimi_code_cli");
+  assert.equal(headers["X-Msh-Version"], "0.3.2");
+  assert.equal(headers["X-Msh-Device-Id"], "device-a");
+  assert.equal(headers["User-Agent"], "CodePet/0.3.2");
+  assert.equal(headers.Authorization, undefined);
+  assert.ok(headers["X-Msh-Device-Name"]);
+  assert.ok(headers["X-Msh-Device-Model"]);
+  assert.ok(headers["X-Msh-Os-Version"]);
+});
+
 test("유효한 Kimi access token으로 사용량을 조회하고 자격 파일은 쓰지 않는다", async (t) => {
   const fixture = credentialFixture(t);
   let requested;

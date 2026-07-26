@@ -7,6 +7,8 @@ const path = require("node:path");
 const tls = require("node:tls");
 const { URL } = require("node:url");
 const { atomicWrite, atomicWriteText } = require("./provider-profile-store");
+const { createKimiResponsesStream } = require("./kimi-codex-adapter");
+const { resolveKimiCodexModel } = require("./kimi-codex-models");
 
 // Codex 재시작 없는 계정 전환용 로컬 프록시입니다. (opencodex의 Design B 방식)
 //
@@ -25,6 +27,8 @@ const CHATGPT_TOKEN_URL = "https://auth.openai.com/oauth/token";
 // Codex CLI의 공개 OAuth client id입니다. (opencodex와 동일한 값)
 const CHATGPT_CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann";
 const CONFIG_MARKER = "# codepet-codex-proxy";
+const CODEPET_PROVIDER_MARKER = "# codepet-codex-provider";
+const CODEPET_PROVIDER_END_MARKER = "# /codepet-codex-provider";
 const DEFAULT_PORT = 10161;
 // hop-by-hop 헤더는 중계하면 안 됩니다.
 const DROPPED_REQUEST_HEADERS = new Set([
@@ -74,6 +78,64 @@ function stripCodePetProxyLines(content) {
   return kept.join("\n");
 }
 
+function stripCodePetProvider(content) {
+  const lines = String(content ?? "").split("\n");
+  const kept = [...lines];
+  while (true) {
+    const start = kept.findIndex((line) => line.trim() === CODEPET_PROVIDER_MARKER);
+    if (start === -1) break;
+    const relativeEnd = kept
+      .slice(start + 1)
+      .findIndex((line) => line.trim() === CODEPET_PROVIDER_END_MARKER);
+    if (relativeEnd === -1) return String(content ?? "");
+    kept.splice(start, relativeEnd + 2);
+  }
+  return kept.join("\n");
+}
+
+function rootConfigConflict(content) {
+  const lines = content.split("\n");
+  const firstTable = lines.findIndex((line) => /^\s*\[/.test(line));
+  const rootLines = lines.slice(0, firstTable === -1 ? lines.length : firstTable);
+  if (rootLines.some((line) => /^\s*model_provider\s*=/.test(line))) return "model_provider";
+  if (rootLines.some((line) => /^\s*model_catalog_json\s*=/.test(line))) return "model_catalog_json";
+  if (lines.some((line) => /^\s*\[model_providers\.codepet]\s*$/.test(line))) {
+    return "model_providers.codepet";
+  }
+  return null;
+}
+
+function injectCodePetProvider(content, { port, catalogPath } = {}) {
+  const original = String(content ?? "");
+  const cleaned = stripCodePetProxyLines(stripCodePetProvider(original));
+  const conflict = rootConfigConflict(cleaned);
+  if (conflict) return { content: original, conflict };
+  if (!Number.isInteger(port) || port <= 0 || !catalogPath) {
+    throw new Error("CodePet Codex 공급자 설정값이 올바르지 않습니다.");
+  }
+
+  const lines = cleaned.split("\n");
+  const firstTable = lines.findIndex((line) => /^\s*\[/.test(line));
+  const rootEnd = firstTable === -1 ? lines.length : firstTable;
+  const block = [
+    CODEPET_PROVIDER_MARKER,
+    'model_provider = "codepet"',
+    `model_catalog_json = ${JSON.stringify(String(catalogPath))}`,
+    "",
+    "[model_providers.codepet]",
+    'name = "CodePet OpenAI + Kimi"',
+    `base_url = "http://127.0.0.1:${port}/v1"`,
+    'wire_api = "responses"',
+    "requires_openai_auth = true",
+    "supports_websockets = false",
+    CODEPET_PROVIDER_END_MARKER,
+  ];
+  return {
+    content: [...lines.slice(0, rootEnd), ...block, ...lines.slice(rootEnd)].join("\n"),
+    conflict: null,
+  };
+}
+
 // 루트 키는 첫 [table] 헤더보다 앞에 있어야 합니다. 사용자가 직접 넣은
 // openai_base_url이 이미 있으면 존중하고 아무것도 쓰지 않습니다.
 function injectBaseUrl(content, port) {
@@ -95,14 +157,25 @@ function defaultConfigPath(codexHome = path.join(os.homedir(), ".codex")) {
   return path.join(codexHome, "config.toml");
 }
 
-function enableProxyInConfig(port, configPath = defaultConfigPath()) {
+function enableProxyInConfig(port, configPathOrOptions = defaultConfigPath()) {
+  const options = configPathOrOptions && typeof configPathOrOptions === "object"
+    ? configPathOrOptions
+    : { configPath: configPathOrOptions };
+  const configPath = options.configPath || defaultConfigPath();
   let content = "";
   try {
     content = fs.readFileSync(configPath, "utf8");
   } catch {
     // config.toml이 없으면 새로 만듭니다.
   }
-  const result = injectBaseUrl(content, port);
+  const result = options.catalogPath
+    ? injectCodePetProvider(content, { port, catalogPath: options.catalogPath })
+    : injectBaseUrl(content, port);
+  if (result.conflict) {
+    throw new Error(
+      `config.toml의 사용자 설정과 충돌합니다: ${result.conflict}. CodePet 공급자 모드를 사용하려면 해당 설정을 먼저 정리해 주세요.`
+    );
+  }
   if (result.keptUserBaseUrl) {
     throw new Error(
       "config.toml에 사용자가 설정한 openai_base_url이 이미 있습니다. 프록시 모드를 켜려면 그 줄을 먼저 정리해 주세요."
@@ -121,7 +194,7 @@ function disableProxyInConfig(configPath = defaultConfigPath()) {
   } catch {
     return;
   }
-  const stripped = stripCodePetProxyLines(content);
+  const stripped = stripCodePetProxyLines(stripCodePetProvider(content));
   if (stripped === content) return;
   atomicWriteText(configPath, stripped);
 }
@@ -213,6 +286,10 @@ class CodexProxy {
     upstreamBase = UPSTREAM_BASE,
     port = DEFAULT_PORT,
     log = () => {},
+    kimiClient = null,
+    resolveKimiModel = resolveKimiCodexModel,
+    createKimiStream = createKimiResponsesStream,
+    appVersion = "0.0.0",
   } = {}) {
     this.resolveAccounts = resolveAccounts || (async () => []);
     this.readAuth = readAuth || (() => null);
@@ -221,6 +298,10 @@ class CodexProxy {
     this.upstreamBase = upstreamBase;
     this.preferredPort = port;
     this.log = log;
+    this.kimiClient = kimiClient;
+    this.resolveKimiModel = resolveKimiModel;
+    this.createKimiStream = createKimiStream;
+    this.appVersion = appVersion;
     this.server = null;
     this.port = null;
     // key -> 쿨다운 해제 시각(ms). 429/401을 맞은 계정은 잠시 후보에서 제외합니다.
@@ -431,6 +512,71 @@ class CodexProxy {
     headers["content-length"] = body.length;
     response.writeHead(upstreamResponse.statusCode || 502, headers);
     response.end(body);
+  }
+
+  streamAdapterResponse(adapterResponse, response, controller) {
+    return new Promise((resolve, reject) => {
+      let settled = false;
+      const finish = (callback, value) => {
+        if (settled) return;
+        settled = true;
+        callback(value);
+      };
+      response.writeHead(adapterResponse.status || 502, adapterResponse.headers || {});
+      adapterResponse.body.pipe(response);
+      response.once("finish", () => finish(resolve));
+      response.once("error", (error) => finish(reject, error));
+      response.once("close", () => {
+        if (settled) return;
+        controller.abort();
+        adapterResponse.body.destroy?.();
+        finish(resolve);
+      });
+      adapterResponse.body.once("error", (error) => finish(reject, error));
+    });
+  }
+
+  async handleKimiRequest(request, response, requestBody, modelConfig) {
+    if (!this.kimiClient || typeof this.kimiClient.getAccessToken !== "function") {
+      response.writeHead(503, { "content-type": "application/json" });
+      response.end(JSON.stringify({ error: { message: "Kimi 로그인 클라이언트를 사용할 수 없습니다." } }));
+      return;
+    }
+    const controller = new AbortController();
+    const abort = () => controller.abort();
+    request.once("aborted", abort);
+    request.once("error", abort);
+    try {
+      const headers = typeof this.kimiClient.getInferenceHeaders === "function"
+        ? await this.kimiClient.getInferenceHeaders({ version: this.appVersion })
+        : {};
+      let accessToken = await this.kimiClient.getAccessToken();
+      let adapterResponse = await this.createKimiStream({
+        requestBody,
+        modelConfig,
+        accessToken,
+        headers,
+        signal: controller.signal,
+      });
+      if (adapterResponse.status === 401 || adapterResponse.status === 403) {
+        adapterResponse.body.destroy?.();
+        accessToken = await this.kimiClient.getAccessToken({
+          forceRefresh: true,
+          rejectedAccessToken: accessToken,
+        });
+        adapterResponse = await this.createKimiStream({
+          requestBody,
+          modelConfig,
+          accessToken,
+          headers,
+          signal: controller.signal,
+        });
+      }
+      await this.streamAdapterResponse(adapterResponse, response, controller);
+    } finally {
+      request.removeListener("aborted", abort);
+      request.removeListener("error", abort);
+    }
   }
 
   async candidateAccounts() {
@@ -729,16 +875,44 @@ class CodexProxy {
     const upstreamPath = incomingPath.startsWith("/v1/") ? incomingPath.slice(3) : incomingPath;
     const target = new URL(`${this.upstreamBase}${upstreamPath}`);
 
+    const isResponsesPost = request.method === "POST" && /\/responses$/.test(target.pathname);
+    let routedBody = null;
+    if (isResponsesPost) {
+      routedBody = await this.bufferBody(request);
+      let parsed;
+      try {
+        parsed = JSON.parse(routedBody.toString("utf8"));
+      } catch {
+        response.writeHead(400, { "content-type": "application/json" });
+        response.end(JSON.stringify({ error: { message: "Responses 요청 JSON이 올바르지 않습니다." } }));
+        return;
+      }
+      if (typeof parsed?.model === "string" && parsed.model.startsWith("codepet-kimi-")) {
+        const modelConfig = this.resolveKimiModel(parsed.model);
+        if (!modelConfig) {
+          response.writeHead(400, { "content-type": "application/json" });
+          response.end(JSON.stringify({
+            error: { message: `지원하지 않는 Kimi 모델입니다: ${parsed.model}` },
+          }));
+          return;
+        }
+        await this.handleKimiRequest(request, response, parsed, modelConfig);
+        return;
+      }
+    }
+
     const accounts = await this.candidateAccounts();
 
     // 계정이 하나도 저장돼 있지 않으면 들어온 헤더 그대로 스트리밍 통과시킵니다. (본문 버퍼링 없음)
     if (accounts.length === 0) {
-      const passthrough = await this.forwardStream(
-        target,
-        request.method,
-        this.filteredHeaders(request, { stripAuth: false }),
-        request
-      );
+      const passthroughHeaders = this.filteredHeaders(request, { stripAuth: false });
+      let passthrough;
+      if (routedBody !== null) {
+        passthroughHeaders["content-length"] = routedBody.length;
+        passthrough = await this.forwardOnce(target, request.method, passthroughHeaders, routedBody);
+      } else {
+        passthrough = await this.forwardStream(target, request.method, passthroughHeaders, request);
+      }
       await this.streamToClient(passthrough, response);
       return;
     }
@@ -751,7 +925,7 @@ class CodexProxy {
     const canRotate = isRotatable && ordered.length > 1;
     const preferredKey = accounts[0].key;
     const baseHeaders = this.filteredHeaders(request, { stripAuth: true });
-    const body = canRotate ? await this.bufferBody(request) : null;
+    const body = routedBody !== null ? routedBody : (canRotate ? await this.bufferBody(request) : null);
 
     for (let index = 0; index < ordered.length; index += 1) {
       const account = ordered[index];
@@ -871,6 +1045,7 @@ async function refreshAuthFileIfStale(authPath, { marginMs = 120000, fetchImpl =
 
 module.exports = {
   CHATGPT_CLIENT_ID,
+  CODEPET_PROVIDER_MARKER,
   CONFIG_MARKER,
   CodexProxy,
   DEFAULT_COOLDOWN_MS,
@@ -882,7 +1057,9 @@ module.exports = {
   defaultConfigPath,
   disableProxyInConfig,
   enableProxyInConfig,
+  injectCodePetProvider,
   injectBaseUrl,
   refreshAuthFileIfStale,
+  stripCodePetProvider,
   stripCodePetProxyLines,
 };

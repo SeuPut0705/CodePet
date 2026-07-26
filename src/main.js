@@ -15,6 +15,11 @@ const { OpenCodeWatcher } = require("./opencode-watcher");
 const { HookProviderWatcher } = require("./provider-hook-watcher");
 const { ProviderHookBridge } = require("./provider-hook-bridge");
 const { KimiUsageClient } = require("./kimi-usage-client");
+const { createKimiResponsesStream } = require("./kimi-codex-adapter");
+const {
+  discoverManagedKimiModels,
+} = require("./kimi-codex-models");
+const { prepareCodexModelCatalog } = require("./codex-model-catalog");
 const { buildKimiUsageGauges } = require("./kimi-usage");
 const { KimiUsageController } = require("./kimi-usage-controller");
 const { ClaudeAccountSwitcher } = require("./claude-account-switcher");
@@ -568,6 +573,21 @@ const USAGE_WARN_THRESHOLD_PERCENT = 90;
 const usageWarnedResets = { primary: null, secondary: null };
 
 const codexAccountSwitcher = new CodexAccountSwitcher();
+let codexProxyCatalogPath = null;
+let codexProxyKimiModels = new Map();
+
+function prepareCodexProxyCatalog() {
+  const kimiModels = discoverManagedKimiModels();
+  const result = prepareCodexModelCatalog({
+    codexCommand: codexThreadTitleCommand(),
+    userDataDir: app.getPath("userData"),
+    kimiModels,
+  });
+  codexProxyCatalogPath = result.catalogPath;
+  codexProxyKimiModels = new Map(kimiModels.map((model) => [model.slug, model]));
+  appendDebugLog(`codex model catalog prepared; kimi models=${result.kimiModelCount}`);
+  return result.catalogPath;
+}
 
 // Codex CLI 요청의 인증 교체 + 한도 자동 로테이션용 로컬 프록시입니다.
 // 선호 순서: 활성 프로필 → 나머지 저장 프로필. 저장 프로필이 하나도 없으면 live auth.json 하나로 동작.
@@ -610,6 +630,10 @@ function listCodexProxyAccounts() {
 
 const codexProxy = new CodexProxy({
   log: appendDebugLog,
+  appVersion: app.getVersion(),
+  kimiClient: kimiUsageClient,
+  resolveKimiModel: (slug) => codexProxyKimiModels.get(slug) || null,
+  createKimiStream: createKimiResponsesStream,
   resolveAccounts: async () => listCodexProxyAccounts(),
   readAuth: (authPath) => {
     const summary = codexAccountSwitcher.readAuthSummaryFromFile(authPath);
@@ -660,8 +684,9 @@ let codexProxyLastError = null;
 async function setCodexProxyMode(enabled) {
   try {
     if (enabled) {
+      const catalogPath = prepareCodexProxyCatalog();
       const port = await codexProxy.start();
-      enableProxyInConfig(port);
+      enableProxyInConfig(port, { catalogPath });
       codexProxyActive = true;
       codexProxyLastError = null;
       writeSettings({ codexProxyMode: true });
@@ -706,8 +731,9 @@ async function restoreCodexProxyMode() {
   }
   if (!isCodexProxyModeEnabled()) return;
   try {
+    const catalogPath = prepareCodexProxyCatalog();
     const port = await codexProxy.start();
-    enableProxyInConfig(port);
+    enableProxyInConfig(port, { catalogPath });
     codexProxyActive = true;
     codexProxyLastError = null;
   } catch (error) {
@@ -755,7 +781,10 @@ const codexProxyShutdownCoordinator = new CodexProxyShutdownCoordinator({
       if (!codexProxy.running || !codexProxy.port) {
         throw new Error("Codex 프록시를 복구할 수 없습니다.");
       }
-      enableProxyInConfig(codexProxy.port);
+      if (!codexProxyCatalogPath) {
+        throw new Error("Codex 모델 카탈로그를 복구할 수 없습니다.");
+      }
+      enableProxyInConfig(codexProxy.port, { catalogPath: codexProxyCatalogPath });
       codexProxyActive = true;
     },
   }),
