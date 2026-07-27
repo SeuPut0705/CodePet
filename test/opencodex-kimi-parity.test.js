@@ -203,6 +203,8 @@ test.before(async () => {
   fs.mkdirSync(path.join(kimiHome, "credentials"), { recursive: true });
 
   state.kimiAccessToken = jwt({ user_id: "parity-user", email: "parity@example.com" });
+  state.kimiHome = kimiHome;
+  state.openCodexHome = openCodexHome;
   fs.writeFileSync(path.join(kimiHome, "credentials", "kimi-code.json"), `${JSON.stringify({
     access_token: state.kimiAccessToken,
     refresh_token: jwt({ user_id: "parity-user" }),
@@ -428,8 +430,64 @@ test("kimi 401 does not trigger ChatGPT pool rotation", async () => {
   assert.equal(kimiRequests().length, 1, "exactly one kimi attempt, no retry storm");
 });
 
-test("a hop-classified failure cools the single combo target for 60s (503, no upstream call)", async () => {
-  // Combo failover contract (vendor combos/failover.ts:82-109 + resolve.ts:143-159):
+test("expired-token 401 is seen by the resync watcher and the retry succeeds", async () => {
+  // End-to-end for the 401 watcher: the engine logs the oauth-refresh 401, the
+  // real resync module spots it in /api/logs, re-syncs, and the next request works.
+  // Uses the direct "kimi/k3" route so no combo cooldown interferes with the retry.
+  const { createKimiCredentialResync } = require("../src/open-codex/kimi-credential-resync");
+  const authPath = path.join(state.openCodexHome, "auth.json");
+  const validAuth = fs.readFileSync(authPath, "utf8");
+  const expiredJwt = jwt({ user_id: "parity-user", email: "parity@example.com" });
+  fs.writeFileSync(authPath, `${JSON.stringify({
+    kimi: {
+      activeAccountId: "codepet-kimi-cli",
+      accounts: [{
+        id: "codepet-kimi-cli",
+        credential: {
+          access: expiredJwt,
+          refresh: "",
+          expires: Date.now() - 60_000,
+          accountId: "parity-user",
+          source: "local-cli",
+        },
+      }],
+    },
+  }, null, 2)}\n`, { mode: 0o600 });
+
+  try {
+    state.fixture.log.length = 0;
+    setSseBehavior([chatChunk({ content: "after-resync" }), chatChunk({ finishReason: "stop" })]);
+    const failed = await postResponses(state.port, {
+      model: "kimi/k3",
+      input: [{ type: "message", role: "user", content: [{ type: "input_text", text: "hi" }] }],
+      stream: true,
+    });
+    assert.equal(failed.status, 401);
+
+    const resync = createKimiCredentialResync({
+      port: state.port,
+      syncKimiCredential: async () =>
+        syncKimiCliCredential({ kimiHome: state.kimiHome, openCodexHome: state.openCodexHome }),
+    });
+    const outcome = await resync.checkOnce();
+    assert.equal(outcome.synced, true);
+    assert.ok(outcome.fresh401 >= 1, `watcher saw no auth failure: ${JSON.stringify(outcome)}`);
+
+    const retried = await postResponses(state.port, {
+      model: "kimi/k3",
+      input: [{ type: "message", role: "user", content: [{ type: "input_text", text: "hi" }] }],
+      stream: true,
+    });
+    assert.equal(retried.status, 200);
+    assert.ok(retried.text.includes("after-resync"));
+    assert.ok(retried.text.includes("response.completed"));
+  } finally {
+    // Keep the healthy credential for the remaining tests regardless of outcome.
+    fs.writeFileSync(authPath, validAuth, { mode: 0o600 });
+  }
+});
+
+test("a hop-classified failure cools the single combo target for 60s (503, no upstream call)", async () => {  // Combo failover contract (vendor combos/failover.ts:82-109 + resolve.ts:143-159):
   // 5xx/401/429 "hop" cools the target; with one target the next request short-circuits
   // locally with 503 combo_unavailable. This is why each error test uses its own slug.
   state.fixture.log.length = 0;

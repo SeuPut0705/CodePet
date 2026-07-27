@@ -34,19 +34,28 @@ function createKimiCredentialResync({
   let consecutive401Polls = 0;
   let escalated = false;
 
+  // Kimi auth failures surface in several log shapes: plain 401s, combo parents
+  // (provider "combo" with the kimi attempt nested), and WS turns where the parent
+  // can be classified as a generic error while the attempt carries the real 401.
+  // Match on the entry OR any attempt: status 401 or the auth error code.
+  function isKimiAuthFailure(entry) {
+    if (!entry || typeof entry !== "object") return false;
+    if (entry.status === 401 || entry.errorCode === "invalid_api_key") return true;
+    const attempts = Array.isArray(entry.attempts) ? entry.attempts : [];
+    return attempts.some((attempt) => attempt?.status === 401 || attempt?.errorCode === "invalid_api_key");
+  }
+
   async function checkOnce(now = Date.now()) {
     const currentPort = resolvePort();
     if (!currentPort) return { fresh401: 0, synced: false };
     const response = await fetchImpl(
-      `http://127.0.0.1:${currentPort}/api/logs?provider=kimi&status=401&tail=50`,
+      `http://127.0.0.1:${currentPort}/api/logs?provider=kimi&tail=50`,
       { signal: AbortSignal.timeout(timeoutMs) }
     );
     if (!response.ok) return { fresh401: 0, synced: false };
     const entries = await response.json();
     const fresh = (Array.isArray(entries) ? entries : [])
-      // Belt and braces: the query already filters, but never trust the filter alone
-      // for a decision that rewrites a credential store.
-      .filter((entry) => entry?.status === 401)
+      .filter(isKimiAuthFailure)
       .filter((entry) => Number.isFinite(entry?.timestamp) && entry.timestamp > lastSeenAt);
     if (fresh.length === 0) {
       lastSeenAt = Math.max(lastSeenAt, now);

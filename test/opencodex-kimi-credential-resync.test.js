@@ -44,12 +44,64 @@ test("a fresh kimi 401 log entry triggers exactly one credential re-sync", async
 
   assert.deepEqual(result, { fresh401: 2, synced: true });
   assert.equal(syncs.length, 1);
-  assert.match(requests[0], /\/api\/logs\?provider=kimi&status=401/);
+  assert.match(requests[0], /\/api\/logs\?provider=kimi&tail=50/);
 
   // Entries already seen must not retrigger a sync.
   const again = await resync.checkOnce(4_000);
   assert.deepEqual(again, { fresh401: 0, synced: false });
   assert.equal(syncs.length, 1);
+});
+
+test("auth failures match through attempts: combo parent 502 with a kimi 401 attempt", async () => {
+  let entries = [];
+  const fetchImpl = async () => ({ ok: true, json: async () => entries });
+  let syncCalls = 0;
+  const resync = createKimiCredentialResync({
+    port: 1,
+    fetchImpl,
+    syncKimiCredential: async () => {
+      syncCalls += 1;
+      return { status: "synced" };
+    },
+  });
+
+  // The WS turn shape: the parent turn can classify as a generic error while the
+  // attempt carries the real auth failure (and combo parents record provider "combo").
+  entries = [{
+    requestId: "ws-1",
+    timestamp: 1_000,
+    provider: "combo",
+    model: "codepet-kimi-k3",
+    status: 502,
+    attempts: [{ provider: "kimi", model: "k3[1m]", status: 401, errorCode: "invalid_api_key" }],
+  }];
+  const fired = await resync.checkOnce(2_000);
+  assert.deepEqual(fired, { fresh401: 1, synced: true });
+  assert.equal(syncCalls, 1);
+
+  // A plain 502 with no auth signal anywhere must not trigger a rewrite.
+  entries = [{
+    requestId: "ws-2",
+    timestamp: 3_000,
+    provider: "kimi",
+    status: 502,
+    attempts: [{ provider: "kimi", model: "k3", status: 502 }],
+  }];
+  const quiet = await resync.checkOnce(4_000);
+  assert.deepEqual(quiet, { fresh401: 0, synced: false });
+  assert.equal(syncCalls, 1);
+
+  // errorCode alone (no 401 anywhere) still counts as an auth failure.
+  entries = [{
+    requestId: "ws-3",
+    timestamp: 5_000,
+    provider: "kimi",
+    status: 502,
+    errorCode: "invalid_api_key",
+  }];
+  const coded = await resync.checkOnce(6_000);
+  assert.deepEqual(coded, { fresh401: 1, synced: true });
+  assert.equal(syncCalls, 2);
 });
 
 test("no kimi 401 entries means no re-sync", async (t) => {
@@ -125,7 +177,10 @@ test("interval handle starts and is always cleared by stop", async (t) => {
   resync.start(); // idempotent
   await new Promise((resolve) => setTimeout(resolve, 25));
   resync.stop();
-  const seen = requests.length;
-  await new Promise((resolve) => setTimeout(resolve, 25));
-  assert.equal(requests.length, seen, "polling continued after stop");
+  // A poll already in flight when stop() runs may still land; let it settle,
+  // then assert no NEW polls are scheduled.
+  await new Promise((resolve) => setTimeout(resolve, 40));
+  const settled = requests.length;
+  await new Promise((resolve) => setTimeout(resolve, 40));
+  assert.equal(requests.length, settled, "polling continued after stop");
 });

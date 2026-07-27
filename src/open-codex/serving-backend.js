@@ -11,6 +11,8 @@
 
 const os = require("node:os");
 const path = require("node:path");
+const crypto = require("node:crypto");
+const fs = require("node:fs");
 
 const {
   listEngineAccounts,
@@ -27,6 +29,8 @@ const { discoverManagedKimiModels } = require("../kimi-codex-models");
 
 const DEFAULT_STATUS_POLL_MS = 1_000;
 const DEFAULT_STOP_DRAIN_MS = 5_000;
+const DEFAULT_KIMI_SYNC_INTERVAL_MS = 90_000;
+const DEFAULT_PRIME_TIMEOUT_MS = 10_000;
 
 class OpenCodexServingBackendError extends Error {
   constructor(code, message) {
@@ -57,6 +61,8 @@ function createOpenCodexServingBackend({
   statusPollMs = DEFAULT_STATUS_POLL_MS,
   stopDrainMs = DEFAULT_STOP_DRAIN_MS,
   createResync = createKimiCredentialResync,
+  kimiSyncIntervalMs = DEFAULT_KIMI_SYNC_INTERVAL_MS,
+  primeTimeoutMs = DEFAULT_PRIME_TIMEOUT_MS,
   onAutoSwitch = () => {},
   log = () => {},
 } = {}) {
@@ -83,6 +89,55 @@ function createOpenCodexServingBackend({
   let lastActiveTurns = 0;
   let sawActiveTurns = false;
   let kimiResync = null;
+  let kimiSyncTimer = null;
+  let kimiSyncInFlight = false;
+  let lastKimiSourceFingerprint = null;
+
+  // The Kimi CLI access token lives ~900s; the engine's copy in auth.json goes
+  // stale within one app session. Re-sync periodically — but skip the write when
+  // the CLI credential file is byte-identical to the last tick (the common case).
+  function kimiSourceFingerprint() {
+    try {
+      return crypto
+        .createHash("sha256")
+        .update(fs.readFileSync(path.join(kimiHome, "credentials", "kimi-code.json")))
+        .digest("hex");
+    } catch {
+      return null;
+    }
+  }
+
+  async function periodicKimiSyncTick() {
+    if (!lifecycle || backend !== "engine") return;
+    const fingerprint = kimiSourceFingerprint();
+    if (fingerprint !== null && fingerprint === lastKimiSourceFingerprint) return;
+    try {
+      const result = await lifecycle.syncKimiCredential();
+      lastKimiSourceFingerprint = fingerprint;
+      log(`periodic kimi credential re-sync: ${result?.status ?? "unknown"}`);
+    } catch (error) {
+      // Keep lastKimiSourceFingerprint so a transient failure retries next tick.
+      log(`periodic kimi credential re-sync failed: ${error?.message || error}`);
+    }
+  }
+
+  function startKimiSyncTimer() {
+    stopKimiSyncTimer();
+    kimiSyncTimer = setInterval(() => {
+      if (kimiSyncInFlight) return;
+      kimiSyncInFlight = true;
+      periodicKimiSyncTick().catch(() => {}).finally(() => {
+        kimiSyncInFlight = false;
+      });
+    }, kimiSyncIntervalMs);
+    kimiSyncTimer.unref?.();
+  }
+
+  function stopKimiSyncTimer() {
+    if (kimiSyncTimer) clearInterval(kimiSyncTimer);
+    kimiSyncTimer = null;
+    kimiSyncInFlight = false;
+  }
 
   function fireIdle() {
     for (const listener of idleListeners) {
@@ -176,6 +231,14 @@ function createOpenCodexServingBackend({
     await engine.start();
     backend = "engine";
     boundPort = engine.port();
+    // Prime pool quotas before declaring readiness: unprimed accounts score 100
+    // (unknown) and the auto-switch threshold flip-flops rotation on early requests.
+    // Best effort — a slow usage endpoint must not hold startup hostage.
+    try {
+      await bridgeApi.primeAccounts(boundPort, { timeoutMs: primeTimeoutMs });
+    } catch (error) {
+      log(`quota prime after engine start failed (continuing): ${error?.message || error}`);
+    }
     startPolling();
     // Watch the engine request log for kimi 401s and re-sync the bridged
     // credential; the engine re-reads auth.json per request, no restart needed.
@@ -185,6 +248,7 @@ function createOpenCodexServingBackend({
       log,
     });
     kimiResync.start();
+    startKimiSyncTimer();
     log(`OpenCodex engine backend serving on 127.0.0.1:${boundPort}`);
   }
 
@@ -216,6 +280,7 @@ function createOpenCodexServingBackend({
   async function stop({ timeoutMs } = {}) {
     const current = backend;
     stopPolling();
+    stopKimiSyncTimer();
     if (kimiResync) {
       // The watcher holds an interval; it must be cleared on every exit path.
       kimiResync.stop();

@@ -1,6 +1,9 @@
 "use strict";
 
 const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
 const test = require("node:test");
 
 const { createOpenCodexServingBackend } = require("../src/open-codex/serving-backend");
@@ -62,6 +65,15 @@ function fakeLifecycle({ calls, failStart = null, turnScript = [] } = {}) {
       const activeTurns = turnScript.length > 0 ? turnScript.shift() : 0;
       return { activeTurns, running: true, state: "ready", port: this.portValue };
     },
+    async syncKimiCredential() {
+      calls.push("syncKimiCredential");
+      if (this.syncError) {
+        const error = this.syncError;
+        this.syncError = null;
+        throw error;
+      }
+      return { status: "synced" };
+    },
     async waitForIdle() {
       calls.push("engine.waitForIdle");
       return { activeTurns: 0 };
@@ -122,6 +134,8 @@ function backendDeps(overrides = {}) {
         },
       },
       statusPollMs: 5,
+      kimiSyncIntervalMs: overrides.kimiSyncIntervalMs ?? 90_000,
+      kimiHome: overrides.kimiHome ?? path.join(os.tmpdir(), "codepet-backend-test-no-kimi-home"),
       createResync: (options) => {
         calls.push("createResync");
         resyncInstances.push({ options, started: 0, stopped: 0, start() { this.started += 1; }, stop() { this.stopped += 1; } });
@@ -145,6 +159,23 @@ test("engine backend is preferred and the proxy stays untouched on success", asy
   assert.equal(backend.port(), 19_900);
   assert.equal(proxy.calls.length, 0);
   assert.equal(proxy.running, false);
+  // Readiness gate: quota priming happens after engine start, before start() resolves.
+  const engineStart = calls.indexOf("engine.start");
+  const prime = calls.indexOf("primeAccounts:19900");
+  assert.ok(engineStart >= 0 && prime > engineStart, `prime order: ${calls}`);
+  await backend.stop();
+});
+
+test("a failed quota prime does not fail engine startup", async () => {
+  const { deps } = backendDeps({});
+  deps.bridgeApi.primeAccounts = async () => {
+    throw new Error("usage endpoint timeout");
+  };
+  const backend = createOpenCodexServingBackend(deps);
+
+  const result = await backend.start();
+
+  assert.deepEqual(result, { backend: "engine", port: 19_900 });
   await backend.stop();
 });
 
@@ -178,9 +209,10 @@ test("selectAccount routes to the engine API with the seeded engine id", async (
   const selected = await backend.selectAccount("acct-b");
 
   assert.equal(selected, true);
+  // One prime at startup (readiness gate), then prime + select for the switch.
   assert.deepEqual(
     calls.filter((call) => call.startsWith("primeAccounts") || call.startsWith("selectAccount")),
-    ["primeAccounts:19900", "selectAccount:19900:acct-b"]
+    ["primeAccounts:19900", "primeAccounts:19900", "selectAccount:19900:acct-b"]
   );
   await backend.stop();
 });
@@ -338,4 +370,58 @@ test("kimi 401 resync watcher is not created on the proxy fallback", async () =>
   assert.equal(resyncInstances.length, 0);
   await backend.stop();
   assert.equal(resyncInstances.length, 0);
+});
+
+test("periodic kimi re-sync fires on change, skips unchanged source, and stops cleanly", async (t) => {
+  const kimiHome = fs.mkdtempSync(path.join(os.tmpdir(), "codepet-backend-kimi-"));
+  t.after(() => fs.rmSync(kimiHome, { recursive: true, force: true }));
+  const credentialFile = path.join(kimiHome, "credentials", "kimi-code.json");
+  fs.mkdirSync(path.dirname(credentialFile), { recursive: true });
+  fs.writeFileSync(credentialFile, JSON.stringify({ access_token: "token-v1" }));
+
+  const { calls, deps } = backendDeps({ kimiHome, kimiSyncIntervalMs: 5 });
+  const backend = createOpenCodexServingBackend(deps);
+  await backend.start();
+  const syncCalls = () => calls.filter((call) => call === "syncKimiCredential").length;
+
+  await delay(40);
+  const afterFirst = syncCalls();
+  assert.ok(afterFirst >= 1, "tick fired the initial re-sync");
+  await delay(40);
+  assert.equal(syncCalls(), afterFirst, "unchanged credential file is not rewritten");
+
+  fs.writeFileSync(credentialFile, JSON.stringify({ access_token: "token-v2" }));
+  await delay(40);
+  assert.ok(syncCalls() > afterFirst, "changed credential file triggers a re-sync");
+
+  await backend.stop();
+  const atStop = syncCalls();
+  await delay(40);
+  assert.equal(syncCalls(), atStop, "timer kept firing after stop");
+});
+
+test("a periodic re-sync error is logged and the timer keeps running", async (t) => {
+  const kimiHome = fs.mkdtempSync(path.join(os.tmpdir(), "codepet-backend-kimi-"));
+  t.after(() => fs.rmSync(kimiHome, { recursive: true, force: true }));
+  const credentialFile = path.join(kimiHome, "credentials", "kimi-code.json");
+  fs.mkdirSync(path.dirname(credentialFile), { recursive: true });
+  fs.writeFileSync(credentialFile, JSON.stringify({ access_token: "token-v1" }));
+
+  const logs = [];
+  const { calls, deps, lifecycle } = backendDeps({ kimiHome, kimiSyncIntervalMs: 5 });
+  deps.log = (message) => logs.push(message);
+  const backend = createOpenCodexServingBackend(deps);
+  await backend.start();
+  const syncCalls = () => calls.filter((call) => call === "syncKimiCredential").length;
+
+  lifecycle.syncError = new Error("auth.json locked");
+  fs.writeFileSync(credentialFile, JSON.stringify({ access_token: "token-v2" }));
+  await delay(40);
+  assert.ok(logs.some((message) => message.includes("re-sync failed")), `missing failure log: ${logs}`);
+
+  // The failed tick did not latch the fingerprint, so the next tick retries and succeeds.
+  fs.writeFileSync(credentialFile, JSON.stringify({ access_token: "token-v3" }));
+  await delay(40);
+  assert.ok(syncCalls() >= 2, "timer kept running after the error");
+  await backend.stop();
 });
