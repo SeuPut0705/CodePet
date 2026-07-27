@@ -5,6 +5,7 @@ const net = require("node:net");
 const os = require("node:os");
 const path = require("node:path");
 const tls = require("node:tls");
+const zlib = require("node:zlib");
 const { URL } = require("node:url");
 const { atomicWrite, atomicWriteText } = require("./provider-profile-store");
 const { createKimiResponsesStream } = require("./kimi-codex-adapter");
@@ -78,6 +79,45 @@ function stripCodePetProxyLines(content) {
   return kept.join("\n");
 }
 
+function knownLegacyProviderBlockEnd(lines, start) {
+  const providerTable = lines.findIndex(
+    (line, index) => index > start && /^\s*\[model_providers\.codepet]\s*$/.test(line)
+  );
+  if (providerTable === -1) return -1;
+
+  const rootLines = lines.slice(start + 1, providerTable);
+  const rootAllowed = rootLines.every((line) =>
+    /^\s*$/.test(line) ||
+    /^\s*model_provider\s*=\s*"codepet"\s*$/.test(line) ||
+    /^\s*model_catalog_json\s*=\s*"[^"]+"\s*$/.test(line)
+  );
+  if (
+    !rootAllowed ||
+    rootLines.filter((line) => /^\s*model_provider\s*=/.test(line)).length !== 1 ||
+    rootLines.filter((line) => /^\s*model_catalog_json\s*=/.test(line)).length !== 1
+  ) {
+    return -1;
+  }
+
+  const nextTableOffset = lines
+    .slice(providerTable + 1)
+    .findIndex((line) => /^\s*\[/.test(line));
+  const end = nextTableOffset === -1 ? lines.length : providerTable + 1 + nextTableOffset;
+  const providerLines = lines.slice(providerTable + 1, end);
+  const required = [
+    /^\s*name\s*=\s*"CodePet OpenAI \+ Kimi"\s*$/,
+    /^\s*base_url\s*=\s*"http:\/\/127\.0\.0\.1:\d+\/v1"\s*$/,
+    /^\s*wire_api\s*=\s*"responses"\s*$/,
+    /^\s*requires_openai_auth\s*=\s*true\s*$/,
+    /^\s*supports_websockets\s*=\s*false\s*$/,
+  ];
+  if (!providerLines.every((line) => /^\s*$/.test(line) || required.some((pattern) => pattern.test(line)))) {
+    return -1;
+  }
+  if (!required.every((pattern) => providerLines.some((line) => pattern.test(line)))) return -1;
+  return end;
+}
+
 function stripCodePetProvider(content) {
   const lines = String(content ?? "").split("\n");
   const kept = [...lines];
@@ -87,10 +127,36 @@ function stripCodePetProvider(content) {
     const relativeEnd = kept
       .slice(start + 1)
       .findIndex((line) => line.trim() === CODEPET_PROVIDER_END_MARKER);
-    if (relativeEnd === -1) return String(content ?? "");
+    if (relativeEnd === -1) {
+      const legacyEnd = knownLegacyProviderBlockEnd(kept, start);
+      const knownEnd = legacyEnd !== -1 ? legacyEnd : knownInjectedProviderBlockEnd(kept, start);
+      if (knownEnd === -1) return String(content ?? "");
+      kept.splice(start, knownEnd - start);
+      continue;
+    }
     kept.splice(start, relativeEnd + 2);
   }
   return kept.join("\n");
+}
+
+// Codex 앱이 config.toml을 덮어쓰며 끝 마커 주석만 지운 경우입니다.
+// 시작 마커부터 다음 [table] 전까지가 현재 주입 형식(model_catalog_json + loopback openai_base_url)과
+// 정확히 일치하면 CodePet 소유 잔재로 판단해 걷어냅니다. 모르는 줄이 섞여 있으면 사용자 설정이므로 보존합니다.
+function knownInjectedProviderBlockEnd(lines, start) {
+  const nextTableOffset = lines
+    .slice(start + 1)
+    .findIndex((line) => /^\s*\[/.test(line));
+  const end = nextTableOffset === -1 ? lines.length : start + 1 + nextTableOffset;
+  const blockLines = lines.slice(start + 1, end);
+  const required = [
+    /^\s*model_catalog_json\s*=\s*"[^"]+"\s*$/,
+    /^\s*openai_base_url\s*=\s*"http:\/\/127\.0\.0\.1:\d+\/v1"\s*$/,
+  ];
+  if (!blockLines.every((line) => /^\s*$/.test(line) || required.some((pattern) => pattern.test(line)))) {
+    return -1;
+  }
+  if (!required.every((pattern) => blockLines.some((line) => pattern.test(line)))) return -1;
+  return end;
 }
 
 function rootConfigConflict(content) {
@@ -99,6 +165,7 @@ function rootConfigConflict(content) {
   const rootLines = lines.slice(0, firstTable === -1 ? lines.length : firstTable);
   if (rootLines.some((line) => /^\s*model_provider\s*=/.test(line))) return "model_provider";
   if (rootLines.some((line) => /^\s*model_catalog_json\s*=/.test(line))) return "model_catalog_json";
+  if (rootLines.some((line) => /^\s*openai_base_url\s*=/.test(line))) return "openai_base_url";
   if (lines.some((line) => /^\s*\[model_providers\.codepet]\s*$/.test(line))) {
     return "model_providers.codepet";
   }
@@ -119,15 +186,8 @@ function injectCodePetProvider(content, { port, catalogPath } = {}) {
   const rootEnd = firstTable === -1 ? lines.length : firstTable;
   const block = [
     CODEPET_PROVIDER_MARKER,
-    'model_provider = "codepet"',
     `model_catalog_json = ${JSON.stringify(String(catalogPath))}`,
-    "",
-    "[model_providers.codepet]",
-    'name = "CodePet OpenAI + Kimi"',
-    `base_url = "http://127.0.0.1:${port}/v1"`,
-    'wire_api = "responses"',
-    "requires_openai_auth = true",
-    "supports_websockets = false",
+    buildBaseUrlLine(port),
     CODEPET_PROVIDER_END_MARKER,
   ];
   return {
@@ -437,6 +497,27 @@ class CodexProxy {
       request.once("end", () => resolve(Buffer.concat(chunks)));
       request.once("error", reject);
     });
+  }
+
+  // Codex Desktop은 Responses 요청 본문을 gzip 등으로 압축해 보낼 수 있습니다.
+  // Kimi 라우팅(JSON 파싱)과 재시도용 재전송을 위해 평문으로 풀고,
+  // upstream에는 푼 본문만 보내야 하므로 content-encoding 헤더도 함께 벗깁니다.
+  decodeRequestBody(buffer, contentEncoding) {
+    switch (String(contentEncoding || "identity").toLowerCase()) {
+      case "":
+      case "identity":
+        return buffer;
+      case "gzip":
+        return zlib.gunzipSync(buffer);
+      case "deflate":
+        return zlib.inflateSync(buffer);
+      case "br":
+        return zlib.brotliDecompressSync(buffer);
+      case "zstd":
+        return zlib.zstdDecompressSync(buffer);
+      default:
+        throw new Error(`지원하지 않는 content-encoding: ${contentEncoding}`);
+    }
   }
 
   forwardOnce(target, method, headers, body) {
@@ -877,8 +958,19 @@ class CodexProxy {
 
     const isResponsesPost = request.method === "POST" && /\/responses$/.test(target.pathname);
     let routedBody = null;
+    let bodyDecoded = false;
     if (isResponsesPost) {
-      routedBody = await this.bufferBody(request);
+      const rawBody = await this.bufferBody(request);
+      try {
+        routedBody = this.decodeRequestBody(rawBody, request.headers["content-encoding"]);
+      } catch (error) {
+        this.log(`request body decode failed: ${error.message || String(error)}`);
+        response.writeHead(400, { "content-type": "application/json" });
+        response.end(JSON.stringify({ error: { message: "Responses 요청 본문 압축 해제에 실패했습니다." } }));
+        return;
+      }
+      // 압축을 풀었으면 upstream에는 평문을 보낼 것이므로 content-encoding 헤더를 벗깁니다.
+      bodyDecoded = routedBody !== rawBody;
       let parsed;
       try {
         parsed = JSON.parse(routedBody.toString("utf8"));
@@ -906,6 +998,7 @@ class CodexProxy {
     // 계정이 하나도 저장돼 있지 않으면 들어온 헤더 그대로 스트리밍 통과시킵니다. (본문 버퍼링 없음)
     if (accounts.length === 0) {
       const passthroughHeaders = this.filteredHeaders(request, { stripAuth: false });
+      if (bodyDecoded) delete passthroughHeaders["content-encoding"];
       let passthrough;
       if (routedBody !== null) {
         passthroughHeaders["content-length"] = routedBody.length;
@@ -925,6 +1018,7 @@ class CodexProxy {
     const canRotate = isRotatable && ordered.length > 1;
     const preferredKey = accounts[0].key;
     const baseHeaders = this.filteredHeaders(request, { stripAuth: true });
+    if (bodyDecoded) delete baseHeaders["content-encoding"];
     const body = routedBody !== null ? routedBody : (canRotate ? await this.bufferBody(request) : null);
 
     for (let index = 0; index < ordered.length; index += 1) {

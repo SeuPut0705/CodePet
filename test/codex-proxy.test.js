@@ -4,6 +4,7 @@ const fs = require("node:fs");
 const http = require("node:http");
 const os = require("node:os");
 const path = require("node:path");
+const zlib = require("node:zlib");
 const { Readable } = require("node:stream");
 
 const {
@@ -83,7 +84,7 @@ test("config 제거는 marker와 그 다음 base_url 줄만 걷어낸다", () =>
   assert.match(stripped, /\[a\]/);
 });
 
-test("CodePet 공급자 설정은 루트 키와 HTTP Responses 공급자 테이블을 소유 블록으로 넣는다", () => {
+test("CodePet 공급자 설정은 카탈로그와 built-in openai 프록시 주소만 소유 블록으로 넣는다", () => {
   const result = injectCodePetProvider(
     ['model = "gpt-5"', "", "[plugins.chrome]", 'x = "y"'].join("\n"),
     { port: 10161, catalogPath: "/tmp/codepet models.json" }
@@ -91,14 +92,24 @@ test("CodePet 공급자 설정은 루트 키와 HTTP Responses 공급자 테이�
 
   assert.equal(result.conflict, null);
   assert.match(result.content, new RegExp(CODEPET_PROVIDER_MARKER));
-  assert.match(result.content, /model_provider = "codepet"/);
   assert.match(result.content, /model_catalog_json = "\/tmp\/codepet models\.json"/);
-  assert.match(result.content, /\[model_providers\.codepet\]/);
-  assert.match(result.content, /base_url = "http:\/\/127\.0\.0\.1:10161\/v1"/);
-  assert.match(result.content, /wire_api = "responses"/);
-  assert.match(result.content, /requires_openai_auth = true/);
-  assert.match(result.content, /supports_websockets = false/);
-  assert.ok(result.content.indexOf('model_provider = "codepet"') < result.content.indexOf("[plugins.chrome]"));
+  assert.match(result.content, /openai_base_url = "http:\/\/127\.0\.0\.1:10161\/v1"/);
+  assert.doesNotMatch(result.content, /^model_provider\s*=/m);
+  assert.doesNotMatch(result.content, /^\[model_providers\.codepet\]$/m);
+  assert.ok(result.content.indexOf('model_catalog_json = "/tmp/codepet models.json"') < result.content.indexOf("[plugins.chrome]"));
+});
+
+test("Kimi 카탈로그를 연결해도 기존 openai 세션 공급자를 유지한다", () => {
+  const result = injectCodePetProvider('model = "gpt-5"\n', {
+    port: 10161,
+    catalogPath: "/tmp/codepet-models.json",
+  });
+
+  assert.equal(result.conflict, null);
+  assert.match(result.content, /openai_base_url = "http:\/\/127\.0\.0\.1:10161\/v1"/);
+  assert.match(result.content, /model_catalog_json = "\/tmp\/codepet-models\.json"/);
+  assert.doesNotMatch(result.content, /^model_provider\s*=/m);
+  assert.doesNotMatch(result.content, /^\[model_providers\.codepet\]$/m);
 });
 
 test("CodePet 공급자 설정은 멱등이고 제거 시 자기 블록만 걷어낸다", () => {
@@ -130,10 +141,66 @@ test("끝 마커가 없는 손상된 CodePet 공급자 블록은 사용자 설�
   assert.equal(stripCodePetProvider(damaged), damaged);
 });
 
+test("끝 마커가 사라진 기존 CodePet 공급자 블록은 안전한 known shape이면 마이그레이션한다", () => {
+  const legacy = [
+    'model = "gpt-test"',
+    CODEPET_PROVIDER_MARKER,
+    'model_provider = "codepet"',
+    'model_catalog_json = "/tmp/old.json"',
+    "",
+    "[model_providers.codepet]",
+    'name = "CodePet OpenAI + Kimi"',
+    'base_url = "http://127.0.0.1:10161/v1"',
+    'wire_api = "responses"',
+    "requires_openai_auth = true",
+    "supports_websockets = false",
+    "",
+    "[plugins.chrome]",
+    "enabled = true",
+  ].join("\n");
+
+  const result = injectCodePetProvider(legacy, {
+    port: 10162,
+    catalogPath: "/tmp/new.json",
+  });
+
+  assert.equal(result.conflict, null);
+  assert.match(result.content, /model_catalog_json = "\/tmp\/new\.json"/);
+  assert.match(result.content, /openai_base_url = "http:\/\/127\.0\.0\.1:10162\/v1"/);
+  assert.match(result.content, /\[plugins\.chrome\]\nenabled = true/);
+  assert.doesNotMatch(result.content, /^model_provider\s*=/m);
+  assert.doesNotMatch(result.content, /^\[model_providers\.codepet\]$/m);
+  assert.doesNotMatch(result.content, /\/tmp\/old\.json|10161/);
+});
+
+test("끝 마커가 사라진 현재 CodePet 공급자 블록은 안전한 known shape이면 마이그레이션한다", () => {
+  const stale = [
+    'model = "gpt-test"',
+    CODEPET_PROVIDER_MARKER,
+    'model_catalog_json = "/tmp/old.json"',
+    'openai_base_url = "http://127.0.0.1:10161/v1"',
+    "",
+    "[plugins.chrome]",
+    "enabled = true",
+  ].join("\n");
+
+  const result = injectCodePetProvider(stale, {
+    port: 10162,
+    catalogPath: "/tmp/new.json",
+  });
+
+  assert.equal(result.conflict, null);
+  assert.match(result.content, /model_catalog_json = "\/tmp\/new\.json"/);
+  assert.match(result.content, /openai_base_url = "http:\/\/127\.0\.0\.1:10162\/v1"/);
+  assert.match(result.content, /\[plugins\.chrome\]\nenabled = true/);
+  assert.doesNotMatch(result.content, /\/tmp\/old\.json|10161/);
+});
+
 test("CodePet 공급자 설정은 사용자 소유 충돌을 덮어쓰지 않는다", () => {
   const cases = [
     ['model_provider = "custom"', "model_provider"],
     ['model_catalog_json = "/tmp/custom.json"', "model_catalog_json"],
+    ['openai_base_url = "http://127.0.0.1:9/v1"', "openai_base_url"],
     ['[model_providers.codepet]\nbase_url = "http://custom"', "model_providers.codepet"],
   ];
 
@@ -147,7 +214,7 @@ test("CodePet 공급자 설정은 사용자 소유 충돌을 덮어쓰지 않는
   }
 });
 
-test("enableProxyInConfig는 카탈로그 경로가 있으면 CodePet HTTP 공급자를 원자 저장한다", (t) => {
+test("enableProxyInConfig는 카탈로그 경로가 있으면 built-in openai 프록시 설정을 원자 저장한다", (t) => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "codepet-provider-config-"));
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
   const configPath = path.join(directory, "config.toml");
@@ -159,9 +226,9 @@ test("enableProxyInConfig는 카탈로그 경로가 있으면 CodePet HTTP 공�
     catalogPath: "/tmp/codepet-catalog.json",
   });
   const enabled = fs.readFileSync(configPath, "utf8");
-  assert.match(enabled, /model_provider = "codepet"/);
   assert.match(enabled, /model_catalog_json = "\/tmp\/codepet-catalog\.json"/);
-  assert.match(enabled, /supports_websockets = false/);
+  assert.match(enabled, /openai_base_url = "http:\/\/127\.0\.0\.1:19401\/v1"/);
+  assert.doesNotMatch(enabled, /^model_provider\s*=/m);
 
   disableProxyInConfig(configPath);
   assert.equal(fs.readFileSync(configPath, "utf8").trim(), 'model = "gpt-test"');
@@ -258,6 +325,85 @@ test("프록시는 /v1 경로를 벗기고 활성 계정 인증 헤더를 주입
     assert.equal(seen.headers["chatgpt-account-id"], "id-token-a");
     assert.equal(seen.headers.session_id, "sess-1");
     assert.equal(seen.body, '{"model":"gpt-5"}');
+  } finally {
+    proxy.stop();
+    upstream.close();
+  }
+});
+
+test("gzip으로 압축된 Responses 요청은 풀어서 중계하고 content-encoding을 벗긴다", async () => {
+  let seen = null;
+  const upstream = await startUpstream((request, response) => {
+    let body = "";
+    request.on("data", (chunk) => (body += chunk));
+    request.on("end", () => {
+      seen = { url: request.url, headers: request.headers, body };
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end('{"ok":true}');
+    });
+  });
+
+  const proxy = poolProxy({
+    upstreamPort: upstream.address().port,
+    accounts: [{ key: "a", label: "A", authPath: "token-a" }],
+    port: 19162,
+  });
+  const proxyPort = await proxy.start();
+  const plainBody = '{"model":"gpt-5","input":[]}';
+
+  try {
+    const response = await fetch(`http://127.0.0.1:${proxyPort}/v1/responses`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "content-encoding": "gzip",
+      },
+      body: zlib.gzipSync(Buffer.from(plainBody, "utf8")),
+    });
+
+    assert.equal(response.status, 200);
+    assert.equal(seen.body, plainBody);
+    assert.equal(seen.headers["content-encoding"], undefined);
+    assert.equal(seen.headers["content-length"], String(Buffer.byteLength(plainBody)));
+  } finally {
+    proxy.stop();
+    upstream.close();
+  }
+});
+
+test("zstd로 압축된 Responses 요청도 풀어서 중계한다", async () => {
+  let seen = null;
+  const upstream = await startUpstream((request, response) => {
+    let body = "";
+    request.on("data", (chunk) => (body += chunk));
+    request.on("end", () => {
+      seen = { headers: request.headers, body };
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end('{"ok":true}');
+    });
+  });
+
+  const proxy = poolProxy({
+    upstreamPort: upstream.address().port,
+    accounts: [{ key: "a", label: "A", authPath: "token-a" }],
+    port: 19163,
+  });
+  const proxyPort = await proxy.start();
+  const plainBody = '{"model":"gpt-5","input":[]}';
+
+  try {
+    const response = await fetch(`http://127.0.0.1:${proxyPort}/v1/responses`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "content-encoding": "zstd",
+      },
+      body: zlib.zstdCompressSync(Buffer.from(plainBody, "utf8")),
+    });
+
+    assert.equal(response.status, 200);
+    assert.equal(seen.body, plainBody);
+    assert.equal(seen.headers["content-encoding"], undefined);
   } finally {
     proxy.stop();
     upstream.close();
