@@ -13,6 +13,7 @@ const {
   ENGINE_ACCOUNT_ID_RE,
   addAccount,
   clearCooldown,
+  getActiveAccount,
   listEngineAccounts,
   normalizeEngineAccountId,
   primeAccounts,
@@ -307,6 +308,7 @@ test("live ops helpers hit the expected management endpoints", async (t) => {
   });
 
   await primeAccounts(port);
+  await getActiveAccount(port);
   await selectAccount(port, "acct-one");
   await clearCooldown(port, "acct-two");
   await addAccount(port, {
@@ -321,14 +323,15 @@ test("live ops helpers hit the expected management endpoints", async (t) => {
     requests.map((request) => `${request.method} ${request.url}`),
     [
       "GET /api/codex-auth/accounts?refresh=1",
+      "GET /api/codex-auth/active",
       "PUT /api/codex-auth/active",
       "POST /api/codex-auth/accounts/clear-cooldown",
       "POST /api/codex-auth/accounts",
     ]
   );
-  assert.deepEqual(JSON.parse(requests[1].body), { accountId: "acct-one" });
-  assert.deepEqual(JSON.parse(requests[2].body), { id: "acct-two" });
-  assert.equal(JSON.parse(requests[3].body).id, "acct-three");
+  assert.deepEqual(JSON.parse(requests[2].body), { accountId: "acct-one" });
+  assert.deepEqual(JSON.parse(requests[3].body), { id: "acct-two" });
+  assert.equal(JSON.parse(requests[4].body).id, "acct-three");
 });
 
 test("live ops surface the engine error status and message", async (t) => {

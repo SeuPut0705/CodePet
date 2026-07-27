@@ -92,7 +92,7 @@ test("Electron main은 shadow를 flag 뒤에서 시작하고 안전 종료 준�
   );
   const coordinator = mainSource.slice(
     mainSource.indexOf("new CodexProxyShutdownCoordinator("),
-    mainSource.indexOf("codexProxy.onIdle(")
+    mainSource.indexOf("servingBackend.onIdle(")
   );
 
   assert.match(mainSource, /process\.env\.CODEPET_OPENCODEX_SHADOW === "1"/);

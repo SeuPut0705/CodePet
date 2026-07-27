@@ -958,7 +958,7 @@ test("main은 Codex 카탈로그와 Kimi 라우터를 같은 프록시 시작 �
   assert.match(main, /prepareCodexProxyCatalog\(\)/);
   assert.match(main, /app\.getPath\("userData"\)/);
   assert.match(main, /enableProxyInConfig\(port,\s*\{[\s\S]*catalogPath:/);
-  assert.match(main, /enableProxyInConfig\(codexProxy\.port,\s*\{[\s\S]*catalogPath:/);
+  assert.match(main, /enableProxyInConfig\(port, \{ catalogPath: codexProxyCatalogPath \}\)/);
 });
 
 test("제품 설명과 README가 Kimi CLI 지원을 명시한다", () => {

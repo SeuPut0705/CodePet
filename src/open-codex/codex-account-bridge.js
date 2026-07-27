@@ -351,6 +351,10 @@ function primeAccounts(port, options = {}) {
   return callEngineApi(port, { method: "GET", apiPath: "/api/codex-auth/accounts?refresh=1", ...options });
 }
 
+function getActiveAccount(port, options = {}) {
+  return callEngineApi(port, { method: "GET", apiPath: "/api/codex-auth/active", ...options });
+}
+
 function selectAccount(port, id, options = {}) {
   return callEngineApi(port, { method: "PUT", apiPath: "/api/codex-auth/active", body: { accountId: id }, ...options });
 }
@@ -382,6 +386,7 @@ module.exports = {
   addAccount,
   clearCooldown,
   engineCredentialFromAuth,
+  getActiveAccount,
   listEngineAccounts,
   normalizeEngineAccountId,
   primeAccounts,

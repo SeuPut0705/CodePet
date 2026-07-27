@@ -63,6 +63,7 @@ const {
 const { createEngineHost } = require("./open-codex/engine-host");
 const { createOpenCodexShadowLifecycle } = require("./open-codex/shadow-lifecycle");
 const { syncKimiCliCredential } = require("./open-codex/kimi-credential-adapter");
+const { createOpenCodexServingBackend } = require("./open-codex/serving-backend");
 const { createActivityHeading: activityHeading } = require("./activity-title");
 const { formatActivityMessage } = require("./activity-message");
 const {
@@ -673,6 +674,36 @@ const codexProxy = new CodexProxy({
   },
 });
 
+// Serving facade: the OpenCodex engine is the default Codex Desktop backend, with
+// the legacy codexProxy above as the automatic fallback. Engine-side account
+// rotations are mirrored into the profile store through the same deferred
+// persist + bubble path the proxy's notifySwitch used.
+const servingBackend = createOpenCodexServingBackend({
+  userDataDir: app.getPath("userData"),
+  enginePath: openCodexEngineBundlePath(),
+  codexAccountSwitcher,
+  discoverKimiModels: discoverManagedKimiModels,
+  proxy: codexProxy,
+  log: appendDebugLog,
+  onAutoSwitch: ({ profileKey, engineId }) => {
+    setImmediate(() => {
+      let label = profileKey;
+      try {
+        codexAccountSwitcher.switchToProfile(profileKey);
+        invalidateProxyAccountsCache();
+        label = codexAccountSwitcher.listProfiles().find((profile) => profile.key === profileKey)?.label || profileKey;
+        refreshTrayMenu();
+      } catch (error) {
+        appendDebugLog(`engine auto-switch persist failed: ${error.message || String(error)}`);
+      }
+      appendDebugLog(`codex engine auto-switch to ${profileKey} (${engineId})`);
+      showCodexAccountBubble(
+        `Codex 한도가 소진돼 "${label}" 계정으로 자동 전환했습니다.\n재시작 없이 바로 적용됐어요.`
+      );
+    });
+  },
+});
+
 // PR에서 약속한 동작대로 신규/기존 설정 모두 기본값은 켜짐입니다.
 // 사용자가 메뉴에서 명시적으로 끈 경우에만 false가 저장됩니다.
 function isCodexProxyModeEnabled() {
@@ -689,17 +720,18 @@ async function setCodexProxyMode(enabled) {
   try {
     if (enabled) {
       const catalogPath = prepareCodexProxyCatalog();
-      const port = await codexProxy.start();
+      const { backend, port } = await servingBackend.start();
       enableProxyInConfig(port, { catalogPath });
       codexProxyActive = true;
       codexProxyLastError = null;
       writeSettings({ codexProxyMode: true });
+      appendDebugLog(`codex serving backend started: ${backend} on 127.0.0.1:${port}`);
       showCodexAccountBubble(
         "Codex 로컬 프록시를 켰습니다.\n새 CLI 연결의 인증 교체와 한도 자동 전환에 사용합니다.\n실행 중인 Desktop 계정 전환은 CodePet이 자동 재실행합니다."
       );
     } else {
       disableProxyInConfig();
-      codexProxy.stop();
+      await servingBackend.stop();
       codexProxyActive = false;
       codexProxyLastError = null;
       writeSettings({ codexProxyMode: false });
@@ -717,7 +749,7 @@ async function setCodexProxyMode(enabled) {
       } catch {
         // 원복 실패는 무시합니다.
       }
-      codexProxy.stop();
+      await servingBackend.stop().catch(() => {});
       writeSettings({ codexProxyMode: false });
     }
   }
@@ -736,28 +768,32 @@ async function restoreCodexProxyMode() {
   if (!isCodexProxyModeEnabled()) return;
   try {
     const catalogPath = prepareCodexProxyCatalog();
-    const port = await codexProxy.start();
+    const { backend, port } = await servingBackend.start();
     enableProxyInConfig(port, { catalogPath });
     codexProxyActive = true;
     codexProxyLastError = null;
+    appendDebugLog(`codex serving backend restored: ${backend} on 127.0.0.1:${port}`);
   } catch (error) {
     // 주입 실패(예: 사용자가 직접 openai_base_url을 설정)면 프록시를 완전히 끕니다.
     // 그래야 switchCodexAccount가 프록시 경로로 잘못 빠져 조용히 아무것도 안 하는 상황을 막습니다.
     appendDebugLog(`codex proxy restore failed: ${error.message || String(error)}`);
     codexProxyActive = false;
     codexProxyLastError = error;
-    codexProxy.stop();
+    await servingBackend.stop().catch(() => {});
   }
 }
 
 // 종료 시 모드와 무관하게 주입된 마커를 항상 제거합니다. (다음 실행 때 필요하면 재주입)
+// 백엔드 정지(drain + grant 역동기화)는 비동기로 마무리하고 실패는 로그만 남깁니다.
 function teardownCodexProxyOnQuit() {
   try {
     disableProxyInConfig();
   } catch {
     // 종료 경로에서는 실패해도 앱 종료를 막지 않습니다.
   }
-  codexProxy.stop();
+  void servingBackend.stop().catch((error) => {
+    appendDebugLog(`codex serving backend stop failed on quit: ${error.message || String(error)}`);
+  });
   codexProxyActive = false;
 }
 
@@ -812,7 +848,7 @@ const codexWatcher = new CodexWatcher();
 const codexProxyShutdownCoordinator = new CodexProxyShutdownCoordinator({
   isCodexWorking: () =>
     codexProxyActive &&
-    (codexWatcher.working || codexProxy.activeConnectionCount > 0),
+    (codexWatcher.working || servingBackend.isWorking()),
   // idle 전환 직후 새 요청이 붙는 경합을 흡수한 뒤 한 번 더 실제 상태를 확인합니다.
   waitForIdleConfirmation: () =>
     new Promise((resolve) => setTimeout(resolve, 250)),
@@ -825,18 +861,19 @@ const codexProxyShutdownCoordinator = new CodexProxyShutdownCoordinator({
       stopDesktop: stopCodexDesktopApp,
       waitForDesktopExit: waitForCodexDesktopExit,
       launchDesktop: launchCodexDesktopApp,
-      stopProxy: () => {
-        codexProxy.stop();
+      stopProxy: async () => {
+        await servingBackend.stop();
         codexProxyActive = false;
       },
-      restoreProxyConfig: () => {
-        if (!codexProxy.running || !codexProxy.port) {
+      restoreProxyConfig: async () => {
+        const { port } = await servingBackend.start();
+        if (!port) {
           throw new Error("Codex 프록시를 복구할 수 없습니다.");
         }
         if (!codexProxyCatalogPath) {
           throw new Error("Codex 모델 카탈로그를 복구할 수 없습니다.");
         }
-        enableProxyInConfig(codexProxy.port, { catalogPath: codexProxyCatalogPath });
+        enableProxyInConfig(port, { catalogPath: codexProxyCatalogPath });
         codexProxyActive = true;
       },
     });
@@ -854,7 +891,7 @@ const codexProxyShutdownCoordinator = new CodexProxyShutdownCoordinator({
     );
   },
 });
-codexProxy.onIdle(() => {
+servingBackend.onIdle(() => {
   void codexProxyShutdownCoordinator.handleWorkingChanged(codexWatcher.working);
 });
 const codexThreadTitles = new CodexThreadTitleResolver({
@@ -2293,7 +2330,9 @@ async function switchCodexAccount(profileKey) {
     }
 
     const result = codexAccountSwitcher.switchToProfile(profileKey);
-    codexProxy.selectAccount(result.profile.key);
+    // Fire-and-forget: the Desktop relaunch dance must not wait on the engine's
+    // quota-prime + select round-trip; failures are logged inside the facade.
+    void servingBackend.selectAccount(result.profile.key);
     invalidateProxyAccountsCache();
     refreshTrayMenu();
 

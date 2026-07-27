@@ -87,7 +87,7 @@ async function prepareCodexProxyForQuit({
 } = {}) {
   if (!proxyActive) {
     disableProxyConfig();
-    stopProxy();
+    await stopProxy();
     return;
   }
 
@@ -106,9 +106,9 @@ async function prepareCodexProxyForQuit({
       await launchDesktop();
     }
 
-    stopProxy();
+    await stopProxy();
   } catch (error) {
-    if (configDisabled) restoreProxyConfig();
+    if (configDisabled) await restoreProxyConfig();
     if (desktopStopped) {
       try {
         await launchDesktop();

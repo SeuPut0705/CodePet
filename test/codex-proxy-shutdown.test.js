@@ -151,8 +151,8 @@ test("main 종료 수명주기는 coordinator를 거쳐 작업 완료 뒤 before
   const mainSource = fs.readFileSync(path.join(__dirname, "..", "src", "main.js"), "utf8");
 
   assert.match(mainSource, /new CodexProxyShutdownCoordinator\(/);
-  assert.match(mainSource, /codexProxy\.activeConnectionCount > 0/);
-  assert.match(mainSource, /codexProxy\.onIdle\(/);
+  assert.match(mainSource, /servingBackend\.isWorking\(\)/);
+  assert.match(mainSource, /servingBackend\.onIdle\(/);
   assert.match(mainSource, /codexProxyShutdownCoordinator\.requestQuit\(\)/);
   assert.match(mainSource, /codexProxyShutdownCoordinator\.handleWorkingChanged\(isWorking\)/);
   assert.match(
