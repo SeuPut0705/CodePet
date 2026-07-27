@@ -4,7 +4,6 @@ const fs = require("node:fs");
 const http = require("node:http");
 const path = require("node:path");
 
-const { CodexProxy } = require("../src/codex-proxy");
 const {
   CodexProxyShutdownCoordinator,
   prepareCodexProxyForQuit,
@@ -161,49 +160,3 @@ test("main 종료 수명주기는 coordinator를 거쳐 작업 완료 뒤 before
   );
 });
 
-test("실제 프록시 활성 stream을 기준으로 종료를 기다리고 끝까지 전달한다", async () => {
-  const upstream = http.createServer((_request, response) => {
-    response.writeHead(200, { "content-type": "text/plain" });
-    response.write("start");
-    setTimeout(() => response.end("end"), 50);
-  });
-  await new Promise((resolve) => upstream.listen(0, "127.0.0.1", resolve));
-
-  const proxy = new CodexProxy({
-    upstreamBase: `http://127.0.0.1:${upstream.address().port}`,
-    port: 19231,
-    resolveAccounts: async () => [],
-  });
-  const proxyPort = await proxy.start();
-  const events = [];
-  const coordinator = new CodexProxyShutdownCoordinator({
-    isCodexWorking: () => proxy.activeConnectionCount > 0,
-    prepareForQuit: async () => {
-      events.push("prepare");
-      proxy.stop();
-    },
-    finishQuit: () => events.push("quit"),
-  });
-  const removeIdleListener = proxy.onIdle(() => {
-    void coordinator.handleWorkingChanged(false);
-  });
-
-  try {
-    const response = await fetch(`http://127.0.0.1:${proxyPort}/v1/responses`, {
-      method: "POST",
-      body: "{}",
-    });
-
-    assert.equal(await coordinator.requestQuit(), false);
-    assert.equal(proxy.activeConnectionCount, 1);
-    assert.equal(proxy.running, true);
-    assert.equal(await response.text(), "startend");
-    await new Promise((resolve) => setImmediate(resolve));
-    assert.deepEqual(events, ["prepare", "quit"]);
-    assert.equal(proxy.running, false);
-  } finally {
-    removeIdleListener();
-    proxy.stop();
-    upstream.close();
-  }
-});

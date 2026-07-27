@@ -164,13 +164,13 @@ CodePet 将各 provider 的事件归一为统一状态。
 
 右键菜单与托盘菜单为 Codex、AGY 和 Claude 提供相同的账户结构。可在设置的**账户 (계정)** 页面删除未使用的配置；当前配置需先切换到其他账户才能删除。
 
-- **Codex**：按配置保存凭据。如果切换账户时 Codex Desktop 正在运行，CodePet 会请求应用退出、确认进程已结束、替换凭据，然后自动重新启动。无需手动退出 Codex。**Codex 额度自动切换（本地代理）(Codex 한도 자동 전환 (로컬 프록시))** 通过 `127.0.0.1` 为新的 CLI 连接应用凭据，并在达到额度后轮换账户。它管理 `~/.codex/config.toml` 中的 `# codepet-codex-proxy` 区块。已打开的 CLI 会话可能需要重新启动才能使用所选账户。
+- **Codex**：按配置保存凭据。如果切换账户时 Codex Desktop 正在运行，CodePet 会请求应用退出、确认进程已结束、替换凭据，然后自动重新启动。无需手动退出 Codex。**Codex 额度自动切换（本地引擎）(Codex 한도 자동 전환 (로컬 엔진))** 通过内嵌 OpenCodex 引擎（`127.0.0.1`）为新的 CLI 连接应用凭据，并在达到额度后轮换账户。它管理 `~/.codex/config.toml` 中的 `# codepet-codex-provider` 区块。已打开的 CLI 会话可能需要重新启动才能使用所选账户。
 - **AGY**：保存 Windows 凭据管理器或 macOS Keychain 中的当前凭据，切换到所选配置后重启 AGY。
 - **Claude**：保存当前凭据文件和 `claude auth status` 返回的邮箱。已有会话保持运行，新会话使用所选账户。
 
 配置保存在 `~/.codepet/codex-switch`、`~/.codepet/antigravity-switch` 和 `~/.codepet/claude-switch`。设置页面不会显示秘密值。
 
-如果强制退出后 Codex 无法连接，请启动一次 CodePet 以清理过期代理标记；也可以从 `~/.codex/config.toml` 删除 `# codepet-codex-proxy` 区块。
+如果强制退出后 Codex 无法连接，请启动一次 CodePet 以清理过期引擎标记；也可以从 `~/.codex/config.toml` 删除 `# codepet-codex-provider` 区块。
 
 </details>
 

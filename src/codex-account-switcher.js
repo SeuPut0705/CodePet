@@ -3,7 +3,7 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const { spawnSync } = require("node:child_process");
-const { refreshAuthFileIfStale } = require("./codex-proxy");
+const { refreshAuthFileIfStale } = require("./codex-token-refresh");
 
 // CodePet 계정 전환 방식:
 //  1. 실제 Codex Desktop은 항상 기본 ~/.codex/auth.json을 사용합니다.

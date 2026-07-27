@@ -9,9 +9,9 @@
   "summary": {
     "total": 251,
     "statusCounts": {
-      "imported": 249,
-      "contract-tested": 2,
-      "runtime-verified": 0
+      "imported": 238,
+      "contract-tested": 0,
+      "runtime-verified": 13
     }
   },
   "categories": {
@@ -850,25 +850,26 @@
       },
       {
         "id": "oauth:oauth/kimi",
-        "status": "imported",
+        "status": "runtime-verified",
         "upstreamEvidence": [
           "src/oauth/kimi.ts"
         ],
         "codePetEvidence": [
-          "src/kimi-codex-adapter.js",
           "src/kimi-codex-models.js",
           "src/kimi-usage-client.js",
           "src/kimi-usage-controller.js",
           "src/kimi-usage.js",
           "src/kimi-watcher.js",
           "src/open-codex/kimi-credential-adapter.js",
-          "test/kimi-codex-adapter.test.js",
+          "src/open-codex/kimi-credential-resync.js",
           "test/kimi-codex-models.test.js",
           "test/kimi-usage-client.test.js",
           "test/kimi-usage-controller.test.js",
           "test/kimi-usage.test.js",
           "test/kimi-watcher.test.js",
-          "test/open-codex-kimi-credential-adapter.test.js"
+          "test/open-codex-kimi-credential-adapter.test.js",
+          "test/opencodex-kimi-credential-resync.test.js",
+          "test/opencodex-kimi-parity.test.js"
         ]
       },
       {
@@ -895,7 +896,10 @@
         "upstreamEvidence": [
           "src/oauth/local-token-detect.ts"
         ],
-        "codePetEvidence": []
+        "codePetEvidence": [
+          "src/codex-token-refresh.js",
+          "test/codex-token-refresh.test.js"
+        ]
       },
       {
         "id": "oauth:oauth/log",
@@ -923,11 +927,13 @@
       },
       {
         "id": "oauth:oauth/store",
-        "status": "imported",
+        "status": "runtime-verified",
         "upstreamEvidence": [
           "src/oauth/store.ts"
         ],
-        "codePetEvidence": []
+        "codePetEvidence": [
+          "test/opencodex-kimi-credential-resync.test.js"
+        ]
       },
       {
         "id": "oauth:oauth/token-guardian",
@@ -935,7 +941,10 @@
         "upstreamEvidence": [
           "src/oauth/token-guardian.ts"
         ],
-        "codePetEvidence": []
+        "codePetEvidence": [
+          "src/codex-token-refresh.js",
+          "test/codex-token-refresh.test.js"
+        ]
       },
       {
         "id": "oauth:oauth/types",
@@ -1070,27 +1079,30 @@
       },
       {
         "id": "transports:server/index",
-        "status": "contract-tested",
+        "status": "runtime-verified",
         "upstreamEvidence": [
           "src/server/index.ts"
         ],
         "codePetEvidence": [
           "scripts/opencodex/engine-smoke.js",
-          "test/open-codex-engine-smoke.test.js"
+          "test/open-codex-engine-smoke.test.js",
+          "test/opencodex-kimi-parity.test.js",
+          "test/opencodex-serving-backend.test.js"
         ]
       },
       {
         "id": "transports:server/lifecycle",
-        "status": "contract-tested",
+        "status": "runtime-verified",
         "upstreamEvidence": [
           "src/server/lifecycle.ts"
         ],
         "codePetEvidence": [
           "scripts/opencodex/engine-smoke.js",
-          "src/open-codex/shadow-lifecycle.js",
+          "src/open-codex/serving-lifecycle.js",
           "test/codex-account-switch-lifecycle.test.js",
           "test/open-codex-engine-host.test.js",
-          "test/open-codex-engine-smoke.test.js"
+          "test/open-codex-engine-smoke.test.js",
+          "test/opencodex-serving-lifecycle.test.js"
         ]
       },
       {
@@ -1141,11 +1153,13 @@
       },
       {
         "id": "transports:server/management/combo-routes",
-        "status": "imported",
+        "status": "runtime-verified",
         "upstreamEvidence": [
           "src/server/management/combo-routes.ts"
         ],
-        "codePetEvidence": []
+        "codePetEvidence": [
+          "test/opencodex-kimi-parity.test.js"
+        ]
       },
       {
         "id": "transports:server/management/config-routes",
@@ -1212,10 +1226,12 @@
           "src/claude-account-metadata.js",
           "src/claude-account-switcher.js",
           "src/codex-account-switcher.js",
+          "src/open-codex/codex-account-bridge.js",
           "src/settings-account-providers.js",
           "test/account-submenu.test.js",
           "test/account-usage.test.js",
           "test/claude-account-metadata.test.js",
+          "test/codex-account-bridge.test.js",
           "test/codex-account-switch-lifecycle.test.js",
           "test/codex-account-switcher.test.js",
           "test/settings-account-providers.test.js"
@@ -1279,9 +1295,7 @@
         ],
         "codePetEvidence": [
           "src/codex-proxy-shutdown.js",
-          "src/codex-proxy.js",
-          "test/codex-proxy-shutdown.test.js",
-          "test/codex-proxy.test.js"
+          "test/codex-proxy-shutdown.test.js"
         ]
       },
       {
@@ -1302,19 +1316,23 @@
       },
       {
         "id": "transports:server/request-decompress",
-        "status": "imported",
+        "status": "runtime-verified",
         "upstreamEvidence": [
           "src/server/request-decompress.ts"
         ],
-        "codePetEvidence": []
+        "codePetEvidence": [
+          "docs/superpowers/specs/2026-07-28-opencodex-cutover-design.md"
+        ]
       },
       {
         "id": "transports:server/request-log",
-        "status": "imported",
+        "status": "runtime-verified",
         "upstreamEvidence": [
           "src/server/request-log.ts"
         ],
-        "codePetEvidence": []
+        "codePetEvidence": [
+          "test/opencodex-kimi-credential-resync.test.js"
+        ]
       },
       {
         "id": "transports:server/responses-item-id-repair",
@@ -1445,12 +1463,15 @@
       },
       {
         "id": "transports:server/ws-bridge",
-        "status": "imported",
+        "status": "runtime-verified",
         "upstreamEvidence": [
           "src/server/ws-bridge.ts"
         ],
         "codePetEvidence": [
+          "docs/superpowers/specs/2026-07-28-opencodex-cutover-design.md",
+          "src/open-codex/codex-account-bridge.js",
           "src/provider-hook-bridge.js",
+          "test/codex-account-bridge.test.js",
           "test/provider-hook-bridge.test.js"
         ]
       }
@@ -1471,10 +1492,12 @@
           "src/claude-account-switcher.js",
           "src/codex-account-switcher.js",
           "src/codex-usage-label.js",
+          "src/open-codex/codex-account-bridge.js",
           "src/settings-account-providers.js",
           "test/account-submenu.test.js",
           "test/account-usage.test.js",
           "test/claude-account-metadata.test.js",
+          "test/codex-account-bridge.test.js",
           "test/codex-account-switch-lifecycle.test.js",
           "test/codex-account-switcher.test.js",
           "test/settings-account-providers.test.js"
@@ -1493,13 +1516,16 @@
           "src/claude-account-metadata.js",
           "src/claude-account-switcher.js",
           "src/codex-account-switcher.js",
-          "src/open-codex/shadow-lifecycle.js",
+          "src/open-codex/codex-account-bridge.js",
+          "src/open-codex/serving-lifecycle.js",
           "src/settings-account-providers.js",
           "test/account-submenu.test.js",
           "test/account-usage.test.js",
           "test/claude-account-metadata.test.js",
+          "test/codex-account-bridge.test.js",
           "test/codex-account-switch-lifecycle.test.js",
           "test/codex-account-switcher.test.js",
+          "test/opencodex-serving-lifecycle.test.js",
           "test/settings-account-providers.test.js"
         ]
       },
@@ -1516,10 +1542,12 @@
           "src/claude-account-metadata.js",
           "src/claude-account-switcher.js",
           "src/codex-account-switcher.js",
+          "src/open-codex/codex-account-bridge.js",
           "src/settings-account-providers.js",
           "test/account-submenu.test.js",
           "test/account-usage.test.js",
           "test/claude-account-metadata.test.js",
+          "test/codex-account-bridge.test.js",
           "test/codex-account-switch-lifecycle.test.js",
           "test/codex-account-switcher.test.js",
           "test/open-codex-runtime-aliases.test.js",
@@ -1529,21 +1557,24 @@
       },
       {
         "id": "codexIntegration:codex/account-store",
-        "status": "imported",
+        "status": "runtime-verified",
         "upstreamEvidence": [
           "src/codex/account-store.ts"
         ],
         "codePetEvidence": [
+          "docs/superpowers/specs/2026-07-28-opencodex-cutover-design.md",
           "src/account-submenu.js",
           "src/account-usage.js",
           "src/antigravity-account-switcher.js",
           "src/claude-account-metadata.js",
           "src/claude-account-switcher.js",
           "src/codex-account-switcher.js",
+          "src/open-codex/codex-account-bridge.js",
           "src/settings-account-providers.js",
           "test/account-submenu.test.js",
           "test/account-usage.test.js",
           "test/claude-account-metadata.test.js",
+          "test/codex-account-bridge.test.js",
           "test/codex-account-switch-lifecycle.test.js",
           "test/codex-account-switcher.test.js",
           "test/settings-account-providers.test.js"
@@ -1562,10 +1593,12 @@
           "src/claude-account-metadata.js",
           "src/claude-account-switcher.js",
           "src/codex-account-switcher.js",
+          "src/open-codex/codex-account-bridge.js",
           "src/settings-account-providers.js",
           "test/account-submenu.test.js",
           "test/account-usage.test.js",
           "test/claude-account-metadata.test.js",
+          "test/codex-account-bridge.test.js",
           "test/codex-account-switch-lifecycle.test.js",
           "test/codex-account-switcher.test.js",
           "test/settings-account-providers.test.js"
@@ -1573,11 +1606,13 @@
       },
       {
         "id": "codexIntegration:codex/auth-api",
-        "status": "imported",
+        "status": "runtime-verified",
         "upstreamEvidence": [
           "src/codex/auth-api.ts"
         ],
-        "codePetEvidence": []
+        "codePetEvidence": [
+          "test/opencodex-serving-backend.test.js"
+        ]
       },
       {
         "id": "codexIntegration:codex/auth-collision",
@@ -1589,11 +1624,14 @@
       },
       {
         "id": "codexIntegration:codex/auth-context",
-        "status": "imported",
+        "status": "runtime-verified",
         "upstreamEvidence": [
           "src/codex/auth-context.ts"
         ],
-        "codePetEvidence": []
+        "codePetEvidence": [
+          "docs/superpowers/specs/2026-07-28-opencodex-cutover-design.md",
+          "test/opencodex-serving-backend.test.js"
+        ]
       },
       {
         "id": "codexIntegration:codex/autostart-health",
@@ -1674,7 +1712,9 @@
           "src/codex/catalog/sync.ts"
         ],
         "codePetEvidence": [
-          "test/open-codex-sync.test.js"
+          "src/open-codex/kimi-credential-resync.js",
+          "test/open-codex-sync.test.js",
+          "test/opencodex-kimi-credential-resync.test.js"
         ]
       },
       {
@@ -1723,7 +1763,10 @@
         "upstreamEvidence": [
           "src/codex/inject.ts"
         ],
-        "codePetEvidence": []
+        "codePetEvidence": [
+          "src/codex-config-inject.js",
+          "test/codex-config-inject.test.js"
+        ]
       },
       {
         "id": "codexIntegration:codex/injected-marker",
@@ -1755,13 +1798,14 @@
           "src/claude-account-switcher.js",
           "src/codex-account-switcher.js",
           "src/main.js",
+          "src/open-codex/codex-account-bridge.js",
           "src/settings-account-providers.js",
           "test/account-submenu.test.js",
           "test/account-usage.test.js",
           "test/claude-account-metadata.test.js",
+          "test/codex-account-bridge.test.js",
           "test/codex-account-switch-lifecycle.test.js",
           "test/codex-account-switcher.test.js",
-          "test/open-codex-main-shadow.test.js",
           "test/provider-main-integration.test.js",
           "test/settings-account-providers.test.js"
         ]
@@ -1780,13 +1824,14 @@
           "src/claude-account-switcher.js",
           "src/codex-account-switcher.js",
           "src/main.js",
+          "src/open-codex/codex-account-bridge.js",
           "src/settings-account-providers.js",
           "test/account-submenu.test.js",
           "test/account-usage.test.js",
           "test/claude-account-metadata.test.js",
+          "test/codex-account-bridge.test.js",
           "test/codex-account-switch-lifecycle.test.js",
           "test/codex-account-switcher.test.js",
-          "test/open-codex-main-shadow.test.js",
           "test/provider-main-integration.test.js",
           "test/settings-account-providers.test.js"
         ]
@@ -1842,15 +1887,21 @@
         "upstreamEvidence": [
           "src/codex/refresh.ts"
         ],
-        "codePetEvidence": []
+        "codePetEvidence": [
+          "src/codex-token-refresh.js",
+          "test/codex-token-refresh.test.js"
+        ]
       },
       {
         "id": "codexIntegration:codex/routing",
-        "status": "imported",
+        "status": "runtime-verified",
         "upstreamEvidence": [
           "src/codex/routing.ts"
         ],
-        "codePetEvidence": []
+        "codePetEvidence": [
+          "docs/superpowers/specs/2026-07-28-opencodex-cutover-design.md",
+          "test/opencodex-serving-backend.test.js"
+        ]
       },
       {
         "id": "codexIntegration:codex/runtime",
@@ -1893,7 +1944,9 @@
           "src/codex/sync.ts"
         ],
         "codePetEvidence": [
-          "test/open-codex-sync.test.js"
+          "src/open-codex/kimi-credential-resync.js",
+          "test/open-codex-sync.test.js",
+          "test/opencodex-kimi-credential-resync.test.js"
         ]
       },
       {
@@ -1920,7 +1973,10 @@
         "upstreamEvidence": [
           "src/claude/agents-inject.ts"
         ],
-        "codePetEvidence": []
+        "codePetEvidence": [
+          "src/codex-config-inject.js",
+          "test/codex-config-inject.test.js"
+        ]
       },
       {
         "id": "claudeIntegration:claude/alias",
@@ -2148,11 +2204,13 @@
       },
       {
         "id": "management:server/management/combo-routes",
-        "status": "imported",
+        "status": "runtime-verified",
         "upstreamEvidence": [
           "src/server/management/combo-routes.ts"
         ],
-        "codePetEvidence": []
+        "codePetEvidence": [
+          "test/opencodex-kimi-parity.test.js"
+        ]
       },
       {
         "id": "management:server/management/config-routes",
@@ -2219,10 +2277,12 @@
           "src/claude-account-metadata.js",
           "src/claude-account-switcher.js",
           "src/codex-account-switcher.js",
+          "src/open-codex/codex-account-bridge.js",
           "src/settings-account-providers.js",
           "test/account-submenu.test.js",
           "test/account-usage.test.js",
           "test/claude-account-metadata.test.js",
+          "test/codex-account-bridge.test.js",
           "test/codex-account-switch-lifecycle.test.js",
           "test/codex-account-switcher.test.js",
           "test/settings-account-providers.test.js"
@@ -2267,10 +2327,12 @@
           "src/claude-account-metadata.js",
           "src/claude-account-switcher.js",
           "src/codex-account-switcher.js",
+          "src/open-codex/codex-account-bridge.js",
           "src/settings-account-providers.js",
           "test/account-submenu.test.js",
           "test/account-usage.test.js",
           "test/claude-account-metadata.test.js",
+          "test/codex-account-bridge.test.js",
           "test/codex-account-switch-lifecycle.test.js",
           "test/codex-account-switcher.test.js",
           "test/settings-account-providers.test.js"
@@ -2289,10 +2351,12 @@
           "src/claude-account-metadata.js",
           "src/claude-account-switcher.js",
           "src/codex-account-switcher.js",
+          "src/open-codex/codex-account-bridge.js",
           "src/settings-account-providers.js",
           "test/account-submenu.test.js",
           "test/account-usage.test.js",
           "test/claude-account-metadata.test.js",
+          "test/codex-account-bridge.test.js",
           "test/codex-account-switch-lifecycle.test.js",
           "test/codex-account-switcher.test.js",
           "test/settings-account-providers.test.js"
@@ -2311,10 +2375,12 @@
           "src/claude-account-metadata.js",
           "src/claude-account-switcher.js",
           "src/codex-account-switcher.js",
+          "src/open-codex/codex-account-bridge.js",
           "src/settings-account-providers.js",
           "test/account-submenu.test.js",
           "test/account-usage.test.js",
           "test/claude-account-metadata.test.js",
+          "test/codex-account-bridge.test.js",
           "test/codex-account-switch-lifecycle.test.js",
           "test/codex-account-switcher.test.js",
           "test/settings-account-providers.test.js"
@@ -2358,33 +2424,34 @@
         ],
         "codePetEvidence": [
           "src/codex-account-switcher.js",
+          "src/codex-config-inject.js",
           "src/codex-desktop-launch.js",
           "src/codex-model-catalog.js",
           "src/codex-proxy-shutdown.js",
-          "src/codex-proxy.js",
           "src/codex-thread-title.js",
+          "src/codex-token-refresh.js",
           "src/codex-usage-label.js",
           "src/codex-watcher.js",
-          "src/kimi-codex-adapter.js",
           "src/kimi-codex-models.js",
+          "src/open-codex/codex-account-bridge.js",
+          "test/codex-account-bridge.test.js",
           "test/codex-account-switch-lifecycle.test.js",
           "test/codex-account-switcher.test.js",
+          "test/codex-config-inject.test.js",
           "test/codex-desktop-launch.test.js",
           "test/codex-model-catalog.test.js",
           "test/codex-proxy-shutdown.test.js",
-          "test/codex-proxy.test.js",
           "test/codex-thread-title.test.js",
+          "test/codex-token-refresh.test.js",
           "test/codex-usage.test.js",
           "test/codex-watcher.test.js",
           "test/fixtures/open-codex-engine-worker-fixture.js",
-          "test/kimi-codex-adapter.test.js",
           "test/kimi-codex-models.test.js",
           "test/open-codex-bun-compat.test.js",
           "test/open-codex-engine-build.test.js",
           "test/open-codex-engine-host.test.js",
           "test/open-codex-engine-smoke.test.js",
           "test/open-codex-kimi-credential-adapter.test.js",
-          "test/open-codex-main-shadow.test.js",
           "test/open-codex-node-server.test.js",
           "test/open-codex-package-notices.test.js",
           "test/open-codex-parity-report.test.js",
@@ -2392,7 +2459,11 @@
           "test/open-codex-runtime-inventory.test.js",
           "test/open-codex-sync.test.js",
           "test/open-codex-upstream-patches.test.js",
-          "test/open-codex-upstream-provenance.test.js"
+          "test/open-codex-upstream-provenance.test.js",
+          "test/opencodex-kimi-credential-resync.test.js",
+          "test/opencodex-kimi-parity.test.js",
+          "test/opencodex-serving-backend.test.js",
+          "test/opencodex-serving-lifecycle.test.js"
         ]
       },
       {
@@ -2491,9 +2562,7 @@
         ],
         "codePetEvidence": [
           "src/codex-proxy-shutdown.js",
-          "src/codex-proxy.js",
-          "test/codex-proxy-shutdown.test.js",
-          "test/codex-proxy.test.js"
+          "test/codex-proxy-shutdown.test.js"
         ]
       },
       {

@@ -1,13 +1,12 @@
 "use strict";
 
-// Serving backend facade for Codex Desktop traffic: the OpenCodex engine is the
-// default backend and the legacy CodexProxy is the automatic fallback. main.js
-// consumes only this interface, so backend selection, drain, grant mirror and
-// engine rotation visibility live here instead of spreading across main.js.
+// Serving backend facade for Codex Desktop traffic: the embedded OpenCodex
+// engine is the only backend. main.js consumes only this interface, so engine
+// lifecycle, drain, grant mirror and rotation visibility live here instead of
+// spreading across main.js.
 //
-// Selection flow: start() tries the engine serving lifecycle first; ANY engine
-// failure logs and falls back to the legacy proxy (never leaving a half-started
-// engine). A proxy failure propagates so the caller can fail closed.
+// Failure contract: any engine start failure propagates so the caller can
+// fail closed (config rollback + full stop). There is no fallback backend.
 
 const os = require("node:os");
 const path = require("node:path");
@@ -19,8 +18,10 @@ const {
   normalizeEngineAccountId,
   primeAccounts,
   reverseSyncEngineAccounts,
+  seedEngineAccounts,
   selectAccount: bridgeSelectAccount,
   getActiveAccount: bridgeGetActiveAccount,
+  addAccount: bridgeAddAccount,
 } = require("./codex-account-bridge");
 const { createOpenCodexServingLifecycle } = require("./serving-lifecycle");
 const { syncKimiCliCredential } = require("./kimi-credential-adapter");
@@ -45,7 +46,6 @@ function createOpenCodexServingBackend({
   enginePath,
   codexAccountSwitcher,
   discoverKimiModels = discoverManagedKimiModels,
-  proxy,
   workerEnv = process.env,
   kimiHome = process.env.KIMI_CODE_HOME || path.join(os.homedir(), ".kimi-code"),
   createLifecycle = createOpenCodexServingLifecycle,
@@ -57,6 +57,7 @@ function createOpenCodexServingBackend({
     primeAccounts,
     selectAccount: bridgeSelectAccount,
     getActiveAccount: bridgeGetActiveAccount,
+    addAccount: bridgeAddAccount,
   },
   statusPollMs = DEFAULT_STATUS_POLL_MS,
   stopDrainMs = DEFAULT_STOP_DRAIN_MS,
@@ -68,9 +69,6 @@ function createOpenCodexServingBackend({
 } = {}) {
   if (typeof userDataDir !== "string" || userDataDir.length === 0) {
     throw new OpenCodexServingBackendError("OPENCODEX_BACKEND_INVALID_ARGUMENT", "userDataDir is required");
-  }
-  if (!proxy) {
-    throw new OpenCodexServingBackendError("OPENCODEX_BACKEND_INVALID_ARGUMENT", "proxy fallback is required");
   }
 
   const openCodexHome = path.join(userDataDir, "opencodex");
@@ -257,18 +255,7 @@ function createOpenCodexServingBackend({
     if (startPromise) return startPromise;
     startPromise = (async () => {
       try {
-        try {
-          await startEngine();
-        } catch (engineError) {
-          log(`OpenCodex engine backend failed (${engineError?.message || engineError}); falling back to legacy proxy`);
-          backend = null;
-          boundPort = null;
-          stopPolling();
-          const port = await proxy.start();
-          backend = "proxy";
-          boundPort = port;
-          log(`legacy codex proxy backend serving on 127.0.0.1:${boundPort}`);
-        }
+        await startEngine();
         return { backend, port: boundPort };
       } finally {
         startPromise = null;
@@ -278,7 +265,6 @@ function createOpenCodexServingBackend({
   }
 
   async function stop({ timeoutMs } = {}) {
-    const current = backend;
     stopPolling();
     stopKimiSyncTimer();
     if (kimiResync) {
@@ -286,7 +272,7 @@ function createOpenCodexServingBackend({
       kimiResync.stop();
       kimiResync = null;
     }
-    if (current === "engine" && lifecycle) {
+    if (backend === "engine" && lifecycle) {
       try {
         await lifecycle.waitForIdle({ timeoutMs: stopDrainMs });
       } catch (error) {
@@ -307,74 +293,68 @@ function createOpenCodexServingBackend({
           log(`engine grant reverse-sync failed: ${error?.message || error}`);
         }
       }
-    } else if (current === "proxy") {
-      proxy.stop();
     }
     backend = null;
     boundPort = null;
     return { backend: null, port: null };
   }
 
+  // A profile added after engine start is unknown to the in-memory pool.
+  // Re-seed the credentials file (read live per request), import the account
+  // through the management API, then retry the selection once.
+  async function reseedAndSelectAccount(key) {
+    const entries = await listAndIndexAccounts();
+    const entry = entries.find((candidate) => candidate.profileKey === key);
+    if (!entry) return false;
+    const seed = seedAccounts
+      ? (accounts) => seedAccounts({ openCodexHome, accounts })
+      : (accounts) => seedEngineAccounts({ openCodexHome, accounts });
+    await seed(entries);
+    await bridgeApi.addAccount(boundPort, entry);
+    await bridgeApi.primeAccounts(boundPort);
+    await bridgeApi.selectAccount(boundPort, entry.id);
+    return true;
+  }
+
   async function selectAccount(key) {
-    if (backend === "engine" && boundPort) {
-      const engineId = accountIdByProfileKey.get(key) ?? normalizeEngineAccountId(key);
+    if (backend !== "engine" || !boundPort) return false;
+    const engineId = accountIdByProfileKey.get(key) ?? normalizeEngineAccountId(key);
+    try {
+      await bridgeApi.primeAccounts(boundPort);
+      await bridgeApi.selectAccount(boundPort, engineId);
+      return true;
+    } catch (firstError) {
       try {
-        await bridgeApi.primeAccounts(boundPort);
-        await bridgeApi.selectAccount(boundPort, engineId);
-        return true;
+        const ok = await reseedAndSelectAccount(key);
+        if (ok) log(`engine selectAccount succeeded after re-seed for ${key}`);
+        return ok;
       } catch (error) {
-        log(`engine selectAccount failed for ${key}: ${error?.message || error}`);
+        log(`engine selectAccount failed for ${key}: ${error?.message || error} (first: ${firstError?.message || firstError})`);
         return false;
       }
     }
-    if (backend === "proxy") {
-      proxy.selectAccount(key);
-      return true;
-    }
-    return false;
   }
 
   function isWorking() {
-    if (backend === "engine") return lastActiveTurns > 0;
-    if (backend === "proxy") return proxy.activeConnectionCount > 0;
-    return false;
+    return backend === "engine" && lastActiveTurns > 0;
   }
 
-  async function waitForIdle({ timeoutMs = stopDrainMs, pollMs = 250 } = {}) {
+  async function waitForIdle({ timeoutMs = stopDrainMs } = {}) {
     if (backend === "engine" && lifecycle) {
       return lifecycle.waitForIdle({ timeoutMs });
     }
-    const deadline = Date.now() + timeoutMs;
-    for (;;) {
-      if (backend !== "proxy" || proxy.activeConnectionCount === 0) {
-        return { activeTurns: 0, backend };
-      }
-      if (Date.now() >= deadline) {
-        throw new OpenCodexServingBackendError(
-          "OPENCODEX_BACKEND_IDLE_TIMEOUT",
-          `legacy proxy still has ${proxy.activeConnectionCount} active connection(s) after ${timeoutMs}ms`
-        );
-      }
-      await new Promise((resolve) => setTimeout(resolve, pollMs));
-    }
+    return { activeTurns: 0, backend };
   }
 
   async function getStatus() {
     if (backend === "engine" && lifecycle) {
       return { ...(await lifecycle.getStatus()), backend, port: boundPort };
     }
-    if (backend === "proxy") {
-      return { backend, port: boundPort, running: proxy.running, activeTurns: proxy.activeConnectionCount };
-    }
     return { backend: null, port: null, running: false, activeTurns: 0 };
   }
 
   function onIdle(listener) {
     idleListeners.add(listener);
-    if (proxy?.onIdle) {
-      // The proxy backend fires its own idle event; the engine path uses polling.
-      return proxy.onIdle(listener);
-    }
     return () => idleListeners.delete(listener);
   }
 

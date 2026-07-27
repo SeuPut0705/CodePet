@@ -47,6 +47,58 @@ const CONTRACT_EVIDENCE = Object.freeze({
   ],
 });
 
+// Capabilities proven at runtime by the cutover migration (engine now serves
+// live Codex Desktop traffic). Evidence points at the automated tests that
+// exercise the path, plus the spike design doc where proof was a sandbox
+// experiment. Promoted over contract-tested.
+const RUNTIME_EVIDENCE = Object.freeze({
+  "transports:server/index": [
+    "scripts/opencodex/engine-smoke.js",
+    "test/opencodex-kimi-parity.test.js",
+    "test/opencodex-serving-backend.test.js",
+  ],
+  "transports:server/lifecycle": [
+    "scripts/opencodex/engine-smoke.js",
+    "test/opencodex-serving-lifecycle.test.js",
+  ],
+  "transports:server/request-decompress": [
+    "docs/superpowers/specs/2026-07-28-opencodex-cutover-design.md",
+  ],
+  "transports:server/ws-bridge": [
+    "docs/superpowers/specs/2026-07-28-opencodex-cutover-design.md",
+  ],
+  "transports:server/request-log": [
+    "test/opencodex-kimi-credential-resync.test.js",
+  ],
+  "transports:server/management/combo-routes": [
+    "test/opencodex-kimi-parity.test.js",
+  ],
+  "management:server/management/combo-routes": [
+    "test/opencodex-kimi-parity.test.js",
+  ],
+  "codexIntegration:codex/routing": [
+    "test/opencodex-serving-backend.test.js",
+    "docs/superpowers/specs/2026-07-28-opencodex-cutover-design.md",
+  ],
+  "codexIntegration:codex/auth-context": [
+    "test/opencodex-serving-backend.test.js",
+    "docs/superpowers/specs/2026-07-28-opencodex-cutover-design.md",
+  ],
+  "codexIntegration:codex/account-store": [
+    "test/codex-account-bridge.test.js",
+    "docs/superpowers/specs/2026-07-28-opencodex-cutover-design.md",
+  ],
+  "codexIntegration:codex/auth-api": [
+    "test/opencodex-serving-backend.test.js",
+  ],
+  "oauth:oauth/store": [
+    "test/opencodex-kimi-credential-resync.test.js",
+  ],
+  "oauth:oauth/kimi": [
+    "test/opencodex-kimi-parity.test.js",
+  ],
+});
+
 function listFiles(rootDir, relativeDir, extension) {
   const absoluteDir = path.join(rootDir, ...relativeDir.split("/"));
   if (!fs.existsSync(absoluteDir)) return [];
@@ -91,13 +143,20 @@ function buildCategory({ categoryName, roots, vendorDir, candidates }) {
   return upstreamFiles.map((upstreamPath) => {
     const id = entryId(categoryName, upstreamPath);
     const contractEvidence = CONTRACT_EVIDENCE[id] || [];
+    const runtimeEvidence = RUNTIME_EVIDENCE[id] || [];
+    const status = runtimeEvidence.length > 0
+      ? "runtime-verified"
+      : contractEvidence.length > 0
+        ? "contract-tested"
+        : "imported";
     return {
       id,
-      status: contractEvidence.length > 0 ? "contract-tested" : "imported",
+      status,
       upstreamEvidence: [upstreamPath],
       codePetEvidence: [...new Set([
         ...matchingCodePetEvidence(upstreamPath, candidates),
         ...contractEvidence,
+        ...runtimeEvidence,
       ])].sort(),
     };
   });
@@ -118,6 +177,7 @@ function buildParityReport({ vendorDir = DEFAULT_VENDOR_DIR, codePetRoot = PROJE
   const entries = Object.values(categories).flat();
   const total = entries.length;
   const contractTested = entries.filter((entry) => entry.status === "contract-tested").length;
+  const runtimeVerified = entries.filter((entry) => entry.status === "runtime-verified").length;
   return {
     schemaVersion: 1,
     upstream: {
@@ -129,9 +189,9 @@ function buildParityReport({ vendorDir = DEFAULT_VENDOR_DIR, codePetRoot = PROJE
     summary: {
       total,
       statusCounts: {
-        imported: total - contractTested,
+        imported: total - contractTested - runtimeVerified,
         "contract-tested": contractTested,
-        "runtime-verified": 0,
+        "runtime-verified": runtimeVerified,
       },
     },
     categories,

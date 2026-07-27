@@ -15,7 +15,6 @@ const { OpenCodeWatcher } = require("./opencode-watcher");
 const { HookProviderWatcher } = require("./provider-hook-watcher");
 const { ProviderHookBridge } = require("./provider-hook-bridge");
 const { KimiUsageClient } = require("./kimi-usage-client");
-const { createKimiResponsesStream } = require("./kimi-codex-adapter");
 const {
   discoverManagedKimiModels,
 } = require("./kimi-codex-models");
@@ -52,17 +51,13 @@ const {
 const { deleteCredential, readCredential, writeCredential } = require("./credential-store");
 const { createClaudeLiveStore } = require("./claude-live-credentials");
 const {
-  CodexProxy,
   disableProxyInConfig,
   enableProxyInConfig,
-} = require("./codex-proxy");
+} = require("./codex-config-inject");
 const {
   CodexProxyShutdownCoordinator,
   prepareCodexProxyForQuit,
 } = require("./codex-proxy-shutdown");
-const { createEngineHost } = require("./open-codex/engine-host");
-const { createOpenCodexShadowLifecycle } = require("./open-codex/shadow-lifecycle");
-const { syncKimiCliCredential } = require("./open-codex/kimi-credential-adapter");
 const { createOpenCodexServingBackend } = require("./open-codex/serving-backend");
 const { createActivityHeading: activityHeading } = require("./activity-title");
 const { formatActivityMessage } = require("./activity-message");
@@ -180,7 +175,6 @@ const WINDOW_CONFIG = Object.freeze({
 // 운영처럼 조용히 확인하려면 환경변수를 비워 두면 됩니다.
 const OPEN_DEVTOOLS =
   process.env.PET_DEVTOOLS === "1" || process.argv.includes("--devtools");
-const OPEN_CODEX_SHADOW_ENABLED = process.env.CODEPET_OPENCODEX_SHADOW === "1";
 
 // 이동 관련 값은 여기만 바꾸면 됩니다.
 // speedPxPerTick은 16ms마다 이동하는 픽셀 수라서 값을 키우면 펫이 더 빨리 걸어갑니다.
@@ -579,7 +573,6 @@ const usageWarnedResets = { primary: null, secondary: null };
 
 const codexAccountSwitcher = new CodexAccountSwitcher();
 let codexProxyCatalogPath = null;
-let codexProxyKimiModels = new Map();
 
 function prepareCodexProxyCatalog() {
   const kimiModels = discoverManagedKimiModels();
@@ -589,108 +582,24 @@ function prepareCodexProxyCatalog() {
     kimiModels,
   });
   codexProxyCatalogPath = result.catalogPath;
-  codexProxyKimiModels = new Map(kimiModels.map((model) => [model.slug, model]));
   appendDebugLog(`codex model catalog prepared; kimi models=${result.kimiModelCount}`);
   return result.catalogPath;
 }
 
-// Codex CLI 요청의 인증 교체 + 한도 자동 로테이션용 로컬 프록시입니다.
-// 선호 순서: 활성 프로필 → 나머지 저장 프로필. 저장 프로필이 하나도 없으면 live auth.json 하나로 동작.
-// 저장 프로필에서 직접 읽으므로 실행 중인 Codex 앱이 auth.json을 되덮어써도 전환이 유지됩니다.
-// listProfiles()는 디렉토리 스캔 + auth.json 해시 등 무거운 동기 fs라서, 프록시가 요청마다
-// 호출하면 메인 프로세스가 매번 블로킹됩니다. 프로필은 명시적 전환/로그인 때만 바뀌므로
-// 짧은 TTL로 캐시하고, 전환 지점에서 명시적으로 무효화합니다.
-const PROXY_ACCOUNTS_TTL_MS = 1500;
-let cachedProxyAccounts = null;
-let cachedProxyAccountsAt = 0;
-
-function invalidateProxyAccountsCache() {
-  cachedProxyAccounts = null;
-}
-
-function listCodexProxyAccounts() {
-  const now = Date.now();
-  if (cachedProxyAccounts && now - cachedProxyAccountsAt < PROXY_ACCOUNTS_TTL_MS) {
-    return cachedProxyAccounts;
-  }
-
-  const profiles = codexAccountSwitcher.listProfiles().filter((profile) => profile.hasAuth);
-  const activeKey = codexAccountSwitcher.readActiveProfileKey();
-  const accounts = profiles.map((profile) => ({
-    key: profile.key,
-    label: profile.label,
-    authPath: path.join(profile.homePath, "auth.json"),
-  }));
-  accounts.sort((left, right) =>
-    (right.key === activeKey ? 1 : 0) - (left.key === activeKey ? 1 : 0)
-  );
-  if (accounts.length === 0 && fs.existsSync(codexAccountSwitcher.targetAuthPath)) {
-    accounts.push({ key: "live", label: "현재 계정", authPath: codexAccountSwitcher.targetAuthPath });
-  }
-
-  cachedProxyAccounts = accounts;
-  cachedProxyAccountsAt = now;
-  return accounts;
-}
-
-const codexProxy = new CodexProxy({
-  log: appendDebugLog,
-  appVersion: app.getVersion(),
-  kimiClient: kimiUsageClient,
-  resolveKimiModel: (slug) => codexProxyKimiModels.get(slug) || null,
-  createKimiStream: createKimiResponsesStream,
-  resolveAccounts: async () => listCodexProxyAccounts(),
-  readAuth: (authPath) => {
-    const summary = codexAccountSwitcher.readAuthSummaryFromFile(authPath);
-    return summary.hasAuth ? { accessToken: summary.accessToken, accountId: summary.accountId } : null;
-  },
-  isAccountQuotaExhausted: async (account) => {
-    const summary = codexAccountSwitcher.readAuthSummaryFromFile(account.authPath);
-    if (!summary.hasAuth) return null;
-
-    const usage = await codexAccountSwitcher.fetchUsageForSummary(summary);
-    const mainWindows = usage.rateLimits.windows.filter((window) => window.source === "main");
-    if (mainWindows.length === 0) return null;
-    return mainWindows.some((window) => Number(window.used_percent) >= 100);
-  },
-  notifySwitch: (account, reason) => {
-    // 프록시는 이미 이 계정으로 응답을 스트리밍하는 중입니다. 활성 프로필 영속화(디스크 백업 복사 등
-    // 무거운 동기 작업)와 UI 갱신은 응답 중계를 지연시키지 않도록 다음 tick으로 미룹니다.
-    setImmediate(() => {
-      try {
-        if (account.key !== "live") {
-          codexAccountSwitcher.switchToProfile(account.key);
-          invalidateProxyAccountsCache();
-          refreshTrayMenu();
-        }
-      } catch (error) {
-        appendDebugLog(`auto-switch persist failed: ${error.message || String(error)}`);
-      }
-      appendDebugLog(`codex auto-switch to ${account.key} (${reason})`);
-      showCodexAccountBubble(
-        `Codex 한도가 소진돼 "${account.label}" 계정으로 자동 전환했습니다.\n재시작 없이 바로 적용됐어요.`
-      );
-    });
-  },
-});
-
-// Serving facade: the OpenCodex engine is the default Codex Desktop backend, with
-// the legacy codexProxy above as the automatic fallback. Engine-side account
-// rotations are mirrored into the profile store through the same deferred
-// persist + bubble path the proxy's notifySwitch used.
+// Serving facade: the OpenCodex engine is the only Codex Desktop backend.
+// Engine-side account rotations are mirrored into the profile store through
+// the same deferred persist + bubble path the proxy's notifySwitch used.
 const servingBackend = createOpenCodexServingBackend({
   userDataDir: app.getPath("userData"),
   enginePath: openCodexEngineBundlePath(),
   codexAccountSwitcher,
   discoverKimiModels: discoverManagedKimiModels,
-  proxy: codexProxy,
   log: appendDebugLog,
   onAutoSwitch: ({ profileKey, engineId }) => {
     setImmediate(() => {
       let label = profileKey;
       try {
         codexAccountSwitcher.switchToProfile(profileKey);
-        invalidateProxyAccountsCache();
         label = codexAccountSwitcher.listProfiles().find((profile) => profile.key === profileKey)?.label || profileKey;
         refreshTrayMenu();
       } catch (error) {
@@ -727,7 +636,7 @@ async function setCodexProxyMode(enabled) {
       writeSettings({ codexProxyMode: true });
       appendDebugLog(`codex serving backend started: ${backend} on 127.0.0.1:${port}`);
       showCodexAccountBubble(
-        "Codex 로컬 프록시를 켰습니다.\n새 CLI 연결의 인증 교체와 한도 자동 전환에 사용합니다.\n실행 중인 Desktop 계정 전환은 CodePet이 자동 재실행합니다."
+        "Codex 로컬 엔진을 켰습니다.\n새 CLI 연결의 인증 교체와 한도 자동 전환에 사용합니다.\n실행 중인 Desktop 계정 전환은 CodePet이 자동 재실행합니다."
       );
     } else {
       disableProxyInConfig();
@@ -735,7 +644,7 @@ async function setCodexProxyMode(enabled) {
       codexProxyActive = false;
       codexProxyLastError = null;
       writeSettings({ codexProxyMode: false });
-      showCodexAccountBubble("Codex 로컬 프록시를 껐습니다.\nDesktop 자동 재실행 계정 전환은 계속 작동합니다.");
+      showCodexAccountBubble("Codex 로컬 엔진을 껐습니다.\nDesktop 자동 재실행 계정 전환은 계속 작동합니다.");
     }
   } catch (error) {
     appendDebugLog(`codex proxy toggle failed: ${error.message || String(error)}`);
@@ -810,38 +719,6 @@ function openCodexEngineBundlePath() {
   return path.join(__dirname, "..", "build", "generated", "opencodex-engine.mjs");
 }
 
-function openCodexShadowEnvironment() {
-  const shadowRoot = path.join(app.getPath("userData"), "opencodex-shadow");
-  const codexHome = path.join(shadowRoot, "codex");
-  const openCodexHome = path.join(shadowRoot, "opencodex");
-  fs.mkdirSync(codexHome, { recursive: true });
-  fs.mkdirSync(openCodexHome, { recursive: true });
-  return {
-    ...process.env,
-    CODEX_HOME: codexHome,
-    OPENCODEX_HOME: openCodexHome,
-  };
-}
-
-function prepareOpenCodexShadow() {
-  const workerEnv = openCodexShadowEnvironment();
-  const credentialStatus = syncKimiCliCredential({
-    kimiHome: process.env.KIMI_CODE_HOME || path.join(os.homedir(), ".kimi-code"),
-    openCodexHome: workerEnv.OPENCODEX_HOME,
-  });
-  appendDebugLog(`OpenCodex Kimi credential sync: ${credentialStatus.status}`);
-  return { workerEnv };
-}
-
-const openCodexShadowLifecycle = createOpenCodexShadowLifecycle({
-  enabled: OPEN_CODEX_SHADOW_ENABLED,
-  prepare: prepareOpenCodexShadow,
-  createHost: ({ workerEnv }) => createEngineHost({
-    workerData: { enginePath: openCodexEngineBundlePath() },
-    workerEnv,
-  }),
-  log: appendDebugLog,
-});
 codexAccountSwitcher.cleanupLegacyCodePetState();
 codexAccountSwitcher.ensureCurrentAccountProfile();
 const codexWatcher = new CodexWatcher();
@@ -853,7 +730,6 @@ const codexProxyShutdownCoordinator = new CodexProxyShutdownCoordinator({
   waitForIdleConfirmation: () =>
     new Promise((resolve) => setTimeout(resolve, 250)),
   prepareForQuit: async () => {
-    await openCodexShadowLifecycle.stop();
     await prepareCodexProxyForQuit({
       proxyActive: codexProxyActive,
       isDesktopRunning: isCodexDesktopAppRunning,
@@ -2263,7 +2139,6 @@ function showCodexAccountBubble(text) {
 function saveCurrentCodexAccount() {
   try {
     const profile = codexAccountSwitcher.saveCurrentAccount();
-    invalidateProxyAccountsCache();
     refreshTrayMenu();
     showCodexAccountBubble(
       `"${profile.label}" 계정을 저장했습니다.\n전환 목록에는 로그인된 계정만 표시됩니다.`
@@ -2333,7 +2208,6 @@ async function switchCodexAccount(profileKey) {
     // Fire-and-forget: the Desktop relaunch dance must not wait on the engine's
     // quota-prime + select round-trip; failures are logged inside the facade.
     void servingBackend.selectAccount(result.profile.key);
-    invalidateProxyAccountsCache();
     refreshTrayMenu();
 
     if (desktopWasRunning) {
@@ -2419,7 +2293,7 @@ function buildAppMenuTemplate() {
     },
     { type: "separator" },
     {
-      label: "Codex 한도 자동 전환 (로컬 프록시)",
+      label: "Codex 한도 자동 전환 (로컬 엔진)",
       type: "checkbox",
       checked: isCodexProxyModeEnabled(),
       click: () => setCodexProxyMode(!isCodexProxyModeEnabled()),
@@ -3334,7 +3208,6 @@ function deleteProviderAccount(provider, profileKey) {
         : null;
   if (!switcher) throw new Error("지원하지 않는 계정 유형입니다.");
   const deleted = switcher.deleteProfile(profileKey);
-  if (provider === "codex") invalidateProxyAccountsCache();
   clearUsageCache(provider);
   refreshTrayMenu();
   return deleted;
@@ -4014,7 +3887,6 @@ app.whenReady().then(() => {
   });
   codexProxyStartupPromise = restoreCodexProxyMode();
   void codexProxyStartupPromise;
-  void openCodexShadowLifecycle.start();
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) {

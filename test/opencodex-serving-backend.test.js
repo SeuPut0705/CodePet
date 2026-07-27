@@ -12,38 +12,6 @@ function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function fakeProxy({ startPort = 10161 } = {}) {
-  const calls = [];
-  const idleListeners = new Set();
-  return {
-    calls,
-    activeConnectionCount: 0,
-    running: false,
-    port: null,
-    async start() {
-      calls.push("proxy.start");
-      this.running = true;
-      this.port = startPort;
-      return startPort;
-    },
-    stop() {
-      calls.push("proxy.stop");
-      this.running = false;
-      this.port = null;
-    },
-    selectAccount(key) {
-      calls.push(`proxy.selectAccount:${key}`);
-    },
-    onIdle(listener) {
-      idleListeners.add(listener);
-      return () => idleListeners.delete(listener);
-    },
-    emitIdle() {
-      for (const listener of idleListeners) listener();
-    },
-  };
-}
-
 function fakeLifecycle({ calls, failStart = null, turnScript = [] } = {}) {
   return {
     portValue: null,
@@ -90,12 +58,10 @@ function fakeLifecycle({ calls, failStart = null, turnScript = [] } = {}) {
 function backendDeps(overrides = {}) {
   const calls = overrides.calls ?? [];
   const lifecycle = overrides.lifecycle ?? fakeLifecycle({ calls });
-  const proxy = overrides.proxy ?? fakeProxy();
   const resyncInstances = overrides.resyncInstances ?? [];
   return {
     calls,
     lifecycle,
-    proxy,
     resyncInstances,
     deps: {
       userDataDir: "/tmp/codepet-serving-backend-test",
@@ -132,6 +98,10 @@ function backendDeps(overrides = {}) {
           calls.push(`getActiveAccount:${port}`);
           return overrides.activeAccount ?? { activeCodexAccountId: "acct-a" };
         },
+        addAccount: async (port, entry) => {
+          calls.push(`addAccount:${port}:${entry.id}`);
+          return { ok: true };
+        },
       },
       statusPollMs: 5,
       kimiSyncIntervalMs: overrides.kimiSyncIntervalMs ?? 90_000,
@@ -141,15 +111,14 @@ function backendDeps(overrides = {}) {
         resyncInstances.push({ options, started: 0, stopped: 0, start() { this.started += 1; }, stop() { this.stopped += 1; } });
         return resyncInstances[resyncInstances.length - 1];
       },
-      proxy,
       log: () => {},
       ...overrides.deps,
     },
   };
 }
 
-test("engine backend is preferred and the proxy stays untouched on success", async () => {
-  const { calls, deps, proxy } = backendDeps();
+test("engine backend serves on start and primes quotas before resolving", async () => {
+  const { calls, deps } = backendDeps();
   const backend = createOpenCodexServingBackend(deps);
 
   const result = await backend.start();
@@ -157,8 +126,6 @@ test("engine backend is preferred and the proxy stays untouched on success", asy
   assert.deepEqual(result, { backend: "engine", port: 19_900 });
   assert.equal(backend.backend(), "engine");
   assert.equal(backend.port(), 19_900);
-  assert.equal(proxy.calls.length, 0);
-  assert.equal(proxy.running, false);
   // Readiness gate: quota priming happens after engine start, before start() resolves.
   const engineStart = calls.indexOf("engine.start");
   const prime = calls.indexOf("primeAccounts:19900");
@@ -179,9 +146,10 @@ test("a failed quota prime does not fail engine startup", async () => {
   await backend.stop();
 });
 
-test("any engine failure falls back to the legacy proxy", async () => {
+test("an engine start failure propagates so the caller can fail closed", async () => {
   const failure = new Error("No free OpenCodex serving port; attempted: 10161");
-  const { calls, deps, proxy } = backendDeps({ lifecycle: fakeLifecycle({ calls: [], failStart: failure }) });
+  const calls = [];
+  const { deps } = backendDeps({});
   deps.createLifecycle = (options) => {
     const lifecycle = fakeLifecycle({ calls, failStart: failure });
     lifecycle.options = options;
@@ -189,16 +157,9 @@ test("any engine failure falls back to the legacy proxy", async () => {
   };
   const backend = createOpenCodexServingBackend(deps);
 
-  const result = await backend.start();
-
-  assert.deepEqual(result, { backend: "proxy", port: 10161 });
-  assert.equal(backend.backend(), "proxy");
-  assert.equal(proxy.running, true);
-  assert.equal(calls.includes("engine.start"), true);
-  assert.deepEqual(proxy.calls.filter((call) => call === "proxy.start"), ["proxy.start"]);
-  await backend.stop();
-  assert.equal(proxy.running, false);
-  assert.deepEqual(proxy.calls.filter((call) => call === "proxy.stop"), ["proxy.stop"]);
+  await assert.rejects(backend.start(), /No free OpenCodex serving port/);
+  assert.equal(backend.backend(), null);
+  assert.equal(backend.port(), null);
 });
 
 test("selectAccount routes to the engine API with the seeded engine id", async () => {
@@ -217,18 +178,50 @@ test("selectAccount routes to the engine API with the seeded engine id", async (
   await backend.stop();
 });
 
-test("selectAccount routes to the proxy when the proxy backend is active", async () => {
-  const failure = new Error("engine down");
-  const deps = backendDeps({}).deps;
-  deps.createLifecycle = () => fakeLifecycle({ calls: [], failStart: failure });
-  const proxy = deps.proxy;
+test("selectAccount re-seeds and imports a profile unknown to the running engine", async () => {
+  const { calls, deps } = backendDeps();
+  const seeded = [];
+  deps.seedAccounts = async ({ openCodexHome, accounts }) => {
+    seeded.push({ openCodexHome, count: accounts.length });
+  };
+  let selectAttempts = 0;
+  deps.bridgeApi.selectAccount = async (port, id) => {
+    selectAttempts += 1;
+    calls.push(`selectAccount:${port}:${id}`);
+    if (selectAttempts === 1) {
+      const error = new Error("unknown codex account");
+      error.status = 404;
+      throw error;
+    }
+    return { ok: true };
+  };
   const backend = createOpenCodexServingBackend(deps);
   await backend.start();
 
   const selected = await backend.selectAccount("acct-b");
 
   assert.equal(selected, true);
-  assert.deepEqual(proxy.calls.filter((call) => call.startsWith("proxy.selectAccount")), ["proxy.selectAccount:acct-b"]);
+  assert.equal(seeded.length, 1);
+  assert.equal(seeded[0].count, 2);
+  assert.ok(calls.includes("addAccount:19900:acct-b"), `addAccount called: ${calls}`);
+  assert.equal(selectAttempts, 2);
+  await backend.stop();
+});
+
+test("selectAccount returns false when the retry also fails", async () => {
+  const { deps } = backendDeps();
+  deps.bridgeApi.selectAccount = async () => {
+    throw new Error("unknown codex account");
+  };
+  deps.bridgeApi.addAccount = async () => {
+    throw new Error("warmup failed");
+  };
+  const backend = createOpenCodexServingBackend(deps);
+  await backend.start();
+
+  const selected = await backend.selectAccount("acct-b");
+
+  assert.equal(selected, false);
   await backend.stop();
 });
 
@@ -262,24 +255,6 @@ test("isWorking reflects the cached engine activeTurns and idle fires the listen
   await delay(40);
   assert.equal(backend.isWorking(), true);
   await delay(160);
-  assert.equal(backend.isWorking(), false);
-  assert.equal(idleFired.length, 1);
-  await backend.stop();
-});
-
-test("proxy backend isWorking and onIdle come from the proxy itself", async () => {
-  const deps = backendDeps({}).deps;
-  deps.createLifecycle = () => fakeLifecycle({ calls: [], failStart: new Error("engine down") });
-  const proxy = deps.proxy;
-  const backend = createOpenCodexServingBackend(deps);
-  const idleFired = [];
-  backend.onIdle(() => idleFired.push(Date.now()));
-  await backend.start();
-
-  proxy.activeConnectionCount = 1;
-  assert.equal(backend.isWorking(), true);
-  proxy.activeConnectionCount = 0;
-  proxy.emitIdle();
   assert.equal(backend.isWorking(), false);
   assert.equal(idleFired.length, 1);
   await backend.stop();
@@ -331,22 +306,6 @@ test("no rotation event when the engine settled on the already-active profile", 
   await backend.stop();
 });
 
-test("proxy waitForIdle resolves on zero connections and times out otherwise", async () => {
-  const deps = backendDeps({}).deps;
-  deps.createLifecycle = () => fakeLifecycle({ calls: [], failStart: new Error("engine down") });
-  const proxy = deps.proxy;
-  const backend = createOpenCodexServingBackend(deps);
-  await backend.start();
-
-  proxy.activeConnectionCount = 0;
-  const idle = await backend.waitForIdle({ timeoutMs: 50, pollMs: 1 });
-  assert.equal(idle.activeTurns, 0);
-
-  proxy.activeConnectionCount = 1;
-  await assert.rejects(backend.waitForIdle({ timeoutMs: 20, pollMs: 1 }), /active connection/);
-  await backend.stop();
-});
-
 test("kimi 401 resync watcher starts with the engine and is always stopped", async () => {
   const { deps, resyncInstances } = backendDeps({});
   const backend = createOpenCodexServingBackend(deps);
@@ -359,17 +318,6 @@ test("kimi 401 resync watcher starts with the engine and is always stopped", asy
 
   await backend.stop();
   assert.equal(resyncInstances[0].stopped, 1);
-});
-
-test("kimi 401 resync watcher is not created on the proxy fallback", async () => {
-  const { deps, resyncInstances } = backendDeps({});
-  deps.createLifecycle = () => fakeLifecycle({ calls: [], failStart: new Error("engine down") });
-  const backend = createOpenCodexServingBackend(deps);
-
-  await backend.start();
-  assert.equal(resyncInstances.length, 0);
-  await backend.stop();
-  assert.equal(resyncInstances.length, 0);
 });
 
 test("periodic kimi re-sync fires on change, skips unchanged source, and stops cleanly", async (t) => {

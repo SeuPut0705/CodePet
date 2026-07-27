@@ -164,13 +164,13 @@ Kimi의 컨텍스트 사용량이나 사용자 지정 provider 값은 계정 한
 
 우클릭 메뉴와 시스템 트레이는 Codex·AGY·Claude에 같은 계정 메뉴 구조를 제공합니다. 계정 삭제는 `설정…`의 `계정` 화면에서 수행하며, 현재 사용 중인 프로필은 다른 계정으로 전환한 뒤 삭제할 수 있습니다.
 
-- **Codex**: 프로필별 인증 정보를 저장합니다. 계정을 전환할 때 Codex Desktop이 실행 중이면 CodePet이 앱 종료를 요청하고 실제 종료를 확인한 뒤 인증을 교체하고 자동으로 다시 실행합니다. 사용자가 Codex를 수동으로 종료할 필요가 없습니다. `Codex 한도 자동 전환 (로컬 프록시)`는 `127.0.0.1` 프록시로 새 CLI 연결의 인증 헤더를 적용하고 한도 소진 시 다음 계정으로 로테이션합니다. 설정을 켜거나 끌 때 `~/.codex/config.toml`의 `# codepet-codex-proxy` 블록을 관리합니다. 이미 열린 CLI 세션은 새로 시작해야 계정 변경이 적용될 수 있습니다.
+- **Codex**: 프로필별 인증 정보를 저장합니다. 계정을 전환할 때 Codex Desktop이 실행 중이면 CodePet이 앱 종료를 요청하고 실제 종료를 확인한 뒤 인증을 교체하고 자동으로 다시 실행합니다. 사용자가 Codex를 수동으로 종료할 필요가 없습니다. `Codex 한도 자동 전환 (로컬 엔진)`은 내장 OpenCodex 엔진(MIT, `vendor/opencodex`에 출처·커밋 추적)이 `127.0.0.1`에서 새 CLI 연결의 인증 헤더를 적용하고 한도 소진 시 다음 계정으로 로테이션합니다. 설정을 켜거나 끌 때 `~/.codex/config.toml`의 `# codepet-codex-provider` 블록을 관리합니다. 이미 열린 CLI 세션은 새로 시작해야 계정 변경이 적용될 수 있습니다.
 - **AGY**: Windows 자격 증명 관리자 또는 macOS Keychain의 현재 자격 증명을 프로필로 저장하고, 선택한 계정으로 전환한 뒤 AGY를 다시 시작합니다.
 - **Claude**: 현재 자격 파일과 `claude auth status`의 이메일을 프로필로 저장합니다. 이미 열린 세션은 유지되고 새 세션부터 선택한 계정을 사용합니다.
 
 프로필은 `~/.codepet/codex-switch`, `~/.codepet/antigravity-switch`, `~/.codepet/claude-switch`에 저장됩니다. 설정 화면에는 비밀 값이 노출되지 않습니다.
 
-강제 종료 후 Codex 연결이 막히면 CodePet을 다시 실행해 stale 프록시 마커를 정리하세요. 필요하면 `~/.codex/config.toml`에서 `# codepet-codex-proxy` 블록을 제거할 수 있습니다.
+강제 종료 후 Codex 연결이 막히면 CodePet을 다시 실행해 stale 엔진 마커를 정리하세요. 필요하면 `~/.codex/config.toml`에서 `# codepet-codex-provider` 블록을 제거할 수 있습니다.
 
 </details>
 
