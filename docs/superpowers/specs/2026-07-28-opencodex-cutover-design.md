@@ -224,9 +224,10 @@
 엔진에 훅이 없으므로 **CodePet 관측 + 파일 재동기화**로 처리한다.
 
 - 만료 예방: 기존 kimi-credential-adapter 동기화 시점(앱 시작, Kimi CLI credential 변경 감지)을 유지한다.
-- 401 감지: 엔진 요청 로그(`GET /api/logs`, request-log가 영속화됨)에서 kimi 라우트의 401을 폴링하거나, CodePet 측 세션 오류 표면화 시 `syncKimiCliCredential`을 즉시 실행한다.
-- 재동기화 후 조치 불필요: auth.json은 요청마다 재읽힌다(실측 6e). 어댑터가 `needsReauth`를 지우므로 상태도 정리된다.
-- 반복 401(재동기화 직후에도 401)은 Kimi CLI 재로그인 안내로 에스컬레이션한다.
+- 401 감지: 엔진 요청 로그(`GET /api/logs?provider=kimi&status=401`, request-log가 영속화됨)를 폴링하는 감시자(`src/open-codex/kimi-credential-resync.js`)를 serving-backend가 엔진 시작 시 띄운다. 새 401이 보이면 `syncKimiCliCredential`을 즉시 실행한다.
+- auth.json은 요청마다 재읽힌다(실측 6e). 어댑터가 `needsReauth`를 지우므로 상태도 정리된다.
+- 반복 401(연속 N회 재동기화에도 401 지속)은 1회 에스컬레이션 로그로 남기고 Kimi CLI 재로그인 안내로 연결한다.
+- **주의(combo 쿨다운)**: combo로 선언된 `codepet-kimi-*` 슬러그는 Kimi 401/5xx/429가 "hop"으로 분류되어 단일 타깃이 60초 쿨다운에 들어가고, 그 동안 해당 슬러그는 업스트림 호출 없이 503 `combo_unavailable`을 반환한다(combos/failover.ts:82-109, resolve.ts:143-159). 즉 재동기화가 성공해도 즉시 복구되지 않고 최대 60초의 503 구간이 남는다. 쿨다운 해제 전용 관리 API는 없고(PUT/DELETE /api/combos가 쿨다운을 지우는 부수 효과가 있음) 1단계에서는 60초 대기를 수용한다.
 
 ### 6. safe-quit drain의 activeTurns 소비 방식
 

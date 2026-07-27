@@ -22,6 +22,7 @@ const {
 } = require("./codex-account-bridge");
 const { createOpenCodexServingLifecycle } = require("./serving-lifecycle");
 const { syncKimiCliCredential } = require("./kimi-credential-adapter");
+const { createKimiCredentialResync } = require("./kimi-credential-resync");
 const { discoverManagedKimiModels } = require("../kimi-codex-models");
 
 const DEFAULT_STATUS_POLL_MS = 1_000;
@@ -55,6 +56,7 @@ function createOpenCodexServingBackend({
   },
   statusPollMs = DEFAULT_STATUS_POLL_MS,
   stopDrainMs = DEFAULT_STOP_DRAIN_MS,
+  createResync = createKimiCredentialResync,
   onAutoSwitch = () => {},
   log = () => {},
 } = {}) {
@@ -80,6 +82,7 @@ function createOpenCodexServingBackend({
   let pollInFlight = false;
   let lastActiveTurns = 0;
   let sawActiveTurns = false;
+  let kimiResync = null;
 
   function fireIdle() {
     for (const listener of idleListeners) {
@@ -174,6 +177,14 @@ function createOpenCodexServingBackend({
     backend = "engine";
     boundPort = engine.port();
     startPolling();
+    // Watch the engine request log for kimi 401s and re-sync the bridged
+    // credential; the engine re-reads auth.json per request, no restart needed.
+    kimiResync = createResync({
+      port: () => boundPort,
+      syncKimiCredential: () => engine.syncKimiCredential(),
+      log,
+    });
+    kimiResync.start();
     log(`OpenCodex engine backend serving on 127.0.0.1:${boundPort}`);
   }
 
@@ -205,6 +216,11 @@ function createOpenCodexServingBackend({
   async function stop({ timeoutMs } = {}) {
     const current = backend;
     stopPolling();
+    if (kimiResync) {
+      // The watcher holds an interval; it must be cleared on every exit path.
+      kimiResync.stop();
+      kimiResync = null;
+    }
     if (current === "engine" && lifecycle) {
       try {
         await lifecycle.waitForIdle({ timeoutMs: stopDrainMs });

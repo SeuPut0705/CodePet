@@ -79,10 +79,12 @@ function backendDeps(overrides = {}) {
   const calls = overrides.calls ?? [];
   const lifecycle = overrides.lifecycle ?? fakeLifecycle({ calls });
   const proxy = overrides.proxy ?? fakeProxy();
+  const resyncInstances = overrides.resyncInstances ?? [];
   return {
     calls,
     lifecycle,
     proxy,
+    resyncInstances,
     deps: {
       userDataDir: "/tmp/codepet-serving-backend-test",
       enginePath: "/tmp/engine.mjs",
@@ -120,6 +122,11 @@ function backendDeps(overrides = {}) {
         },
       },
       statusPollMs: 5,
+      createResync: (options) => {
+        calls.push("createResync");
+        resyncInstances.push({ options, started: 0, stopped: 0, start() { this.started += 1; }, stop() { this.stopped += 1; } });
+        return resyncInstances[resyncInstances.length - 1];
+      },
       proxy,
       log: () => {},
       ...overrides.deps,
@@ -306,4 +313,29 @@ test("proxy waitForIdle resolves on zero connections and times out otherwise", a
   proxy.activeConnectionCount = 1;
   await assert.rejects(backend.waitForIdle({ timeoutMs: 20, pollMs: 1 }), /active connection/);
   await backend.stop();
+});
+
+test("kimi 401 resync watcher starts with the engine and is always stopped", async () => {
+  const { deps, resyncInstances } = backendDeps({});
+  const backend = createOpenCodexServingBackend(deps);
+
+  await backend.start();
+  assert.equal(resyncInstances.length, 1);
+  assert.equal(resyncInstances[0].started, 1);
+  assert.equal(resyncInstances[0].stopped, 0);
+  assert.equal(resyncInstances[0].options.port(), 19_900);
+
+  await backend.stop();
+  assert.equal(resyncInstances[0].stopped, 1);
+});
+
+test("kimi 401 resync watcher is not created on the proxy fallback", async () => {
+  const { deps, resyncInstances } = backendDeps({});
+  deps.createLifecycle = () => fakeLifecycle({ calls: [], failStart: new Error("engine down") });
+  const backend = createOpenCodexServingBackend(deps);
+
+  await backend.start();
+  assert.equal(resyncInstances.length, 0);
+  await backend.stop();
+  assert.equal(resyncInstances.length, 0);
 });
