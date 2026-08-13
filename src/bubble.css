@@ -1,0 +1,398 @@
+:root {
+  color-scheme: dark;
+  --bubble-bg: rgba(14, 17, 25, 0.78);
+  --bubble-ink: #e9edf6;
+  --bubble-muted: #98a2b6;
+  --bubble-border: color-mix(in srgb, var(--bubble-ink) 14%, transparent);
+  --bubble-line: color-mix(in srgb, var(--bubble-ink) 9%, transparent);
+  --bubble-accent: #2dd4bf;
+  --bubble-accent-ink: #04211d;
+  --bubble-accent-soft: color-mix(in srgb, var(--bubble-accent) 15%, transparent);
+  --bubble-track: color-mix(in srgb, var(--bubble-ink) 12%, transparent);
+  --bubble-warn: #fbbf24;
+  --bubble-danger: #f87171;
+  --status-active: #2dd4bf;
+  --status-info: #60a5fa;
+  --status-image: #a78bfa;
+  --status-test: #22d3ee;
+  --status-waiting: #fbbf24;
+  --status-success: #4ade80;
+  --status-error: #f87171;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  background: transparent;
+  font-family: var(--user-font, "Segoe UI Variable"), "Segoe UI", system-ui, sans-serif;
+  user-select: none;
+}
+
+#root {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.bubble {
+  box-sizing: border-box;
+  width: calc(100% - 10px);
+  max-height: 331px;
+  overflow-y: auto;
+  padding: 13px 15px;
+  border: 1px solid var(--bubble-border);
+  border-radius: 14px;
+  background: var(--bubble-bg);
+  backdrop-filter: blur(22px) saturate(1.5);
+  -webkit-backdrop-filter: blur(22px) saturate(1.5);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--bubble-ink) 10%, transparent);
+  color: var(--bubble-ink);
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1.55;
+  scrollbar-width: none;
+}
+
+.bubble.measure-width {
+  position: absolute;
+  width: max-content;
+  max-width: none;
+}
+
+.bubble::-webkit-scrollbar {
+  display: none;
+}
+
+.bubble.clickable {
+  border-color: color-mix(in srgb, var(--bubble-accent) 55%, transparent);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--bubble-ink) 10%, transparent),
+    inset 0 0 14px color-mix(in srgb, var(--bubble-accent) 12%, transparent);
+}
+
+.title {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 9px;
+  font-family: var(--user-font, "Segoe UI Variable Display"), "Segoe UI", system-ui, sans-serif;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--bubble-ink);
+}
+
+.title .dot {
+  width: 6px;
+  height: 6px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--bubble-accent);
+  box-shadow: 0 0 6px color-mix(in srgb, var(--bubble-accent) 65%, transparent);
+}
+
+.title .dot.busy {
+  background: var(--bubble-warn);
+  box-shadow: 0 0 6px color-mix(in srgb, var(--bubble-warn) 65%, transparent);
+  animation: pulse 1.2s ease-in-out infinite;
+}
+
+.status-icon {
+  width: 15px;
+  height: 15px;
+  flex: none;
+  color: var(--bubble-ink);
+  transform-origin: center;
+}
+
+.activity-title-text {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.subagent-badge {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 2px;
+  margin-left: 2px;
+  padding: 1px 6px;
+  border: 1px solid var(--bubble-line);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--bubble-ink) 8%, transparent);
+  color: color-mix(in srgb, var(--bubble-ink) 78%, transparent);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.subagent-badge .status-icon {
+  width: 13px;
+  height: 13px;
+  color: currentColor;
+  animation: none;
+}
+
+.activity-usage-badges {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  padding: 1px 0;
+  color: color-mix(in srgb, var(--bubble-ink) 68%, transparent);
+  font-size: 10px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+  text-transform: none;
+  white-space: nowrap;
+}
+
+.activity-usage-badge {
+  white-space: nowrap;
+  padding: 1px 6px;
+  border: 1px solid var(--bubble-line);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--bubble-ink) 7%, transparent);
+}
+
+.status-icon[data-status="working"],
+.status-icon[data-status="writing"],
+.status-icon[data-status="edit"] {
+  color: var(--status-active);
+}
+
+.status-icon[data-status="review"],
+.status-icon[data-status="inspect"],
+.status-icon[data-status="build"] {
+  color: var(--status-info);
+}
+
+.status-icon[data-status="image"] {
+  color: var(--status-image);
+}
+
+.status-icon[data-status="test"] {
+  color: var(--status-test);
+}
+
+.status-icon[data-status="waiting"] {
+  color: var(--status-waiting);
+}
+
+.status-icon[data-status="success"] {
+  color: var(--status-success);
+}
+
+.status-icon[data-status="error"] {
+  color: var(--status-error);
+}
+
+.status-icon[data-status="working"] {
+  animation: status-spin 1.3s linear infinite;
+}
+
+.status-icon[data-status="writing"],
+.status-icon[data-status="image"] {
+  animation: status-breathe 1.6s ease-in-out infinite;
+}
+
+@keyframes status-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes status-breathe {
+  0%, 100% {
+    opacity: 0.72;
+    transform: scale(0.94);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .status-icon {
+    animation: none !important;
+  }
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 0.5;
+    transform: scale(0.9);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.1);
+  }
+}
+
+.body-text,
+.activity-row-label {
+  color: var(--bubble-ink);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.body-text {
+  overflow-wrap: anywhere;
+  color: color-mix(in srgb, var(--bubble-ink) 88%, transparent);
+}
+
+.activity-section + .activity-section {
+  margin-top: 9px;
+  padding-top: 9px;
+  border-top: 1px solid var(--bubble-line);
+}
+
+.activity-row {
+  min-height: 18px;
+  display: flex;
+  align-items: center;
+  border-radius: 4px;
+}
+
+.activity-row-label {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  align-items: center;
+  gap: 6px;
+  color: var(--bubble-ink);
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.activity-section-body {
+  display: -webkit-box;
+  max-height: 36px;
+  margin-top: 3px;
+  overflow: hidden;
+  color: color-mix(in srgb, var(--bubble-ink) 80%, transparent);
+  font-size: 11px;
+  line-height: 1.45;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.gauge {
+  margin-bottom: 10px;
+}
+
+.gauge:last-child {
+  margin-bottom: 0;
+}
+
+.gauge .row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 5px;
+  color: color-mix(in srgb, var(--bubble-ink) 82%, transparent);
+}
+
+.gauge .pct {
+  color: var(--bubble-ink);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.gauge .bar {
+  height: 5px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--bubble-track);
+}
+
+.gauge .fill {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--bubble-accent), #38bdf8);
+}
+
+.gauge .fill.warn {
+  background: var(--bubble-warn);
+}
+
+.gauge .fill.danger {
+  background: var(--bubble-danger);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--bubble-danger) 55%, transparent);
+}
+
+.gauge .reset,
+.footer {
+  margin-top: 4px;
+  color: var(--bubble-muted, color-mix(in srgb, var(--bubble-ink) 60%, transparent));
+  font-size: 10px;
+}
+
+.footer {
+  margin-top: 9px;
+  line-height: 1.4;
+  border-top: 1px solid var(--bubble-line);
+  padding-top: 7px;
+}
+
+.actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.action-button {
+  min-width: 0;
+  flex: 1;
+  padding: 6px 10px;
+  border: 1px solid var(--bubble-border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--bubble-ink) 7%, transparent);
+  color: var(--bubble-ink);
+  cursor: pointer;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.25;
+  transition: all 120ms ease;
+}
+
+.action-button:hover {
+  border-color: var(--bubble-accent);
+  background: var(--bubble-accent);
+  color: var(--bubble-accent-ink);
+}
+
+.action-button:focus-visible {
+  outline: 2px solid var(--bubble-accent);
+  outline-offset: 2px;
+}
+
+.action-button:disabled {
+  cursor: default;
+  opacity: 0.4;
+  border-color: var(--bubble-border);
+  background: transparent;
+  color: var(--bubble-muted);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bubble,
+  .action-button {
+    transition: none;
+  }
+
+  .title .dot.busy {
+    animation: none;
+  }
+}

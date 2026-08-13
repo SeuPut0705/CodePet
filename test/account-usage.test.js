@@ -1,0 +1,56 @@
+const test = require("node:test");
+const assert = require("node:assert/strict");
+
+const { loadAccountUsageCards } = require("../src/account-usage");
+
+test("연결된 모든 계정의 사용량을 카드로 만들고 계정별 조회 실패를 격리한다", async () => {
+  const profiles = [
+    { key: "active", label: "active@example.com", active: true },
+    { key: "stale", label: "stale@example.com", active: false },
+  ];
+
+  const cards = await loadAccountUsageCards({
+    providerId: "codex",
+    providerLabel: "Codex",
+    profiles,
+    loadUsage: async (profile) => {
+      if (profile.key === "stale") {
+        const error = new Error("expired");
+        error.displayMessage = "로그인 만료 · 계정 탭에서 다시 로그인";
+        throw error;
+      }
+      return { gauges: [{ label: "5시간", usedPercent: 20 }] };
+    },
+  });
+
+  assert.deepEqual(cards, [
+    {
+      id: "codex:active",
+      providerId: "codex",
+      providerLabel: "Codex",
+      accountLabel: "active@example.com",
+      active: true,
+      gauges: [{ label: "5시간", usedPercent: 20 }],
+    },
+    {
+      id: "codex:stale",
+      providerId: "codex",
+      providerLabel: "Codex",
+      accountLabel: "stale@example.com",
+      active: false,
+      error: "로그인 만료 · 계정 탭에서 다시 로그인",
+      gauges: [],
+    },
+  ]);
+});
+
+test("연결되거나 인식된 계정이 없는 provider는 사용량 카드에서 숨긴다", async () => {
+  const cards = await loadAccountUsageCards({
+    providerId: "agy",
+    providerLabel: "AGY",
+    profiles: [],
+    loadUsage: async () => ({ gauges: [] }),
+  });
+
+  assert.deepEqual(cards, []);
+});

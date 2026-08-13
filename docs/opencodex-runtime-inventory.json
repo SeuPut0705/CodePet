@@ -1,0 +1,289 @@
+{
+  "schemaVersion": 1,
+  "upstreamCommit": "ac73f189cf7e3f4ee55690ed8dc7e354b7e6ed10",
+  "summary": {
+    "capabilities": 15,
+    "occurrences": 51
+  },
+  "capabilities": [
+    {
+      "name": "Bun.CryptoHasher",
+      "occurrences": [
+        {
+          "file": "src/server/management/oauth-account-routes.ts",
+          "line": 311
+        }
+      ]
+    },
+    {
+      "name": "Bun.Image",
+      "occurrences": [
+        {
+          "file": "src/adapters/anthropic-image-guard.ts",
+          "line": 11
+        },
+        {
+          "file": "src/adapters/anthropic-image-normalize.ts",
+          "line": 13
+        },
+        {
+          "file": "src/adapters/anthropic-image-normalize.ts",
+          "line": 76
+        },
+        {
+          "file": "src/adapters/anthropic-image-normalize.ts",
+          "line": 145
+        },
+        {
+          "file": "src/adapters/anthropic-image-normalize.ts",
+          "line": 147
+        },
+        {
+          "file": "src/adapters/anthropic-image-normalize.ts",
+          "line": 151
+        },
+        {
+          "file": "src/adapters/anthropic-image-normalize.ts",
+          "line": 166
+        }
+      ]
+    },
+    {
+      "name": "Bun.file",
+      "occurrences": [
+        {
+          "file": "src/server/gui-static.ts",
+          "line": 67
+        },
+        {
+          "file": "src/server/gui-static.ts",
+          "line": 77
+        }
+      ]
+    },
+    {
+      "name": "Bun.hash",
+      "occurrences": [
+        {
+          "file": "src/adapters/anthropic-image-normalize.ts",
+          "line": 205
+        }
+      ]
+    },
+    {
+      "name": "Bun.inspect",
+      "occurrences": [
+        {
+          "file": "src/lib/crash-guard.ts",
+          "line": 52
+        },
+        {
+          "file": "src/lib/crash-guard.ts",
+          "line": 88
+        }
+      ]
+    },
+    {
+      "name": "Bun.revision",
+      "occurrences": [
+        {
+          "file": "src/server/management/system-routes.ts",
+          "line": 56
+        }
+      ]
+    },
+    {
+      "name": "Bun.serve",
+      "occurrences": [
+        {
+          "file": "src/cli/index.ts",
+          "line": 171
+        },
+        {
+          "file": "src/lib/crash-guard.ts",
+          "line": 10
+        },
+        {
+          "file": "src/lib/crash-guard.ts",
+          "line": 22
+        },
+        {
+          "file": "src/oauth/callback-server.ts",
+          "line": 63
+        },
+        {
+          "file": "src/oauth/callback-server.ts",
+          "line": 151
+        },
+        {
+          "file": "src/oauth/callback-server.ts",
+          "line": 155
+        },
+        {
+          "file": "src/server/index.ts",
+          "line": 313
+        },
+        {
+          "file": "src/server/lifecycle.ts",
+          "line": 9
+        },
+        {
+          "file": "src/server/lifecycle.ts",
+          "line": 11
+        },
+        {
+          "file": "src/server/lifecycle.ts",
+          "line": 52
+        }
+      ]
+    },
+    {
+      "name": "Bun.sleep",
+      "occurrences": [
+        {
+          "file": "src/oauth/store.ts",
+          "line": 151
+        },
+        {
+          "file": "src/oauth/xai.ts",
+          "line": 105
+        },
+        {
+          "file": "src/server/lifecycle.ts",
+          "line": 59
+        }
+      ]
+    },
+    {
+      "name": "Bun.sleepSync",
+      "occurrences": [
+        {
+          "file": "src/service.ts",
+          "line": 636
+        },
+        {
+          "file": "src/tray/windows.ts",
+          "line": 343
+        },
+        {
+          "file": "src/tray/windows.ts",
+          "line": 354
+        }
+      ]
+    },
+    {
+      "name": "Bun.spawnSync",
+      "occurrences": [
+        {
+          "file": "src/lib/windows-secret-acl.ts",
+          "line": 74
+        }
+      ]
+    },
+    {
+      "name": "Bun.version",
+      "occurrences": [
+        {
+          "file": "src/cli/doctor.ts",
+          "line": 542
+        },
+        {
+          "file": "src/cli/doctor.ts",
+          "line": 719
+        },
+        {
+          "file": "src/lib/bun-stream-caps.ts",
+          "line": 80
+        },
+        {
+          "file": "src/server/management/system-routes.ts",
+          "line": 55
+        }
+      ]
+    },
+    {
+      "name": "bun:ffi",
+      "occurrences": [
+        {
+          "file": "src/server/windows-tcp-drop.ts",
+          "line": 5
+        }
+      ]
+    },
+    {
+      "name": "bun:jsc",
+      "occurrences": [
+        {
+          "file": "src/server/management/system-routes.ts",
+          "line": 31
+        }
+      ]
+    },
+    {
+      "name": "bun:sqlite",
+      "occurrences": [
+        {
+          "file": "src/codex/history-provider.ts",
+          "line": 4
+        },
+        {
+          "file": "src/oauth/kiro-credentials.ts",
+          "line": 4
+        },
+        {
+          "file": "src/storage/scanner.ts",
+          "line": 4
+        }
+      ]
+    },
+    {
+      "name": "import.meta.dir",
+      "occurrences": [
+        {
+          "file": "src/codex/shim.ts",
+          "line": 124
+        },
+        {
+          "file": "src/server/gui-static.ts",
+          "line": 21
+        },
+        {
+          "file": "src/server/gui-static.ts",
+          "line": 22
+        },
+        {
+          "file": "src/server/startup-action-control.ts",
+          "line": 19
+        },
+        {
+          "file": "src/server/startup-health-cache.ts",
+          "line": 51
+        },
+        {
+          "file": "src/server/windows-tray-control.ts",
+          "line": 14
+        },
+        {
+          "file": "src/service.ts",
+          "line": 33
+        },
+        {
+          "file": "src/service.ts",
+          "line": 702
+        },
+        {
+          "file": "src/tray/windows.ts",
+          "line": 70
+        },
+        {
+          "file": "src/tray/windows.ts",
+          "line": 74
+        },
+        {
+          "file": "src/tray/windows.ts",
+          "line": 85
+        }
+      ]
+    }
+  ]
+}

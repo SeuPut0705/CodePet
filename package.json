@@ -1,0 +1,94 @@
+{
+  "name": "code-pet",
+  "version": "0.3.2",
+  "private": true,
+  "author": "SeuPut0705",
+  "description": "Local-first desktop companion for Codex, Claude, Kimi, Gemini, Copilot, Cursor, OpenCode, Windsurf, and Antigravity.",
+  "main": "src/main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron .",
+    "test": "node --test \"test/**/*.test.js\"",
+    "dist": "npm run opencodex:verify && npm run opencodex:package-notices && node scripts/build.js",
+    "opencodex:build-engine": "node scripts/opencodex/build-engine.js",
+    "opencodex:engine-smoke": "node scripts/opencodex/engine-smoke.js",
+    "opencodex:package-notices": "node scripts/opencodex/verify-package-notices.js",
+    "opencodex:parity": "node scripts/opencodex/parity-report.js",
+    "opencodex:runtime-inventory": "node scripts/opencodex/runtime-inventory.js",
+    "opencodex:sync": "node scripts/opencodex/sync.js",
+    "opencodex:verify": "node scripts/opencodex/verify-provenance.js"
+  },
+  "build": {
+    "appId": "app.codepet.desktop",
+    "productName": "CodePet",
+    "directories": {
+      "output": "artifacts"
+    },
+    "files": [
+      "src/**/*",
+      "build/generated/opencodex-engine.mjs",
+      "build/icon.ico",
+      "build/icon.png",
+      "package.json"
+    ],
+    "asarUnpack": [
+      "build/generated/opencodex-engine.mjs"
+    ],
+    "extraResources": [
+      {
+        "from": "build/icon.ico",
+        "to": "icon.ico"
+      },
+      {
+        "from": "build/icon.png",
+        "to": "icon.png"
+      },
+      {
+        "from": "vendor/opencodex/FILES.sha256",
+        "to": "third-party/opencodex/FILES.sha256"
+      },
+      {
+        "from": "vendor/opencodex/LICENSE",
+        "to": "third-party/opencodex/LICENSE"
+      },
+      {
+        "from": "vendor/opencodex/UPSTREAM.json",
+        "to": "third-party/opencodex/UPSTREAM.json"
+      }
+    ],
+    "win": {
+      "icon": "build/icon.ico",
+      "target": [
+        "nsis",
+        "portable"
+      ]
+    },
+    "nsis": {
+      "artifactName": "CodePet-Setup-${version}.exe",
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    },
+    "portable": {
+      "artifactName": "CodePet-${version}.exe"
+    },
+    "mac": {
+      "icon": "build/icon-mac.png",
+      "category": "public.app-category.utilities",
+      "target": [
+        "dmg",
+        "zip"
+      ]
+    }
+  },
+  "devDependencies": {
+    "electron": "^40.10.6",
+    "electron-builder": "^26.15.3",
+    "esbuild": "0.28.1"
+  },
+  "dependencies": {
+    "@bufbuild/protobuf": "2.12.1",
+    "@modelcontextprotocol/sdk": "1.29.0",
+    "ws": "8.21.1",
+    "zod": "4.4.3"
+  }
+}
